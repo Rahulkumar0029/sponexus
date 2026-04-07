@@ -1,0 +1,100 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  @apply bg-gradient-dark text-white overflow-x-hidden;
+  background-attachment: fixed;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 10px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-dark-layer;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-accent-orange rounded;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  @apply bg-yellow-500;
+}
+
+/* Glass morphism effect */
+.glass {
+  @apply bg-white/10 backdrop-blur-md border border-white/20 rounded-xl;
+}
+
+/* Glow effect */
+.glow-orange {
+  box-shadow: 0 0 30px rgba(245, 158, 11, 0.3);
+}
+
+.glow-blue {
+  box-shadow: 0 0 20px rgba(59, 130, 246, 0.2);
+}
+
+/* Smooth transitions */
+.smooth-transition {
+  @apply transition-all duration-300 ease-out;
+}
+
+/* Gradient text */
+.gradient-text {
+  @apply bg-gradient-to-r from-accent-orange to-yellow-400 bg-clip-text text-transparent;
+}
+
+/* Buttons base styles */
+.btn-base {
+  @apply px-6 py-3 rounded-xl font-medium smooth-transition;
+}
+
+.btn-primary {
+  @apply btn-base bg-gradient-orange text-white hover:shadow-glow-orange;
+}
+
+.btn-secondary {
+  @apply btn-base border border-accent-orange text-accent-orange hover:bg-accent-orange/10;
+}
+
+.btn-ghost {
+  @apply btn-base text-text-light hover:bg-white/10;
+}
+
+/* Card styles */
+.card {
+  @apply bg-dark-layer border border-white/10 rounded-xl p-6 smooth-transition hover:border-accent-orange/50;
+}
+
+.card-hover {
+  @apply card hover:shadow-glow-orange;
+}
+
+/* Input styles */
+.input-base {
+  @apply w-full px-4 py-3 bg-dark-layer text-white border border-white/20 rounded-lg focus:outline-none focus:border-accent-orange smooth-transition;
+}
+
+/* Section spacing */
+.section {
+  @apply py-20 px-4 sm:px-6 lg:px-8;
+}
+
+/* Container */
+.container-custom {
+  @apply max-w-7xl mx-auto;
+}
