@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Input } from '@/components/Input';
 import { Button } from '@/components/Button';
@@ -20,9 +20,13 @@ const audiences = ['Students', 'Professionals', 'Entrepreneurs', 'General Public
 
 export default function CreateEventPage() {
   const router = useRouter();
+
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
+
+  const today = useMemo(() => new Date().toISOString().split('T')[0], []);
 
   const [formData, setFormData] = useState({
     title: '',
@@ -38,27 +42,44 @@ export default function CreateEventPage() {
     image: '',
   });
 
+  const [venueImages, setVenueImages] = useState<File[]>([]);
+  const [pastEventMedia, setPastEventMedia] = useState<File[]>([]);
+
   useEffect(() => {
     const storedUser = localStorage.getItem('user');
+
     if (!storedUser) {
       router.push('/login');
       return;
     }
 
     const parsedUser = JSON.parse(storedUser);
+
     if (parsedUser.role !== 'ORGANIZER') {
       router.push('/dashboard');
       return;
     }
+
     setUser(parsedUser);
   }, [router]);
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
+  const handleChange = (
+    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
+  ) => {
     const { name, value } = e.target;
-    setFormData((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
+
+    setFormData((prev) => {
+      const updated = { ...prev, [name]: value };
+
+      // If startDate changes and endDate is now invalid, reset endDate
+      if (name === 'startDate' && updated.endDate && updated.endDate < value) {
+        updated.endDate = '';
+      }
+
+      return updated;
+    });
+
+    if (error) setError('');
   };
 
   const toggleArray = (field: 'categories' | 'targetAudience', value: string) => {
@@ -70,135 +91,194 @@ export default function CreateEventPage() {
     }));
   };
 
+  const handleVenueImagesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    setVenueImages(files);
+  };
+
+  const handlePastMediaChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    setPastEventMedia(files);
+  };
+
+  const validateDates = () => {
+    if (!formData.startDate || !formData.endDate) return true;
+
+    if (formData.startDate < today) {
+      setError('Start date cannot be in the past.');
+      return false;
+    }
+
+    if (formData.endDate < today) {
+      setError('End date cannot be in the past.');
+      return false;
+    }
+
+    if (formData.endDate < formData.startDate) {
+      setError('End date cannot be before start date.');
+      return false;
+    }
+
+    return true;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+    setSuccessMessage('');
 
-    if (!formData.title || !formData.description || !formData.location || !formData.budget) {
-      setError('Please fill in all required fields');
+    if (
+      !formData.title ||
+      !formData.description ||
+      !formData.location ||
+      !formData.budget ||
+      !formData.startDate ||
+      !formData.endDate
+    ) {
+      setError('Please fill all required fields.');
       return;
     }
+
+    if (!validateDates()) return;
 
     setLoading(true);
 
     try {
-      const response = await fetch('/api/events/create', {
+      // IMPORTANT:
+      // This currently sends metadata only.
+      // File uploads must later be connected to an upload API / storage service.
+      const payload = {
+        ...formData,
+        organizerId: user._id,
+        budget: parseInt(formData.budget, 10),
+        attendeeCount: parseInt(formData.attendeeCount, 10) || 100,
+        venueImagesMeta: venueImages.map((file) => ({
+          name: file.name,
+          type: file.type,
+          size: file.size,
+        })),
+        pastEventMediaMeta: pastEventMedia.map((file) => ({
+          name: file.name,
+          type: file.type,
+          size: file.size,
+        })),
+      };
+
+      const res = await fetch('/api/events/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...formData,
-          organizerId: user._id,
-          budget: parseInt(formData.budget),
-          attendeeCount: parseInt(formData.attendeeCount) || 100,
-        }),
+        body: JSON.stringify(payload),
       });
 
-      if (!response.ok) {
-        const data = await response.json();
+      const data = await res.json();
+
+      if (!res.ok) {
         throw new Error(data.message || 'Failed to create event');
       }
 
-      const data = await response.json();
+      setSuccessMessage('Event created successfully.');
       router.push(`/events/${data.event._id}`);
     } catch (err: any) {
-      setError(err.message);
+      setError(err.message || 'Something went wrong.');
     } finally {
       setLoading(false);
     }
   };
 
   if (!user) {
-    return <div>Redirecting...</div>;
+    return <div className="p-10 text-white">Loading...</div>;
   }
 
   return (
-    <div className="section">
-      <div className="container-custom max-w-2xl">
-        <div className="mb-8">
-          <h1 className="text-4xl font-bold mb-2">Create Event</h1>
-          <p className="text-text-muted">
-            Fill in the details about your event. Be as specific as possible for better sponsor matches.
-          </p>
-        </div>
+    <div className="relative min-h-screen flex items-center justify-center px-4 py-12">
+      <div className="absolute inset-0 -z-20 bg-[radial-gradient(circle_at_20%_30%,rgba(251,191,36,0.08),transparent_40%),radial-gradient(circle_at_80%_70%,rgba(59,130,246,0.08),transparent_40%),linear-gradient(135deg,#020617,#07152f,#020617)]" />
 
-        <form onSubmit={handleSubmit} className="card space-y-6">
+      <div className="absolute inset-0 -z-10 pointer-events-none">
+        <div className="absolute top-20 left-10 w-72 h-72 bg-blue-500/10 rounded-full blur-3xl" />
+        <div className="absolute bottom-10 right-10 w-80 h-80 bg-amber-500/10 rounded-full blur-3xl" />
+      </div>
+
+      <div className="w-full max-w-4xl">
+        <div className="rounded-[28px] border border-white/10 bg-white/[0.05] p-8 shadow-[0_0_50px_rgba(245,158,11,0.08)] backdrop-blur-xl">
+          <div className="mb-8 text-center">
+            <h1 className="text-3xl sm:text-4xl font-bold text-white">Create Event</h1>
+            <p className="text-sm text-text-muted mt-2">
+              Add your event details and improve sponsor trust with venue and past-event media
+            </p>
+          </div>
+
           {error && (
-            <div className="bg-red-500/10 border border-red-500/50 rounded-lg p-4 text-red-400 text-sm">
+            <div className="mb-6 rounded-xl border border-red-500/40 bg-red-500/10 p-4 text-red-300">
               {error}
             </div>
           )}
 
-          {/* Basic Info */}
-          <div className="space-y-4">
-            <h3 className="text-lg font-semibold text-text-light">Basic Information</h3>
+          {successMessage && (
+            <div className="mb-6 rounded-xl border border-green-500/40 bg-green-500/10 p-4 text-green-300">
+              {successMessage}
+            </div>
+          )}
+
+          <form onSubmit={handleSubmit} className="space-y-6">
             <Input
               label="Event Title"
-              type="text"
               name="title"
               value={formData.title}
               onChange={handleChange}
-              required
               placeholder="Tech Summit 2026"
+              required
             />
 
             <div>
-              <label className="block text-sm font-medium text-text-light mb-2">Description</label>
-              <Input
-                as="textarea"
+              <label className="block mb-2 text-sm font-medium text-white">Description</label>
+              <textarea
                 name="description"
+                placeholder="Describe your event, goals, audience, and what makes it attractive for sponsors..."
                 value={formData.description}
                 onChange={handleChange}
+                className="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-4 text-white placeholder:text-gray-400 focus:outline-none focus:border-accent-orange/50 focus:ring-1 focus:ring-accent-orange/30 min-h-[140px]"
                 required
-                placeholder="Tell us about your event..."
-                className="resize-none h-32"
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <Input
-                label="Event Type"
-                name="eventType"
-                value={formData.eventType}
-                onChange={(e) => setFormData({ ...formData, eventType: e.target.value })}
-                as="select"
-                required
-              >
-                {eventTypes.map((type) => (
-                  <option key={type} value={type}>
-                    {type}
-                  </option>
-                ))}
-              </Input>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block mb-2 text-sm font-medium text-white">Event Type</label>
+                <select
+                  name="eventType"
+                  value={formData.eventType}
+                  onChange={handleChange}
+                  className="w-full rounded-xl bg-[#0B1220] border border-white/10 px-4 py-3 text-white focus:outline-none focus:border-accent-orange/50 focus:ring-1 focus:ring-accent-orange/30"
+                >
+                  {eventTypes.map((type) => (
+                    <option key={type} value={type} className="bg-[#0B1220] text-white">
+                      {type}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
               <Input
                 label="Location"
-                type="text"
                 name="location"
                 value={formData.location}
                 onChange={handleChange}
+                placeholder="Gurugram, Haryana"
                 required
-                placeholder="New York, NY"
               />
             </div>
-          </div>
 
-          {/* Financial & Attendance */}
-          <div className="space-y-4">
-            <h3 className="text-lg font-semibold text-text-light">Financial & Attendance</h3>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <Input
-                label="Budget ($)"
-                type="number"
+                label="Budget (₹)"
                 name="budget"
                 value={formData.budget}
                 onChange={handleChange}
-                required
                 placeholder="50000"
+                required
               />
-
               <Input
                 label="Expected Attendees"
-                type="number"
                 name="attendeeCount"
                 value={formData.attendeeCount}
                 onChange={handleChange}
@@ -206,86 +286,134 @@ export default function CreateEventPage() {
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <Input
                 label="Start Date"
                 type="date"
                 name="startDate"
                 value={formData.startDate}
                 onChange={handleChange}
+                required
+                min={today}
               />
-
               <Input
                 label="End Date"
                 type="date"
                 name="endDate"
                 value={formData.endDate}
                 onChange={handleChange}
+                required
+                min={formData.startDate || today}
               />
             </div>
-          </div>
 
-          {/* Categories */}
-          <div className="space-y-4">
-            <h3 className="text-lg font-semibold text-text-light">Categories (Select all that apply)</h3>
-            <div className="grid grid-cols-2 gap-3">
-              {categories.map((cat) => (
-                <label key={cat} className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={formData.categories.includes(cat)}
-                    onChange={() => toggleArray('categories', cat)}
-                    className="w-4 h-4 rounded accent-accent-orange"
-                  />
-                  <span className="text-text-light">{cat}</span>
-                </label>
-              ))}
+            <div>
+              <h3 className="text-white mb-3 font-semibold">Categories</h3>
+              <div className="flex flex-wrap gap-2">
+                {categories.map((cat) => (
+                  <button
+                    key={cat}
+                    type="button"
+                    onClick={() => toggleArray('categories', cat)}
+                    className={`px-3 py-2 rounded-full text-sm transition ${
+                      formData.categories.includes(cat)
+                        ? 'bg-accent-orange text-black'
+                        : 'bg-white/5 border border-white/10 text-text-muted hover:border-accent-orange/40'
+                    }`}
+                  >
+                    {cat}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
 
-          {/* Target Audience */}
-          <div className="space-y-4">
-            <h3 className="text-lg font-semibold text-text-light">Target Audience</h3>
-            <div className="grid grid-cols-2 gap-3">
-              {audiences.map((aud) => (
-                <label key={aud} className="flex items-center gap-2 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={formData.targetAudience.includes(aud)}
-                    onChange={() => toggleArray('targetAudience', aud)}
-                    className="w-4 h-4 rounded accent-accent-orange"
-                  />
-                  <span className="text-text-light">{aud}</span>
-                </label>
-              ))}
+            <div>
+              <h3 className="text-white mb-3 font-semibold">Target Audience</h3>
+              <div className="flex flex-wrap gap-2">
+                {audiences.map((aud) => (
+                  <button
+                    key={aud}
+                    type="button"
+                    onClick={() => toggleArray('targetAudience', aud)}
+                    className={`px-3 py-2 rounded-full text-sm transition ${
+                      formData.targetAudience.includes(aud)
+                        ? 'bg-accent-orange text-black'
+                        : 'bg-white/5 border border-white/10 text-text-muted hover:border-accent-orange/40'
+                    }`}
+                  >
+                    {aud}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
 
-          {/* Image URL */}
-          <Input
-            label="Event Image URL (Optional)"
-            type="url"
-            name="image"
-            value={formData.image}
-            onChange={handleChange}
-            placeholder="https://example.com/image.jpg"
-          />
+            <div className="grid grid-cols-1 gap-5">
+              <div>
+                <label className="block mb-2 text-sm font-medium text-white">
+                  Venue Images
+                </label>
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  onChange={handleVenueImagesChange}
+                  className="block w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-text-muted file:mr-4 file:rounded-lg file:border-0 file:bg-accent-orange file:px-4 file:py-2 file:text-black hover:file:brightness-110"
+                />
+                <p className="mt-2 text-xs text-text-muted">
+                  Upload venue photos so sponsors can verify the event space.
+                </p>
+                {venueImages.length > 0 && (
+                  <p className="mt-2 text-xs text-green-300">
+                    {venueImages.length} venue file(s) selected
+                  </p>
+                )}
+              </div>
 
-          {/* Submit */}
-          <div className="flex gap-4 pt-6">
-            <Button type="submit" variant="primary" size="lg" className="flex-1" disabled={loading}>
-              {loading ? 'Creating...' : 'Create Event'}
-            </Button>
-            <Button
-              type="button"
-              variant="secondary"
-              size="lg"
-              onClick={() => router.push('/dashboard')}
-            >
-              Cancel
-            </Button>
-          </div>
-        </form>
+              <div>
+                <label className="block mb-2 text-sm font-medium text-white">
+                  Past Event Photos / Videos
+                </label>
+                <input
+                  type="file"
+                  accept="image/*,video/*"
+                  multiple
+                  onChange={handlePastMediaChange}
+                  className="block w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-text-muted file:mr-4 file:rounded-lg file:border-0 file:bg-accent-orange file:px-4 file:py-2 file:text-black hover:file:brightness-110"
+                />
+                <p className="mt-2 text-xs text-text-muted">
+                  Add previous event media to improve credibility and sponsor confidence.
+                </p>
+                {pastEventMedia.length > 0 && (
+                  <p className="mt-2 text-xs text-green-300">
+                    {pastEventMedia.length} past media file(s) selected
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <Input
+              label="Featured Event Image URL (Optional)"
+              name="image"
+              value={formData.image}
+              onChange={handleChange}
+              placeholder="https://example.com/cover-image.jpg"
+            />
+
+            <div className="flex gap-4 pt-4">
+              <Button type="submit" fullWidth loading={loading}>
+                {loading ? 'Creating...' : 'Create Event 🚀'}
+              </Button>
+
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={() => router.push('/dashboard')}
+              >
+                Cancel
+              </Button>
+            </div>
+          </form>
+        </div>
       </div>
     </div>
   );

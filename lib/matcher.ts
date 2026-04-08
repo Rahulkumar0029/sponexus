@@ -1,6 +1,11 @@
 import { Event } from '@/types/event';
 import { Sponsor } from '@/types/sponsor';
-import { EventMatchResult, MatchBreakdown, MatchFactor, SponsorMatchResult } from '@/types/match';
+import {
+  EventMatchResult,
+  MatchBreakdown,
+  MatchFactor,
+  SponsorMatchResult,
+} from '@/types/match';
 
 function normalize(value: string) {
   return value?.toLowerCase().trim() || '';
@@ -44,6 +49,7 @@ function parseBudgetNumber(value: string): number {
 
 function scoreBudgetMatch(sponsorBudget: string, eventBudget: number) {
   const sponsorValue = parseBudgetNumber(sponsorBudget);
+
   if (eventBudget <= 0) {
     return 30;
   }
@@ -57,10 +63,12 @@ function scoreBudgetMatch(sponsorBudget: string, eventBudget: number) {
   }
 
   const ratio = sponsorValue / eventBudget;
+
   if (ratio >= 0.9) return 24;
   if (ratio >= 0.7) return 18;
   if (ratio >= 0.5) return 12;
   if (ratio >= 0.3) return 6;
+
   return 0;
 }
 
@@ -77,8 +85,8 @@ function scoreCategoryMatch(preferredCategories: string[], event: Event) {
   }
 
   const partialMatch = sponsorCategories.some((sponsorCat) =>
-    eventCategories.some((eventCat) =>
-      sponsorCat.includes(eventCat) || eventCat.includes(sponsorCat)
+    eventCategories.some(
+      (eventCat) => sponsorCat.includes(eventCat) || eventCat.includes(sponsorCat)
     )
   );
 
@@ -91,7 +99,7 @@ function scoreCategoryMatch(preferredCategories: string[], event: Event) {
 
 function scoreAudienceMatch(targetAudience: string, event: Event) {
   const sponsorAudienceTerms = splitTerms(targetAudience);
-  const eventAudienceTerms = event.targetAudience.flatMap(splitTerms);
+  const eventAudienceTerms = (event.targetAudience || []).flatMap(splitTerms);
 
   if (sponsorAudienceTerms.length === 0 || eventAudienceTerms.length === 0) {
     return 0;
@@ -100,12 +108,15 @@ function scoreAudienceMatch(targetAudience: string, event: Event) {
   const exactMatch = sponsorAudienceTerms.some((term) =>
     eventAudienceTerms.some((eventTerm) => eventTerm === term)
   );
+
   if (exactMatch) {
     return 20;
   }
 
   const partialMatch = sponsorAudienceTerms.some((term) =>
-    eventAudienceTerms.some((eventTerm) => eventTerm.includes(term) || term.includes(eventTerm))
+    eventAudienceTerms.some(
+      (eventTerm) => eventTerm.includes(term) || term.includes(eventTerm)
+    )
   );
 
   return partialMatch ? 10 : 0;
@@ -179,10 +190,12 @@ function buildMatchReason(breakdown: MatchBreakdown) {
 
 function buildMatchedFactors(breakdown: MatchBreakdown): MatchFactor[] {
   const factors: MatchFactor[] = [];
+
   if (breakdown.budgetScore > 0) factors.push('budget');
   if (breakdown.categoryScore > 0) factors.push('category');
   if (breakdown.audienceScore > 0) factors.push('audience');
   if (breakdown.locationScore > 0) factors.push('location');
+
   return factors;
 }
 
@@ -195,15 +208,22 @@ function createBreakdown(sponsor: Sponsor, event: Event): MatchBreakdown {
   };
 }
 
-export function matchSponsorToEvents(sponsor: Sponsor, events: Event[]): EventMatchResult[] {
+export function matchSponsorToEvents(
+  sponsor: Sponsor,
+  events: Event[],
+  minScore = 40
+): EventMatchResult[] {
   return events
     .map((event) => {
       const breakdown = createBreakdown(sponsor, event);
-      const score =
+
+      const rawScore =
         breakdown.budgetScore +
         breakdown.categoryScore +
         breakdown.audienceScore +
         breakdown.locationScore;
+
+      const score = Math.round((rawScore / 100) * 100);
 
       return {
         event,
@@ -214,18 +234,26 @@ export function matchSponsorToEvents(sponsor: Sponsor, events: Event[]): EventMa
         breakdown,
       };
     })
+    .filter((item) => item.score >= minScore)
     .sort((a, b) => b.score - a.score);
 }
 
-export function matchEventToSponsors(event: Event, sponsors: Sponsor[]): SponsorMatchResult[] {
+export function matchEventToSponsors(
+  event: Event,
+  sponsors: Sponsor[],
+  minScore = 40
+): SponsorMatchResult[] {
   return sponsors
     .map((sponsor) => {
       const breakdown = createBreakdown(sponsor, event);
-      const score =
+
+      const rawScore =
         breakdown.budgetScore +
         breakdown.categoryScore +
         breakdown.audienceScore +
         breakdown.locationScore;
+
+      const score = Math.round((rawScore / 100) * 100);
 
       return {
         sponsor,
@@ -236,5 +264,6 @@ export function matchEventToSponsors(event: Event, sponsors: Sponsor[]): Sponsor
         breakdown,
       };
     })
+    .filter((item) => item.score >= minScore)
     .sort((a, b) => b.score - a.score);
 }

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import mongoose from 'mongoose';
 import { connectDB } from '@/lib/db';
 import { EventModel } from '@/models/Event';
 
@@ -11,9 +12,9 @@ export async function GET(
 
     const eventId = params.id;
 
-    if (!eventId) {
+    if (!eventId || !mongoose.Types.ObjectId.isValid(eventId)) {
       return NextResponse.json(
-        { success: false, message: 'Event ID is required' },
+        { success: false, message: 'Invalid event ID' },
         { status: 400 }
       );
     }
@@ -39,6 +40,7 @@ export async function GET(
     );
   } catch (error) {
     console.error('Error fetching event:', error);
+
     return NextResponse.json(
       { success: false, message: 'Failed to fetch event' },
       { status: 500 }

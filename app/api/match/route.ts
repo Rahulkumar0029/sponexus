@@ -25,43 +25,84 @@ export async function GET(request: NextRequest) {
 
     if (!sponsorId && !sponsorOwnerId && !eventId) {
       return NextResponse.json(
-        { success: false, message: 'Missing matching query parameter', matches: [] },
+        {
+          success: false,
+          message: 'Missing matching query parameter',
+          matches: [],
+        },
         { status: 400 }
       );
     }
 
     await connectDB();
 
+    // Match sponsor -> events
     if (sponsorId || sponsorOwnerId) {
+      if (sponsorId && !mongoose.Types.ObjectId.isValid(sponsorId)) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: 'Invalid sponsor ID',
+            matches: [],
+          },
+          { status: 400 }
+        );
+      }
+
       const sponsor = sponsorId
         ? await Sponsor.findById(sponsorId)
         : await Sponsor.findOne({ ownerId: sponsorOwnerId });
 
       if (!sponsor) {
         return NextResponse.json(
-          { success: false, message: 'Sponsor profile not found', matches: [] },
+          {
+            success: false,
+            message: 'Sponsor profile not found',
+            matches: [],
+          },
           { status: 404 }
         );
       }
 
-      const events = await EventModel.find({ status: { $in: ['PUBLISHED', 'ONGOING'] } });
+      const events = await EventModel.find({
+        status: { $in: ['PUBLISHED', 'ONGOING'] },
+      });
+
       const matches = matchSponsorToEvents(sponsor, events);
 
-      return NextResponse.json({ success: true, matches }, { status: 200 });
+      return NextResponse.json(
+        {
+          success: true,
+          matchType: 'sponsor-to-events',
+          count: matches.length,
+          matches,
+        },
+        { status: 200 }
+      );
     }
 
+    // Match event -> sponsors
     if (eventId) {
       if (!mongoose.Types.ObjectId.isValid(eventId)) {
         return NextResponse.json(
-          { success: false, message: 'Invalid event ID', matches: [] },
+          {
+            success: false,
+            message: 'Invalid event ID',
+            matches: [],
+          },
           { status: 400 }
         );
       }
 
       const event = await EventModel.findById(eventId);
+
       if (!event) {
         return NextResponse.json(
-          { success: false, message: 'Event not found', matches: [] },
+          {
+            success: false,
+            message: 'Event not found',
+            matches: [],
+          },
           { status: 404 }
         );
       }
@@ -69,17 +110,34 @@ export async function GET(request: NextRequest) {
       const sponsors = await Sponsor.find();
       const matches = matchEventToSponsors(event, sponsors);
 
-      return NextResponse.json({ success: true, matches }, { status: 200 });
+      return NextResponse.json(
+        {
+          success: true,
+          matchType: 'event-to-sponsors',
+          count: matches.length,
+          matches,
+        },
+        { status: 200 }
+      );
     }
 
     return NextResponse.json(
-      { success: false, message: 'Unable to process match request', matches: [] },
+      {
+        success: false,
+        message: 'Unable to process match request',
+        matches: [],
+      },
       { status: 400 }
     );
   } catch (error) {
     console.error('Match API error:', error);
+
     return NextResponse.json(
-      { success: false, message: 'Failed to compute matches', matches: [] },
+      {
+        success: false,
+        message: 'Failed to compute matches',
+        matches: [],
+      },
       { status: 500 }
     );
   }

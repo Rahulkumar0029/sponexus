@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import mongoose from 'mongoose';
 import { connectDB } from '@/lib/db';
 import { Sponsor } from '@/models/Sponsor';
 
@@ -9,17 +10,15 @@ export async function GET(
   try {
     const { id } = params;
 
-    if (!id) {
+    if (!id || !mongoose.Types.ObjectId.isValid(id)) {
       return NextResponse.json(
-        { success: false, message: 'Sponsor ID is required' },
+        { success: false, message: 'Invalid sponsor ID' },
         { status: 400 }
       );
     }
 
-    // Connect to database
     await connectDB();
 
-    // Fetch sponsor
     const sponsor = await Sponsor.findById(id);
 
     if (!sponsor) {
@@ -29,13 +28,16 @@ export async function GET(
       );
     }
 
-    return NextResponse.json({
-      success: true,
-      sponsor,
-    });
-
+    return NextResponse.json(
+      {
+        success: true,
+        sponsor,
+      },
+      { status: 200 }
+    );
   } catch (error) {
     console.error('Error fetching sponsor:', error);
+
     return NextResponse.json(
       { success: false, message: 'Failed to fetch sponsor' },
       { status: 500 }
