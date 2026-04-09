@@ -52,7 +52,23 @@ const userSchema = new Schema<User>(
       type: String,
     },
 
-    // Forgot password fields
+    organizationName: {
+      type: String,
+      trim: true,
+    },
+    eventFocus: {
+      type: String,
+      trim: true,
+    },
+    organizerTargetAudience: {
+      type: String,
+      trim: true,
+    },
+    organizerLocation: {
+      type: String,
+      trim: true,
+    },
+
     resetPasswordToken: {
       type: String,
     },

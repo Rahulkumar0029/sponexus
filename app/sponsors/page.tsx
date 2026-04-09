@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { SponsorCard } from '@/components/SponsorCard';
 import { Button } from '@/components/Button';
 import { EmptyState } from '@/components/EmptyState';
@@ -28,7 +28,11 @@ export default function SponsorsPage() {
   useEffect(() => {
     const storedUser = localStorage.getItem('user');
     if (storedUser) {
-      setUser(JSON.parse(storedUser));
+      try {
+        setUser(JSON.parse(storedUser));
+      } catch {
+        localStorage.removeItem('user');
+      }
     }
   }, []);
 
@@ -56,6 +60,45 @@ export default function SponsorsPage() {
     fetchSponsors();
   }, [page]);
 
+  const isSponsor = user?.role === 'SPONSOR';
+  const isOrganizer = user?.role === 'ORGANIZER';
+
+  const sponsorProfileComplete = useMemo(() => {
+    if (!isSponsor || !user) return false;
+
+    return !!(
+      user.brandName &&
+      Array.isArray(user.preferredCategories) &&
+      user.preferredCategories.length > 0 &&
+      user.officialPhone
+    );
+  }, [isSponsor, user]);
+
+  const pageTitle = useMemo(() => {
+    if (isOrganizer) return 'Explore Sponsors';
+    if (isSponsor) return 'Sponsor Directory';
+    return 'Explore Sponsors';
+  }, [isOrganizer, isSponsor]);
+
+  const pageDescription = useMemo(() => {
+    if (isOrganizer) {
+      return 'Discover brands and businesses open to meaningful event partnerships';
+    }
+
+    if (isSponsor) {
+      return 'Browse sponsor profiles and manage your own sponsor presence on Sponexus';
+    }
+
+    return 'Discover brands and businesses open to meaningful event partnerships';
+  }, [isOrganizer, isSponsor]);
+
+  const sponsorActionLabel = useMemo(() => {
+    if (!isSponsor) return '';
+    return sponsorProfileComplete ? 'My Sponsor Profile' : 'Complete Profile';
+  }, [isSponsor, sponsorProfileComplete]);
+
+  const sponsorActionHref = sponsorProfileComplete ? '/settings' : '/settings';
+
   return (
     <div className="relative min-h-screen px-4 py-12">
       {/* Background */}
@@ -63,49 +106,55 @@ export default function SponsorsPage() {
 
       {/* Glow */}
       <div className="absolute inset-0 -z-10 pointer-events-none">
-        <div className="absolute top-20 left-10 w-72 h-72 bg-blue-500/10 rounded-full blur-3xl" />
-        <div className="absolute bottom-10 right-10 w-80 h-80 bg-amber-500/10 rounded-full blur-3xl" />
+        <div className="absolute top-20 left-10 w-72 h-72 rounded-full bg-blue-500/10 blur-3xl" />
+        <div className="absolute bottom-10 right-10 w-80 h-80 rounded-full bg-amber-500/10 blur-3xl" />
       </div>
 
       <div className="max-w-7xl mx-auto">
         {/* Header */}
-        <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-6 mb-12">
+        <div className="mb-12 flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
           <div>
-            <h1 className="text-4xl font-bold text-white mb-2">Explore Sponsors</h1>
-            <p className="text-text-muted">
-              Discover brands and businesses open to meaningful event partnerships
-            </p>
+            <h1 className="mb-2 text-4xl font-bold text-white">{pageTitle}</h1>
+            <p className="text-text-muted">{pageDescription}</p>
           </div>
 
-          {user?.role === 'SPONSOR' && (
-            <Link href="/sponsors/create">
-              <Button variant="primary">+ Create Profile</Button>
-            </Link>
-          )}
+          <div className="flex flex-col gap-3 sm:flex-row">
+            {isOrganizer && (
+              <Link href="/match">
+                <Button variant="secondary">View Matches</Button>
+              </Link>
+            )}
+
+            {isSponsor && (
+              <Link href={sponsorActionHref}>
+                <Button variant="primary">{sponsorActionLabel}</Button>
+              </Link>
+            )}
+          </div>
         </div>
 
         {/* Error */}
         {error && (
-          <div className="mb-6 rounded-xl border border-red-500/40 bg-red-500/10 p-4 text-red-300 text-center">
+          <div className="mb-6 rounded-xl border border-red-500/40 bg-red-500/10 p-4 text-center text-red-300">
             {error}
           </div>
         )}
 
         {/* Content */}
         {loading ? (
-          <div className="text-center py-20 text-text-muted animate-pulse">
+          <div className="py-20 text-center text-text-muted animate-pulse">
             Loading sponsors...
           </div>
         ) : data?.sponsors && data.sponsors.length > 0 ? (
           <>
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-12">
+            <div className="grid grid-cols-1 gap-6 mb-12 md:grid-cols-2 lg:grid-cols-3">
               {data.sponsors.map((sponsor: any) => (
                 <SponsorCard key={sponsor._id} sponsor={sponsor} />
               ))}
             </div>
 
             {data.pagination && data.pagination.pages > 1 && (
-              <div className="flex justify-center items-center gap-4">
+              <div className="flex items-center justify-center gap-4">
                 <Button
                   variant="secondary"
                   disabled={page === 1}
@@ -130,12 +179,18 @@ export default function SponsorsPage() {
           </>
         ) : (
           <EmptyState
-            title="No Sponsors Found"
-            description="There are no sponsor profiles available yet. Be the first to create one and start discovering event partnerships."
-            actionLabel={user?.role === 'SPONSOR' ? 'Create Your Profile' : undefined}
+            title={isSponsor ? 'No Sponsors Visible Yet' : 'No Sponsors Found'}
+            description={
+              isSponsor
+                ? 'Sponsor profiles will appear here as more brands complete their details on Sponexus.'
+                : 'There are no sponsor profiles available yet. Check back later as more brands join the platform.'
+            }
+            actionLabel={isSponsor ? sponsorActionLabel : undefined}
             onAction={
-              user?.role === 'SPONSOR'
-                ? () => (window.location.href = '/sponsors/create')
+              isSponsor
+                ? () => {
+                    window.location.href = sponsorActionHref;
+                  }
                 : undefined
             }
           />

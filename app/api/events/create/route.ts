@@ -3,10 +3,12 @@ import { connectDB } from '@/lib/db';
 import { EventModel } from '@/models/Event';
 import { CreateEventInput } from '@/types/event';
 
-type EventMediaMeta = {
-  name: string;
-  type: string;
-  size: number;
+type UploadedMedia = {
+  url: string;
+  publicId: string;
+  type: 'image' | 'video';
+  title?: string;
+  uploadedAt?: string | Date;
 };
 
 export async function POST(request: NextRequest) {
@@ -15,8 +17,9 @@ export async function POST(request: NextRequest) {
 
     const body: CreateEventInput & {
       organizerId: string;
-      venueImagesMeta?: EventMediaMeta[];
-      pastEventMediaMeta?: EventMediaMeta[];
+      coverImage?: string;
+      venueImages?: UploadedMedia[];
+      pastEventMedia?: UploadedMedia[];
     } = await request.json();
 
     const {
@@ -31,12 +34,11 @@ export async function POST(request: NextRequest) {
       endDate,
       attendeeCount,
       eventType,
-      image,
-      venueImagesMeta,
-      pastEventMediaMeta,
+      coverImage,
+      venueImages,
+      pastEventMedia,
     } = body;
 
-    // Basic validation
     if (
       !title ||
       !description ||
@@ -116,7 +118,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Create event
+    const safeVenueImages = Array.isArray(venueImages) ? venueImages : [];
+    const safePastEventMedia = Array.isArray(pastEventMedia) ? pastEventMedia : [];
+
     const event = await EventModel.create({
       title: title.trim(),
       description: description.trim(),
@@ -129,9 +133,9 @@ export async function POST(request: NextRequest) {
       endDate: parsedEndDate,
       attendeeCount: parsedAttendeeCount,
       eventType: eventType || 'CONFERENCE',
-      image: image || '',
-      venueImagesMeta: Array.isArray(venueImagesMeta) ? venueImagesMeta : [],
-      pastEventMediaMeta: Array.isArray(pastEventMediaMeta) ? pastEventMediaMeta : [],
+      coverImage: coverImage || safeVenueImages[0]?.url || '',
+      venueImages: safeVenueImages,
+      pastEventMedia: safePastEventMedia,
       status: 'PUBLISHED',
     });
 

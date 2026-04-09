@@ -46,12 +46,37 @@ export function useAuth() {
 
     if (status === 'authenticated' && session?.user) {
       const authUser = normalizeUser(session.user);
-      setUser(authUser);
-      localStorage.setItem('user', JSON.stringify(authUser));
+
+      const storedUserRaw = localStorage.getItem('user');
+      let storedUser = null;
+
+      if (storedUserRaw) {
+        try {
+          storedUser = JSON.parse(storedUserRaw);
+        } catch {
+          localStorage.removeItem('user');
+        }
+      }
+
+      const mergedUser = {
+        ...storedUser,
+        ...authUser,
+        _id: authUser._id || storedUser?._id || '',
+        email: authUser.email || storedUser?.email || '',
+        role: authUser.role || storedUser?.role || '',
+        name: authUser.name || storedUser?.name || '',
+        firstName: storedUser?.firstName || authUser.firstName || '',
+        lastName: storedUser?.lastName || authUser.lastName || '',
+        companyName: storedUser?.companyName || authUser.companyName || '',
+      };
+
+      setUser(mergedUser);
+      localStorage.setItem('user', JSON.stringify(mergedUser));
       localStorage.setItem('token', 'next-auth-token');
       setIsAuthenticated(true);
     } else {
       setIsAuthenticated(false);
+
       if (status === 'unauthenticated') {
         setUser(null);
         localStorage.removeItem('user');
@@ -83,11 +108,29 @@ export function useAuth() {
       }
 
       const authUser = normalizeUser(session.user);
-      setUser(authUser);
-      localStorage.setItem('user', JSON.stringify(authUser));
+
+      const storedUserRaw = localStorage.getItem('user');
+      let storedUser = null;
+
+      if (storedUserRaw) {
+        try {
+          storedUser = JSON.parse(storedUserRaw);
+        } catch {
+          localStorage.removeItem('user');
+        }
+      }
+
+      const mergedUser = {
+        ...storedUser,
+        ...authUser,
+      };
+
+      setUser(mergedUser);
+      localStorage.setItem('user', JSON.stringify(mergedUser));
       localStorage.setItem('token', 'next-auth-token');
       setIsAuthenticated(true);
-      return authUser;
+
+      return mergedUser;
     } catch (err: any) {
       const message = err?.message || 'Login failed';
       setError(message);

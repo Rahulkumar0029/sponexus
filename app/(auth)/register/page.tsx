@@ -26,6 +26,7 @@ export default function RegisterPage() {
 
   const updateRole = (role: 'ORGANIZER' | 'SPONSOR') => {
     setFormData((prev) => ({ ...prev, role }));
+
     if (fieldErrors.role) {
       setFieldErrors((prev) => {
         const next = { ...prev };
@@ -33,13 +34,17 @@ export default function RegisterPage() {
         return next;
       });
     }
+
     if (generalError) setGeneralError('');
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
 
-    setFormData((prev) => ({ ...prev, [name]: value }));
+    setFormData((prev) => ({
+      ...prev,
+      [name]: value,
+    }));
 
     if (fieldErrors[name]) {
       setFieldErrors((prev) => {
@@ -61,9 +66,11 @@ export default function RegisterPage() {
 
     if (!validation.isValid) {
       const errors: { [key: string]: string } = {};
+
       validation.errors.forEach((err) => {
         errors[err.field] = err.message;
       });
+
       setFieldErrors(errors);
       return;
     }
@@ -82,9 +89,11 @@ export default function RegisterPage() {
       if (!response.ok) {
         if (data.errors && Array.isArray(data.errors)) {
           const errors: { [key: string]: string } = {};
+
           data.errors.forEach((err: { field: string; message: string }) => {
             errors[err.field] = err.message;
           });
+
           setFieldErrors(errors);
         } else {
           setGeneralError(data.message || 'Registration failed.');
@@ -95,7 +104,11 @@ export default function RegisterPage() {
       localStorage.setItem('user', JSON.stringify(data.user));
       localStorage.setItem('token', data.token);
 
-      router.push(formData.role === 'ORGANIZER' ? '/events/create' : '/sponsors/create');
+      router.push(
+        formData.role === 'ORGANIZER'
+          ? '/dashboard/organizer'
+          : '/dashboard/sponsor'
+      );
     } catch (err: unknown) {
       if (err instanceof Error) {
         setGeneralError(err.message || 'Something went wrong.');
@@ -108,11 +121,11 @@ export default function RegisterPage() {
   };
 
   return (
-    <div className="relative min-h-screen flex items-center justify-center px-4 py-12 overflow-hidden">
+    <div className="relative min-h-screen flex items-center justify-center overflow-hidden px-4 py-12">
       {/* Background */}
       <div className="absolute inset-0 -z-20 bg-[radial-gradient(circle_at_20%_30%,rgba(251,191,36,0.08),transparent_40%),radial-gradient(circle_at_80%_70%,rgba(59,130,246,0.08),transparent_40%),linear-gradient(135deg,#020617,#07152f,#020617)]" />
 
-      {/* Ambient glow */}
+      {/* Glow */}
       <div className="absolute inset-0 -z-10 pointer-events-none">
         <div className="absolute top-20 left-10 h-72 w-72 rounded-full bg-blue-500/10 blur-3xl" />
         <div className="absolute bottom-10 right-10 h-80 w-80 rounded-full bg-amber-500/10 blur-3xl" />
@@ -122,7 +135,7 @@ export default function RegisterPage() {
         <div className="rounded-[28px] border border-white/10 bg-white/[0.05] p-8 shadow-[0_0_50px_rgba(245,158,11,0.08)] backdrop-blur-xl sm:p-10">
           {/* Header */}
           <div className="mb-8 text-center">
-            <h1 className="text-3xl sm:text-4xl font-bold text-white">
+            <h1 className="text-3xl font-bold text-white sm:text-4xl">
               Create Account
             </h1>
             <p className="mt-2 text-sm text-text-muted">
@@ -150,7 +163,7 @@ export default function RegisterPage() {
                   onClick={() => updateRole('ORGANIZER')}
                   className={`rounded-xl border px-4 py-3 text-sm font-medium transition-all duration-300 ${
                     formData.role === 'ORGANIZER'
-                      ? 'bg-gradient-to-r from-yellow-400 via-amber-500 to-yellow-400 text-black shadow-[0_8px_30px_rgba(245,158,11,0.25)] border-transparent'
+                      ? 'border-transparent bg-gradient-to-r from-yellow-400 via-amber-500 to-yellow-400 text-black shadow-[0_8px_30px_rgba(245,158,11,0.25)]'
                       : 'border-white/10 bg-white/[0.03] text-text-muted hover:border-accent-orange hover:text-white'
                   }`}
                 >
@@ -162,7 +175,7 @@ export default function RegisterPage() {
                   onClick={() => updateRole('SPONSOR')}
                   className={`rounded-xl border px-4 py-3 text-sm font-medium transition-all duration-300 ${
                     formData.role === 'SPONSOR'
-                      ? 'bg-gradient-to-r from-yellow-400 via-amber-500 to-yellow-400 text-black shadow-[0_8px_30px_rgba(245,158,11,0.25)] border-transparent'
+                      ? 'border-transparent bg-gradient-to-r from-yellow-400 via-amber-500 to-yellow-400 text-black shadow-[0_8px_30px_rgba(245,158,11,0.25)]'
                       : 'border-white/10 bg-white/[0.03] text-text-muted hover:border-accent-orange hover:text-white'
                   }`}
                 >
@@ -186,6 +199,7 @@ export default function RegisterPage() {
                 placeholder="John"
                 required
               />
+
               <Input
                 label="Last Name"
                 name="lastName"
@@ -259,7 +273,10 @@ export default function RegisterPage() {
           {/* Footer */}
           <div className="mt-6 text-center text-sm text-text-muted">
             Already have an account?{' '}
-            <Link href="/login" className="text-accent-orange hover:text-yellow-400 transition">
+            <Link
+              href="/login"
+              className="text-accent-orange transition hover:text-yellow-400"
+            >
               Sign in
             </Link>
           </div>

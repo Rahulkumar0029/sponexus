@@ -1,18 +1,29 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { useParams } from 'next/navigation';
+import { useEffect, useMemo, useState } from 'react';
+import { useParams, useRouter } from 'next/navigation';
 import { Button } from '@/components/Button';
 import Link from 'next/link';
 
 export default function SponsorDetailPage() {
   const params = useParams();
+  const router = useRouter();
 
   const [sponsor, setSponsor] = useState<any>(null);
+  const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
   useEffect(() => {
+    const storedUser = localStorage.getItem('user');
+    if (storedUser) {
+      try {
+        setUser(JSON.parse(storedUser));
+      } catch {
+        localStorage.removeItem('user');
+      }
+    }
+
     const fetchSponsor = async () => {
       if (!params.id) return;
 
@@ -36,6 +47,16 @@ export default function SponsorDetailPage() {
     fetchSponsor();
   }, [params.id]);
 
+  const categories = useMemo(() => {
+    return Array.isArray(sponsor?.preferredCategories)
+      ? sponsor.preferredCategories
+      : [];
+  }, [sponsor]);
+
+  const hasContact = Boolean(
+    sponsor?.officialEmail || sponsor?.officialPhone
+  );
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center text-text-muted">
@@ -48,7 +69,9 @@ export default function SponsorDetailPage() {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="rounded-2xl border border-white/10 bg-white/[0.05] p-10 text-center">
-          <h2 className="text-2xl font-bold text-white mb-4">Sponsor Not Found</h2>
+          <h2 className="text-2xl font-bold text-white mb-4">
+            Sponsor Not Found
+          </h2>
           <p className="text-text-muted mb-6">{error}</p>
           <Link href="/sponsors">
             <Button>Browse Sponsors</Button>
@@ -60,40 +83,39 @@ export default function SponsorDetailPage() {
 
   return (
     <div className="relative min-h-screen px-4 py-12">
-
       {/* Background */}
       <div className="absolute inset-0 -z-20 bg-[radial-gradient(circle_at_20%_30%,rgba(251,191,36,0.08),transparent_40%),radial-gradient(circle_at_80%_70%,rgba(59,130,246,0.08),transparent_40%),linear-gradient(135deg,#020617,#07152f,#020617)]" />
 
       <div className="max-w-6xl mx-auto space-y-10">
-
         {/* Header */}
         <div>
-          <Link href="/sponsors">
-            <Button variant="secondary" className="mb-4">
-              ← Back
-            </Button>
-          </Link>
+          <button
+            onClick={() => router.back()}
+            className="mb-4 text-sm text-text-muted hover:text-white"
+          >
+            ← Back
+          </button>
 
           <h1 className="text-4xl font-bold text-white mb-2">
-            {sponsor.brandName}
+            {sponsor.brandName || 'Sponsor'}
           </h1>
 
-          <p className="text-text-muted">Sponsor Profile</p>
+          <p className="text-text-muted">
+            Sponsor Profile
+          </p>
         </div>
 
         {/* Grid */}
         <div className="grid lg:grid-cols-3 gap-8">
-
-          {/* Left */}
+          {/* LEFT */}
           <div className="lg:col-span-2 space-y-6">
-
             {/* About */}
             <div className="rounded-2xl bg-white/[0.05] border border-white/10 p-6">
               <h2 className="text-xl font-semibold text-white mb-3">
                 About
               </h2>
               <p className="text-text-muted">
-                {sponsor.description}
+                {sponsor.description || 'No description available.'}
               </p>
             </div>
 
@@ -102,16 +124,23 @@ export default function SponsorDetailPage() {
               <h3 className="text-white mb-3 font-semibold">
                 Preferred Categories
               </h3>
-              <div className="flex flex-wrap gap-2">
-                {sponsor.preferredCategories.map((cat: string) => (
-                  <span
-                    key={cat}
-                    className="bg-accent-orange/20 text-accent-orange px-3 py-1 rounded-full text-sm"
-                  >
-                    {cat}
-                  </span>
-                ))}
-              </div>
+
+              {categories.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {categories.map((cat: string) => (
+                    <span
+                      key={cat}
+                      className="bg-accent-orange/20 text-accent-orange px-3 py-1 rounded-full text-sm"
+                    >
+                      {cat}
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-text-muted text-sm">
+                  No categories added
+                </p>
+              )}
             </div>
 
             {/* Audience */}
@@ -120,7 +149,7 @@ export default function SponsorDetailPage() {
                 Target Audience
               </h3>
               <p className="text-text-muted">
-                {sponsor.targetAudience}
+                {sponsor.targetAudience || 'Not specified'}
               </p>
             </div>
 
@@ -130,51 +159,70 @@ export default function SponsorDetailPage() {
                 Location Preference
               </h3>
               <p className="text-text-muted">
-                {sponsor.locationPreference}
+                {sponsor.locationPreference || 'Flexible'}
               </p>
             </div>
 
+            {/* Website */}
+            <div className="rounded-2xl bg-white/[0.05] border border-white/10 p-6">
+              <h3 className="text-white mb-3 font-semibold">
+                Website
+              </h3>
+              {sponsor.website ? (
+                <a
+                  href={sponsor.website}
+                  target="_blank"
+                  className="text-accent-orange underline"
+                >
+                  {sponsor.website}
+                </a>
+              ) : (
+                <p className="text-text-muted text-sm">
+                  Not provided
+                </p>
+              )}
+            </div>
           </div>
 
-          {/* Right Sidebar */}
+          {/* RIGHT */}
           <div className="space-y-6">
-
+            {/* Info */}
             <div className="rounded-2xl bg-white/[0.05] border border-white/10 p-6 space-y-4">
-
-              <div>
-                <p className="text-text-muted text-sm">Budget</p>
-                <p className="text-accent-orange text-2xl font-bold">
-                  {sponsor.budget}
-                </p>
-              </div>
-
               <div>
                 <p className="text-text-muted text-sm">Joined</p>
                 <p className="text-white">
-                  {new Date(sponsor.createdAt).toLocaleDateString()}
+                  {sponsor.createdAt
+                    ? new Date(sponsor.createdAt).toLocaleDateString()
+                    : 'Unknown'}
                 </p>
               </div>
 
+              <div>
+                <p className="text-text-muted text-sm">Contact</p>
+                <p className="text-white text-sm">
+                  {hasContact
+                    ? sponsor.officialEmail || sponsor.officialPhone
+                    : 'Not available'}
+                </p>
+              </div>
             </div>
 
+            {/* CTA */}
             <div className="rounded-2xl bg-white/[0.05] border border-white/10 p-6">
               <h3 className="text-lg font-semibold text-white mb-4">
-                Interested in Partnering?
+                Partnership
               </h3>
 
               <p className="text-text-muted text-sm mb-4">
-                This sponsor is open for collaboration with relevant events.
+                This sponsor is open to relevant event collaborations.
               </p>
 
-              <Button fullWidth disabled>
-                Contact Sponsor 🚀
-              </Button>
-
-              <p className="text-xs text-text-muted mt-2 text-center">
-                Feature coming soon
-              </p>
+              <Link href="/events">
+                <Button fullWidth>
+                  Explore Events
+                </Button>
+              </Link>
             </div>
-
           </div>
         </div>
       </div>

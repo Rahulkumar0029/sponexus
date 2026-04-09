@@ -46,17 +46,26 @@ export default function Home() {
               through intelligent matching based on budget, category, audience, and location.
             </p>
 
-            {/* CTA buttons */}
-            <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
-              <Link href="/register">
+            {/* Role-based CTA */}
+            <div className="mt-10 flex flex-col items-center justify-center gap-4 lg:flex-row">
+              <Link href="/events">
                 <Button variant="primary" size="lg">
-                  Get Started
+                  I am a Sponsor → Find Events
                 </Button>
               </Link>
 
-              <Link href="/events">
+              <Link href="/sponsors">
                 <Button variant="secondary" size="lg">
-                  Explore Events
+                  I am an Organizer → Find Sponsors
+                </Button>
+              </Link>
+            </div>
+
+            {/* Extra CTA */}
+            <div className="mt-4 flex flex-col items-center justify-center gap-4 sm:flex-row">
+              <Link href="/match">
+                <Button variant="ghost" size="lg">
+                  Explore Smart Matches
                 </Button>
               </Link>
             </div>
@@ -68,6 +77,85 @@ export default function Home() {
               <span>Better discovery</span>
               <span className="h-1 w-1 rounded-full bg-white/30" />
               <span>Built for organizers & sponsors</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Role-based usage section */}
+      <section className="section">
+        <div className="container-custom">
+          <div className="mx-auto mb-16 max-w-3xl text-center">
+            <h2 className="text-4xl font-bold text-white">Choose Your Path</h2>
+            <p className="mt-4 text-text-muted">
+              Sponexus is built for both sides of the sponsorship journey. Start from the path that
+              matches your goal.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 gap-8 md:grid-cols-2">
+            <div className="rounded-[28px] border border-white/10 bg-white/[0.04] p-8 backdrop-blur-xl">
+              <div className="mb-5 inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-accent-orange/15 text-3xl">
+                💼
+              </div>
+              <h3 className="text-2xl font-semibold text-white">For Sponsors</h3>
+              <p className="mt-3 leading-relaxed text-text-muted">
+                Discover events that fit your brand, audience, category, and budget goals without
+                wasting time on irrelevant opportunities.
+              </p>
+
+              <div className="mt-6 space-y-3 text-sm text-text-muted">
+                <div className="flex items-start gap-3">
+                  <span className="mt-1 h-2 w-2 rounded-full bg-accent-orange" />
+                  <span>Explore events relevant to your brand</span>
+                </div>
+                <div className="flex items-start gap-3">
+                  <span className="mt-1 h-2 w-2 rounded-full bg-accent-orange" />
+                  <span>Compare opportunities using smarter matching</span>
+                </div>
+                <div className="flex items-start gap-3">
+                  <span className="mt-1 h-2 w-2 rounded-full bg-accent-orange" />
+                  <span>Connect with organizers that match your goals</span>
+                </div>
+              </div>
+
+              <div className="mt-8">
+                <Link href="/events">
+                  <Button variant="primary">Explore Events</Button>
+                </Link>
+              </div>
+            </div>
+
+            <div className="rounded-[28px] border border-white/10 bg-white/[0.04] p-8 backdrop-blur-xl">
+              <div className="mb-5 inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-500/15 text-3xl">
+                🎤
+              </div>
+              <h3 className="text-2xl font-semibold text-white">For Organizers</h3>
+              <p className="mt-3 leading-relaxed text-text-muted">
+                Find sponsors that align with your event type, audience, location, and sponsorship
+                needs more efficiently.
+              </p>
+
+              <div className="mt-6 space-y-3 text-sm text-text-muted">
+                <div className="flex items-start gap-3">
+                  <span className="mt-1 h-2 w-2 rounded-full bg-blue-400" />
+                  <span>Discover brands open to sponsorship opportunities</span>
+                </div>
+                <div className="flex items-start gap-3">
+                  <span className="mt-1 h-2 w-2 rounded-full bg-blue-400" />
+                  <span>Review sponsor relevance using matching logic</span>
+                </div>
+                <div className="flex items-start gap-3">
+                  <span className="mt-1 h-2 w-2 rounded-full bg-blue-400" />
+                  <span>Move toward stronger event partnerships</span>
+                </div>
+              </div>
+
+              <div className="mt-8">
+                <Link href="/sponsors">
+                  <Button variant="secondary">Explore Sponsors</Button>
+                </Link>
+              </div>
             </div>
           </div>
         </div>
@@ -158,55 +246,86 @@ export default function Home() {
             </p>
           </div>
 
-          <div className="mx-auto max-w-4xl space-y-8">
-            <div className="flex gap-5 rounded-2xl border border-white/5 bg-white/[0.02] p-5">
-              <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-accent-orange text-xl font-bold text-dark-base">
+          <div className="mx-auto max-w-5xl grid grid-cols-1 gap-6 md:grid-cols-2">
+            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
+              <div className="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-full bg-accent-orange text-xl font-bold text-dark-base">
                 1
               </div>
-              <div>
-                <h3 className="mb-2 text-xl font-semibold text-text-light">Create Your Account</h3>
-                <p className="text-text-muted">
-                  Sign up as an organizer or sponsor and set up your basic profile.
-                </p>
-              </div>
+              <h3 className="mb-2 text-xl font-semibold text-text-light">Create Your Account</h3>
+              <p className="text-text-muted">
+                Sign up as an organizer or sponsor and enter your basic details to get started.
+              </p>
             </div>
 
-            <div className="flex gap-5 rounded-2xl border border-white/5 bg-white/[0.02] p-5">
-              <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-accent-orange text-xl font-bold text-dark-base">
+            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
+              <div className="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-full bg-accent-orange text-xl font-bold text-dark-base">
                 2
               </div>
-              <div>
-                <h3 className="mb-2 text-xl font-semibold text-text-light">Add Your Details</h3>
-                <p className="text-text-muted">
-                  Organizers publish events, while sponsors add budget, categories, and audience
-                  preferences.
-                </p>
-              </div>
+              <h3 className="mb-2 text-xl font-semibold text-text-light">Complete Key Details</h3>
+              <p className="text-text-muted">
+                Organizers add event requirements, while sponsors add budget, audience, and
+                category preferences.
+              </p>
             </div>
 
-            <div className="flex gap-5 rounded-2xl border border-white/5 bg-white/[0.02] p-5">
-              <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-accent-orange text-xl font-bold text-dark-base">
+            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
+              <div className="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-full bg-accent-orange text-xl font-bold text-dark-base">
                 3
               </div>
-              <div>
-                <h3 className="mb-2 text-xl font-semibold text-text-light">Get Smart Matches</h3>
-                <p className="text-text-muted">
-                  Sponexus analyzes your data and recommends the most relevant opportunities.
-                </p>
-              </div>
+              <h3 className="mb-2 text-xl font-semibold text-text-light">Get Relevant Matches</h3>
+              <p className="text-text-muted">
+                Sponexus analyzes both sides and recommends the most relevant opportunities using
+                smart matching logic.
+              </p>
             </div>
 
-            <div className="flex gap-5 rounded-2xl border border-white/5 bg-white/[0.02] p-5">
-              <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full bg-accent-orange text-xl font-bold text-dark-base">
+            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
+              <div className="mb-4 inline-flex h-12 w-12 items-center justify-center rounded-full bg-accent-orange text-xl font-bold text-dark-base">
                 4
               </div>
-              <div>
-                <h3 className="mb-2 text-xl font-semibold text-text-light">Explore and Connect</h3>
-                <p className="text-text-muted">
-                  Review opportunities, explore relevant profiles, and move toward the right
-                  sponsorship partnerships.
-                </p>
-              </div>
+              <h3 className="mb-2 text-xl font-semibold text-text-light">Explore and Connect</h3>
+              <p className="text-text-muted">
+                Review profiles, compare fit, and move toward meaningful sponsorship partnerships.
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* What you can do on Sponexus */}
+      <section className="section">
+        <div className="container-custom">
+          <div className="mx-auto mb-16 max-w-3xl text-center">
+            <h2 className="text-4xl font-bold text-white">What You Can Do on Sponexus</h2>
+            <p className="mt-4 text-text-muted">
+              Every page on the platform has a purpose so users can move from discovery to action
+              more easily.
+            </p>
+          </div>
+
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
+            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
+              <h3 className="mb-3 text-xl font-semibold text-accent-orange">Events</h3>
+              <p className="text-text-muted leading-relaxed">
+                Sponsors can explore event opportunities, compare fit, and find where their brand
+                can add value.
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
+              <h3 className="mb-3 text-xl font-semibold text-accent-orange">Sponsors</h3>
+              <p className="text-text-muted leading-relaxed">
+                Organizers can discover sponsor profiles, review budgets and audience fit, and find
+                relevant brands faster.
+              </p>
+            </div>
+
+            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-6">
+              <h3 className="mb-3 text-xl font-semibold text-accent-orange">Match</h3>
+              <p className="text-text-muted leading-relaxed">
+                Both sides can see smarter recommendations powered by category, audience, budget,
+                and location compatibility.
+              </p>
             </div>
           </div>
         </div>
@@ -234,7 +353,7 @@ export default function Home() {
               </Link>
               <Link href="/match">
                 <Button variant="secondary" size="lg">
-                  See How Matching Works
+                  See Smart Matches
                 </Button>
               </Link>
             </div>

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { connectDB } from '@/lib/db';
 import { UserModel } from '@/models/User';
+import { Sponsor } from '@/models/Sponsor';
 import { hashPassword, generateToken } from '@/lib/auth';
 import { validateRegistration } from '@/lib/validations';
 import { RegisterInput } from '@/types/user';
@@ -12,6 +13,8 @@ export async function POST(request: NextRequest) {
     const body: RegisterInput = await request.json();
     const { email, password, confirmPassword, role, firstName, lastName, companyName } = body;
 
+    const normalizedRole = role.toUpperCase() as 'ORGANIZER' | 'SPONSOR';
+
     // Validation
     const validation = validateRegistration({
       email,
@@ -20,7 +23,7 @@ export async function POST(request: NextRequest) {
       firstName,
       lastName,
       companyName,
-      role,
+      role: normalizedRole,
     });
 
     if (!validation.isValid) {
@@ -50,15 +53,30 @@ export async function POST(request: NextRequest) {
     const user = await UserModel.create({
       email: email.toLowerCase(),
       password: hashedPassword,
-      role: role.toUpperCase(),
+      role: normalizedRole,
       firstName: firstName.trim(),
       lastName: lastName.trim(),
       companyName: companyName.trim(),
     });
 
+    // If sponsor, create a basic sponsor profile shell
+    if (normalizedRole === 'SPONSOR') {
+      await Sponsor.create({
+        ownerId: String(user._id),
+        brandName: companyName.trim(),
+        description: '',
+        preferredCategories: ['Technology'],
+        targetAudience: '',
+        locationPreference: '',
+        website: '',
+        officialEmail: email.toLowerCase(),
+        officialPhone: '',
+      });
+    }
+
     // Generate token
     const token = generateToken({
-      userId: user._id,
+      userId: String(user._id),
       email: user.email,
       role: user.role,
     });

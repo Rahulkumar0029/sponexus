@@ -6,6 +6,7 @@ import { Input } from '@/components/Input';
 import { Button } from '@/components/Button';
 
 const eventTypes = ['CONFERENCE', 'WORKSHOP', 'WEBINAR', 'FESTIVAL', 'MEETUP', 'OTHER'];
+
 const categories = [
   'Technology',
   'Finance',
@@ -16,7 +17,16 @@ const categories = [
   'Marketing',
   'Sustainability',
 ];
+
 const audiences = ['Students', 'Professionals', 'Entrepreneurs', 'General Public', 'Developers'];
+
+type UploadedMedia = {
+  url: string;
+  publicId: string;
+  type: 'image' | 'video';
+  title?: string;
+  uploadedAt?: string | Date;
+};
 
 export default function CreateEventPage() {
   const router = useRouter();
@@ -71,7 +81,6 @@ export default function CreateEventPage() {
     setFormData((prev) => {
       const updated = { ...prev, [name]: value };
 
-      // If startDate changes and endDate is now invalid, reset endDate
       if (name === 'startDate' && updated.endDate && updated.endDate < value) {
         updated.endDate = '';
       }
@@ -122,6 +131,28 @@ export default function CreateEventPage() {
     return true;
   };
 
+  const uploadFiles = async (files: File[]): Promise<UploadedMedia[]> => {
+    if (!files.length) return [];
+
+    const uploadFormData = new FormData();
+    files.forEach((file) => {
+      uploadFormData.append('files', file);
+    });
+
+    const uploadRes = await fetch('/api/upload', {
+      method: 'POST',
+      body: uploadFormData,
+    });
+
+    const uploadData = await uploadRes.json();
+
+    if (!uploadRes.ok || !uploadData.success) {
+      throw new Error(uploadData.message || 'File upload failed');
+    }
+
+    return uploadData.files || [];
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -144,24 +175,24 @@ export default function CreateEventPage() {
     setLoading(true);
 
     try {
-      // IMPORTANT:
-      // This currently sends metadata only.
-      // File uploads must later be connected to an upload API / storage service.
+      const uploadedVenueImages = await uploadFiles(venueImages);
+      const uploadedPastMedia = await uploadFiles(pastEventMedia);
+
       const payload = {
-        ...formData,
-        organizerId: user._id,
+        title: formData.title,
+        description: formData.description,
+        categories: formData.categories,
+        targetAudience: formData.targetAudience,
+        location: formData.location,
         budget: parseInt(formData.budget, 10),
+        startDate: formData.startDate,
+        endDate: formData.endDate,
         attendeeCount: parseInt(formData.attendeeCount, 10) || 100,
-        venueImagesMeta: venueImages.map((file) => ({
-          name: file.name,
-          type: file.type,
-          size: file.size,
-        })),
-        pastEventMediaMeta: pastEventMedia.map((file) => ({
-          name: file.name,
-          type: file.type,
-          size: file.size,
-        })),
+        eventType: formData.eventType,
+        organizerId: user._id,
+        coverImage: formData.image || uploadedVenueImages[0]?.url || '',
+        venueImages: uploadedVenueImages,
+        pastEventMedia: uploadedPastMedia,
       };
 
       const res = await fetch('/api/events/create', {
@@ -349,9 +380,7 @@ export default function CreateEventPage() {
 
             <div className="grid grid-cols-1 gap-5">
               <div>
-                <label className="block mb-2 text-sm font-medium text-white">
-                  Venue Images
-                </label>
+                <label className="block mb-2 text-sm font-medium text-white">Venue Images</label>
                 <input
                   type="file"
                   accept="image/*"

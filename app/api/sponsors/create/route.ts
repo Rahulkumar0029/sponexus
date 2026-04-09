@@ -1,77 +1,148 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getServerSession } from 'next-auth';
+import mongoose from 'mongoose';
 import { connectDB } from '@/lib/db';
+import { SponsorshipModel } from '@/models/Sponsorship';
 import { Sponsor } from '@/models/Sponsor';
-import { validateSponsor } from '@/lib/validations';
-import { authOptions } from '@/lib/nextAuthOptions';
 
 export async function POST(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions);
-
-    if (!session?.user) {
-      return NextResponse.json(
-        { success: false, message: 'Authentication required' },
-        { status: 401 }
-      );
-    }
-
-    const user = session.user as any;
-
-    if (user.role !== 'SPONSOR') {
-      return NextResponse.json(
-        { success: false, message: 'Only sponsors can create sponsor profiles' },
-        { status: 403 }
-      );
-    }
+    await connectDB();
 
     const body = await request.json();
 
-    const validation = validateSponsor(body);
-    if (!validation.success) {
+    const {
+      sponsorOwnerId,
+      sponsorshipTitle,
+      sponsorshipType,
+      budget,
+      category,
+      targetAudience,
+      city,
+      locationPreference,
+      campaignGoal,
+      deliverablesExpected,
+      customMessage,
+      bannerRequirement,
+      stallRequirement,
+      mikeAnnouncement,
+      socialMediaMention,
+      productDisplay,
+      contactPersonName,
+      contactPhone,
+    } = body;
+
+    if (!sponsorOwnerId || !mongoose.Types.ObjectId.isValid(sponsorOwnerId)) {
       return NextResponse.json(
-        { success: false, message: validation.message || 'Invalid sponsor data' },
+        { success: false, message: 'Invalid sponsor owner ID' },
         { status: 400 }
       );
     }
 
-    await connectDB();
+    const sponsorProfile = await Sponsor.findOne({ ownerId: String(sponsorOwnerId) });
 
-    const existingSponsor = await Sponsor.findOne({ ownerId: user.id });
-    if (existingSponsor) {
+    if (!sponsorProfile) {
       return NextResponse.json(
-        { success: false, message: 'You already have a sponsor profile' },
+        { success: false, message: 'Sponsor profile not found. Complete profile first.' },
         { status: 400 }
       );
     }
 
-    const sponsor = await Sponsor.create({
-      ...body,
-      ownerId: user.id,
+    if (!sponsorshipTitle?.trim()) {
+      return NextResponse.json(
+        { success: false, message: 'Sponsorship title is required' },
+        { status: 400 }
+      );
+    }
+
+    if (!sponsorshipType?.trim()) {
+      return NextResponse.json(
+        { success: false, message: 'Sponsorship type is required' },
+        { status: 400 }
+      );
+    }
+
+    if (!budget || Number.isNaN(Number(budget)) || Number(budget) < 0) {
+      return NextResponse.json(
+        { success: false, message: 'Valid budget is required' },
+        { status: 400 }
+      );
+    }
+
+    if (!category?.trim()) {
+      return NextResponse.json(
+        { success: false, message: 'Category is required' },
+        { status: 400 }
+      );
+    }
+
+    if (!targetAudience?.trim()) {
+      return NextResponse.json(
+        { success: false, message: 'Target audience is required' },
+        { status: 400 }
+      );
+    }
+
+    if (!locationPreference?.trim()) {
+      return NextResponse.json(
+        { success: false, message: 'Location preference is required' },
+        { status: 400 }
+      );
+    }
+
+    if (!campaignGoal?.trim()) {
+      return NextResponse.json(
+        { success: false, message: 'Campaign goal is required' },
+        { status: 400 }
+      );
+    }
+
+    if (!contactPhone?.trim()) {
+      return NextResponse.json(
+        { success: false, message: 'Contact phone is required' },
+        { status: 400 }
+      );
+    }
+
+    const sponsorship = await SponsorshipModel.create({
+      sponsorOwnerId,
+      sponsorProfileId: sponsorProfile._id,
+
+      sponsorshipTitle: sponsorshipTitle.trim(),
+      sponsorshipType: sponsorshipType.trim(),
+      budget: Number(budget),
+      category: category.trim(),
+      targetAudience: targetAudience.trim(),
+      city: city?.trim() || '',
+      locationPreference: locationPreference.trim(),
+      campaignGoal: campaignGoal.trim(),
+      deliverablesExpected: deliverablesExpected?.trim() || '',
+      customMessage: customMessage?.trim() || '',
+
+      bannerRequirement: Boolean(bannerRequirement),
+      stallRequirement: Boolean(stallRequirement),
+      mikeAnnouncement: Boolean(mikeAnnouncement),
+      socialMediaMention: Boolean(socialMediaMention),
+      productDisplay: Boolean(productDisplay),
+
+      contactPersonName: contactPersonName?.trim() || '',
+      contactPhone: contactPhone.trim(),
+
+      status: 'active',
     });
 
     return NextResponse.json(
       {
         success: true,
-        message: 'Sponsor profile created successfully',
-        sponsor: {
-          _id: sponsor._id,
-          brandName: sponsor.brandName,
-          description: sponsor.description,
-          budget: sponsor.budget,
-          preferredCategories: sponsor.preferredCategories,
-          targetAudience: sponsor.targetAudience,
-          locationPreference: sponsor.locationPreference,
-          createdAt: sponsor.createdAt,
-        },
+        message: 'Sponsorship created successfully',
+        sponsorship,
       },
       { status: 201 }
     );
   } catch (error) {
-    console.error('Error creating sponsor:', error);
+    console.error('Error creating sponsorship:', error);
 
     return NextResponse.json(
-      { success: false, message: 'Internal server error' },
+      { success: false, message: 'Failed to create sponsorship' },
       { status: 500 }
     );
   }

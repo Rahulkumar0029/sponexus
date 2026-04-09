@@ -1,44 +1,121 @@
 import mongoose from 'mongoose';
 
-const sponsorSchema = new mongoose.Schema(
+const sponsorshipSchema = new mongoose.Schema(
   {
-    ownerId: {
-      type: String,
-      required: [true, 'Owner ID is required'],
-      unique: true,
+    sponsorOwnerId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+      required: true,
+      index: true,
     },
-    brandName: {
+
+    sponsorProfileId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'Sponsor',
+      required: true,
+      index: true,
+    },
+
+    // 🔥 Public Sponsorship Post
+    sponsorshipTitle: {
       type: String,
-      required: [true, 'Brand name is required'],
+      required: true,
+      trim: true,
+      maxlength: 120,
+    },
+
+    sponsorshipType: {
+      type: String,
+      required: true,
       trim: true,
     },
-    description: {
-      type: String,
-      required: [true, 'Description is required'],
-      trim: true,
-    },
+
     budget: {
-      type: String,
-      required: [true, 'Budget is required'],
-      trim: true,
-    },
-    preferredCategories: {
-      type: [String],
-      required: [true, 'Preferred categories are required'],
+      type: Number,
+      required: true,
+      min: 0,
       validate: {
-        validator: (arr: unknown) => Array.isArray(arr) && arr.length > 0,
-        message: 'At least one preferred category is required',
+        validator: Number.isFinite,
+        message: 'Budget must be a valid number',
       },
     },
+
+    category: {
+      type: String,
+      required: true,
+      trim: true,
+      index: true,
+    },
+
     targetAudience: {
       type: String,
-      required: [true, 'Target audience is required'],
+      required: true,
       trim: true,
     },
+
+    city: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+
     locationPreference: {
       type: String,
-      required: [true, 'Location preference is required'],
+      required: true,
       trim: true,
+      index: true,
+    },
+
+    campaignGoal: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+
+    deliverablesExpected: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+
+    customMessage: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+
+    // 🔥 Requirements
+    bannerRequirement: { type: Boolean, default: false },
+    stallRequirement: { type: Boolean, default: false },
+    mikeAnnouncement: { type: Boolean, default: false },
+    socialMediaMention: { type: Boolean, default: false },
+    productDisplay: { type: Boolean, default: false },
+
+    // 📞 Contact
+    contactPersonName: {
+      type: String,
+      trim: true,
+      default: '',
+    },
+
+    contactPhone: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+
+    // 🔄 Lifecycle
+    status: {
+      type: String,
+      enum: ['active', 'paused', 'closed'],
+      default: 'active',
+      index: true,
+    },
+
+    expiresAt: {
+      type: Date,
+      default: null,
+      index: true,
     },
   },
   {
@@ -46,7 +123,14 @@ const sponsorSchema = new mongoose.Schema(
   }
 );
 
-sponsorSchema.index({ ownerId: 1 });
-sponsorSchema.index({ preferredCategories: 1 });
+// 🔥 PERFORMANCE INDEXES (FINAL)
+sponsorshipSchema.index({ sponsorOwnerId: 1, createdAt: -1 });
+sponsorshipSchema.index({ status: 1, createdAt: -1 });
 
-export const Sponsor = mongoose.models.Sponsor || mongoose.model('Sponsor', sponsorSchema);
+// marketplace filters
+sponsorshipSchema.index({ category: 1, locationPreference: 1, status: 1 });
+sponsorshipSchema.index({ status: 1, expiresAt: 1 });
+
+export const SponsorshipModel =
+  mongoose.models.Sponsorship ||
+  mongoose.model('Sponsorship', sponsorshipSchema);

@@ -60,49 +60,29 @@ export default function SponsorDashboardPage() {
     }
   }, [authLoading, user, router]);
 
-  // ✅ Load sponsor profile from saved user data, not from match results
   useEffect(() => {
-    if (!user || user.role !== 'SPONSOR') return;
-
-    setProfileLoading(true);
-    setProfileError('');
-
-    try {
-      const profile: SponsorProfile = {
-        brandName: (user as any).brandName || '',
-        preferredCategories: (user as any).preferredCategories || [],
-        targetAudience:
-          (user as any).sponsorTargetAudience ||
-          (user as any).targetAudience ||
-          '',
-        locationPreference: (user as any).locationPreference || '',
-        website: (user as any).website || '',
-        officialEmail: (user as any).officialEmail || '',
-        officialPhone: (user as any).officialPhone || '',
-      };
-
-      setSponsorProfile(profile);
-    } catch (err: any) {
-      setProfileError(err?.message || 'Unable to load sponsor profile');
-      setSponsorProfile(null);
-    } finally {
-      setProfileLoading(false);
-    }
-  }, [user]);
-
-  // ✅ Matches are separate from profile loading
-  useEffect(() => {
-    const loadMatches = async () => {
+    const loadSponsorDashboard = async () => {
       if (!user || user.role !== 'SPONSOR') return;
 
+      setProfileLoading(true);
+      setProfileError('');
+
       try {
-        await findMatches({ sponsorOwnerId: user._id });
-      } catch {
-        // keep match error inside useMatch
+        const result = await findMatches({ sponsorOwnerId: user._id });
+
+        if (result?.success && result.matches?.length > 0) {
+          setSponsorProfile((result.matches[0] as any)?.sponsor || null);
+        } else {
+          setSponsorProfile(null);
+        }
+      } catch (err: any) {
+        setProfileError(err?.message || 'Unable to load sponsor dashboard data');
+      } finally {
+        setProfileLoading(false);
       }
     };
 
-    loadMatches();
+    loadSponsorDashboard();
   }, [user, findMatches]);
 
   const profileCompletion = useMemo(() => {
@@ -173,14 +153,17 @@ export default function SponsorDashboardPage() {
 
   return (
     <div className="relative min-h-screen px-4 py-12">
+      {/* Background */}
       <div className="absolute inset-0 -z-20 bg-[radial-gradient(circle_at_20%_30%,rgba(251,191,36,0.08),transparent_40%),radial-gradient(circle_at_80%_70%,rgba(59,130,246,0.08),transparent_40%),linear-gradient(135deg,#020617,#07152f,#020617)]" />
 
+      {/* Glow */}
       <div className="absolute inset-0 -z-10 pointer-events-none">
         <div className="absolute top-20 left-10 h-72 w-72 rounded-full bg-blue-500/10 blur-3xl" />
         <div className="absolute bottom-10 right-10 h-80 w-80 rounded-full bg-amber-500/10 blur-3xl" />
       </div>
 
       <div className="container-custom max-w-7xl">
+        {/* Header */}
         <div className="mb-10 flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <p className="mb-3 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-text-muted backdrop-blur-md">
@@ -210,6 +193,7 @@ export default function SponsorDashboardPage() {
           </div>
         </div>
 
+        {/* Summary cards */}
         <div className="mb-12 grid grid-cols-1 gap-6 md:grid-cols-3">
           <div className="rounded-[24px] border border-white/10 bg-white/[0.05] p-6 backdrop-blur-xl">
             <p className="text-sm text-text-muted">Role</p>
@@ -240,6 +224,7 @@ export default function SponsorDashboardPage() {
           </div>
         </div>
 
+        {/* Quick actions */}
         <div className="mb-12">
           <div className="mb-6">
             <h2 className="text-2xl font-bold text-white">Quick Actions</h2>
@@ -268,7 +253,8 @@ export default function SponsorDashboardPage() {
                 My Sponsor Profile
               </h3>
               <p className="mt-3 text-sm leading-relaxed text-text-muted">
-                Review your saved sponsor details and update them anytime from your settings.
+                Review your saved sponsor details and update them anytime from your
+                settings.
               </p>
               <div className="mt-6">
                 <Link href="/settings">
@@ -282,7 +268,8 @@ export default function SponsorDashboardPage() {
             <div className="rounded-[24px] border border-white/10 bg-white/[0.05] p-6 backdrop-blur-xl">
               <h3 className="text-xl font-semibold text-white">View Matches</h3>
               <p className="mt-3 text-sm leading-relaxed text-text-muted">
-                See your smartest recommended upcoming event opportunities based on your profile.
+                See your smartest recommended upcoming event opportunities based on
+                your profile.
               </p>
               <div className="mt-6">
                 <Link href="/match">
@@ -295,6 +282,7 @@ export default function SponsorDashboardPage() {
           </div>
         </div>
 
+        {/* Profile overview */}
         <div className="mb-12 rounded-[24px] border border-white/10 bg-white/[0.05] p-6 backdrop-blur-xl">
           <div className="mb-5 flex items-center justify-between gap-4">
             <div>
@@ -398,6 +386,7 @@ export default function SponsorDashboardPage() {
           )}
         </div>
 
+        {/* Top event matches */}
         <div>
           <div className="mb-6 flex items-center justify-between gap-4">
             <div>

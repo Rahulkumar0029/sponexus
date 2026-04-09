@@ -12,6 +12,7 @@ export async function GET(
 
     const eventId = params.id;
 
+    // ✅ Validate ID
     if (!eventId || !mongoose.Types.ObjectId.isValid(eventId)) {
       return NextResponse.json(
         { success: false, message: 'Invalid event ID' },
@@ -19,11 +20,14 @@ export async function GET(
       );
     }
 
-    const event = await EventModel.findById(eventId).populate(
-      'organizerId',
-      'firstName lastName companyName'
-    );
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
 
+    const event = await EventModel.findById(eventId)
+      .populate('organizerId', 'firstName lastName companyName')
+      .lean();
+
+    // ❌ Not found
     if (!event) {
       return NextResponse.json(
         { success: false, message: 'Event not found' },
@@ -31,10 +35,27 @@ export async function GET(
       );
     }
 
+    // 🚫 Prevent showing draft events publicly
+    if (event.status === 'DRAFT') {
+      return NextResponse.json(
+        { success: false, message: 'Event not available' },
+        { status: 403 }
+      );
+    }
+
+    // 📊 Add computed fields (VERY IMPORTANT for frontend)
+    const isPast = event.endDate ? new Date(event.endDate) < today : false;
+    const isActive =
+      event.status === 'PUBLISHED' || event.status === 'ONGOING';
+
     return NextResponse.json(
       {
         success: true,
-        event,
+        event: {
+          ...event,
+          isPast,
+          isActive,
+        },
       },
       { status: 200 }
     );
