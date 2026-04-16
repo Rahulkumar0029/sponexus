@@ -112,6 +112,41 @@ const eventSchema = new mongoose.Schema(
       trim: true,
     },
 
+
+    image: {
+      type: String,
+      default: '',
+      trim: true,
+    },
+
+
+
+    images: {
+      type: [String],
+      default: [],
+      validate: {
+        validator: (arr: unknown) =>
+          Array.isArray(arr) && arr.every((item) => typeof item === 'string'),
+        message: 'Images must be an array of URLs',
+      },
+    },
+
+    video: {
+      type: String,
+      default: '',
+      trim: true,
+    },
+
+    organizerProvides: {
+      type: [String],
+      default: [],
+      validate: {
+        validator: (arr: unknown) =>
+          Array.isArray(arr) && arr.length <= 5 && arr.every((item) => typeof item === 'string'),
+        message: 'Organizer provides must be up to 5 items',
+      },
+    },
+
     // Venue images visible only on this event page
     venueImages: {
       type: [mediaItemSchema],

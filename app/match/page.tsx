@@ -52,7 +52,12 @@ export default function MatchPage() {
   const [bootLoading, setBootLoading] = useState(true);
   const [emptyMessage, setEmptyMessage] = useState("");
   const [activeSourceLabel, setActiveSourceLabel] = useState("");
+  const [activeSourceId, setActiveSourceId] = useState("");
   const [pageError, setPageError] = useState("");
+  const [minScoreFilter, setMinScoreFilter] = useState(40);
+  const [categoryFilter, setCategoryFilter] = useState("");
+  const [locationFilter, setLocationFilter] = useState("");
+  const [dealLoadingId, setDealLoadingId] = useState("");
 
   const { matches, loading, error, findMatches , resetMatches } = useMatch();
 
@@ -114,12 +119,14 @@ export default function MatchPage() {
       if (data.events?.length > 0) {
         const latestEvent = data.events[0];
         setActiveSourceLabel(latestEvent.title || "Your latest event");
+        setActiveSourceId(latestEvent._id || "");
         setEmptyMessage("");
         await findMatches({ eventId: latestEvent._id });
         return;
       }
 
       setActiveSourceLabel("");
+      setActiveSourceId("");
       setEmptyMessage("Create your first event to receive sponsor recommendations.");
       resetMatches();
     },
@@ -130,14 +137,33 @@ export default function MatchPage() {
     async (userId: string) => {
       if (!sponsorProfileComplete) {
         setActiveSourceLabel("");
+        setActiveSourceId("");
         setEmptyMessage("Complete your sponsor profile in Settings to receive event recommendations.");
         resetMatches();
         return;
       }
 
-      setActiveSourceLabel(
-        sponsorProfile?.brandName || sponsorProfile?.companyName || "Your sponsor profile"
+      const sponsorshipRes = await fetch(
+        `/api/sponsorships/get?sponsorOwnerId=${userId}&status=active&limit=1`,
+        {
+          method: "GET",
+          credentials: "include",
+          cache: "no-store",
+        }
       );
+      const sponsorshipData = await sponsorshipRes.json();
+
+      const latestSponsorship = sponsorshipData?.data?.[0];
+      if (!latestSponsorship?._id) {
+        setActiveSourceLabel("");
+        setActiveSourceId("");
+        setEmptyMessage("Create an active sponsorship post to unlock event matches.");
+        resetMatches();
+        return;
+      }
+
+      setActiveSourceLabel(latestSponsorship.sponsorshipTitle || "Your latest sponsorship");
+      setActiveSourceId(latestSponsorship._id);
       setEmptyMessage("");
       await findMatches({ sponsorOwnerId: userId });
     },
@@ -231,15 +257,75 @@ export default function MatchPage() {
 
   const stepOneHref = useMemo(() => {
     if (isOrganizer) return "/events/create";
-    if (isSponsor) return "/settings";
+    if (isSponsor) return "/sponsorships/create";
     return "/login";
   }, [isOrganizer, isSponsor]);
 
   const stepOneButton = useMemo(() => {
     if (isOrganizer) return "Create Event";
-    if (isSponsor) return sponsorProfileComplete ? "Manage Profile" : "Complete Profile";
+    if (isSponsor) return "Sponsor Now";
     return "Log In";
-  }, [isOrganizer, isSponsor, sponsorProfileComplete]);
+  }, [isOrganizer, isSponsor]);
+
+  const visibleMatches = useMemo(() => {
+    return matches.filter((match) => {
+      if (match.score < minScoreFilter) return false;
+
+      if (categoryFilter.trim()) {
+        const categoryText = isSponsor
+          ? (match as EventMatchResult).event?.categories?.join(" ")
+          : (match as SponsorMatchResult).sponsor?.preferredCategories?.join(" ");
+
+        if (!categoryText?.toLowerCase().includes(categoryFilter.toLowerCase())) {
+          return false;
+        }
+      }
+
+      if (locationFilter.trim()) {
+        const locationText = isSponsor
+          ? (match as EventMatchResult).event?.location || ""
+          : ((match as SponsorMatchResult).sponsor?.preferredLocations || []).join(" ");
+
+        if (!locationText.toLowerCase().includes(locationFilter.toLowerCase())) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+  }, [matches, minScoreFilter, categoryFilter, locationFilter, isSponsor]);
+
+  const handleCreateDealFromMatch = async (match: EventMatchResult) => {
+    if (!isSponsor || !user?._id || !activeSourceId) return;
+
+    try {
+      setDealLoadingId(match.event._id || "");
+      const res = await fetch("/api/deals", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          organizerId: match.event.organizerId,
+          sponsorId: user._id,
+          eventId: match.event._id,
+          sponsorshipId: activeSourceId,
+          initiatedBy: "sponsor",
+          proposedAmount: match.event.budget || 0,
+          message: `Interested based on ${match.score}% match score.`,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || "Failed to start deal");
+      }
+
+      router.push("/deals");
+    } catch (err: any) {
+      setPageError(err?.message || "Failed to create deal");
+    } finally {
+      setDealLoadingId("");
+    }
+  };
 
   if (bootLoading) {
     return (
@@ -281,11 +367,38 @@ export default function MatchPage() {
 
       <div className="container-custom max-w-5xl">
         <div className="mb-12 text-center">
-          <h1 className="mb-4 text-5xl font-bold gradient-text">Smart Matching Engine</h1>
+          <h1 className="mb-4 text-5xl font-bold gradient-text">Your Best Matches</h1>
           <p className="mx-auto max-w-2xl text-lg text-text-muted">
-            Sponexus connects organizers and sponsors using category, audience, and
-            location fit built on real profile and event data.
+            Based on your event or sponsorship preferences, ranked by fit and deal potential.
           </p>
+        </div>
+
+        <div className="mb-8 grid grid-cols-1 gap-4 rounded-2xl border border-white/10 bg-white/[0.05] p-4 md:grid-cols-3">
+          <input
+            type="text"
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value)}
+            placeholder="Filter by category"
+            className="rounded-xl border border-white/10 bg-dark-layer px-4 py-3 text-sm text-text-light outline-none"
+          />
+          <input
+            type="text"
+            value={locationFilter}
+            onChange={(e) => setLocationFilter(e.target.value)}
+            placeholder="Filter by location"
+            className="rounded-xl border border-white/10 bg-dark-layer px-4 py-3 text-sm text-text-light outline-none"
+          />
+          <select
+            value={minScoreFilter}
+            onChange={(e) => setMinScoreFilter(Number(e.target.value))}
+            className="rounded-xl border border-white/10 bg-dark-layer px-4 py-3 text-sm text-text-light outline-none"
+          >
+            <option value={30}>Match score: 30%+</option>
+            <option value={40}>Match score: 40%+</option>
+            <option value={50}>Match score: 50%+</option>
+            <option value={60}>Match score: 60%+</option>
+            <option value={70}>Match score: 70%+</option>
+          </select>
         </div>
 
         <div className="mb-12 grid grid-cols-1 gap-8 md:grid-cols-2">
@@ -367,9 +480,9 @@ export default function MatchPage() {
           </div>
         )}
 
-        {!loading && matches.length > 0 && (
+        {!loading && visibleMatches.length > 0 && (
           <div className="grid gap-6 lg:grid-cols-2">
-            {matches.map((match, index) => (
+            {visibleMatches.map((match, index) => (
               <div
                 key={`${index}-${match.score}`}
                 className={`relative overflow-hidden rounded-2xl border bg-white/[0.05] backdrop-blur-xl ${
@@ -445,13 +558,28 @@ export default function MatchPage() {
                       </p>
                     </div>
                   </div>
+
+                  {isSponsor && (
+                    <div className="flex flex-wrap gap-3">
+                      <Button
+                        size="sm"
+                        onClick={() => handleCreateDealFromMatch(match as EventMatchResult)}
+                        loading={dealLoadingId === (match as EventMatchResult).event?._id}
+                      >
+                        Start Deal
+                      </Button>
+                      <Link href={`/events/${(match as EventMatchResult).event?._id}`}>
+                        <Button size="sm" variant="secondary">View Details</Button>
+                      </Link>
+                    </div>
+                  )}
                 </div>
               </div>
             ))}
           </div>
         )}
 
-        {!loading && matches.length === 0 && emptyMessage && (
+        {!loading && visibleMatches.length === 0 && emptyMessage && (
           <EmptyState
             title="No matches available yet"
             description={emptyMessage}
@@ -460,7 +588,7 @@ export default function MatchPage() {
           />
         )}
 
-        {!loading && matches.length === 0 && !emptyMessage && !error && !pageError && (
+        {!loading && visibleMatches.length === 0 && !emptyMessage && !error && !pageError && (
           <EmptyState
             title="No matches found"
             description={

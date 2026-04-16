@@ -88,11 +88,7 @@ export default function LoginPage() {
 
       localStorage.setItem('user', JSON.stringify(user));
 
-      router.push(
-        user.role === 'ORGANIZER'
-          ? '/dashboard/organizer'
-          : '/dashboard/sponsor'
-      );
+      router.push('/dashboard');
     } catch (err: any) {
       setGeneralError(err?.message || 'Something went wrong.');
     } finally {

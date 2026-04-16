@@ -17,14 +17,23 @@ export default function DashboardRedirectPage() {
     }
 
     if (user.role === 'ORGANIZER') {
-      router.replace('/dashboard/organizer');
-    } else {
-      router.replace('/dashboard/sponsor');
+      const organizerReady = Boolean(
+        user.organizationName?.trim() &&
+          user.eventFocus?.trim() &&
+          user.organizerTargetAudience?.trim() &&
+          user.organizerLocation?.trim() &&
+          user.phone?.trim()
+      );
+
+      router.replace(organizerReady ? '/dashboard/organizer' : '/settings');
+      return;
     }
+
+    router.replace('/dashboard/sponsor');
   }, [user, loading, router]);
 
   return (
-    <div className="min-h-screen flex items-center justify-center text-text-muted">
+    <div className="flex min-h-screen items-center justify-center text-text-muted">
       Redirecting to your dashboard...
     </div>
   );

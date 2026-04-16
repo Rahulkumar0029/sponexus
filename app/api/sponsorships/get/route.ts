@@ -14,6 +14,7 @@ export async function GET(req: NextRequest) {
     const location = searchParams.get("location");
     const status = searchParams.get("status") || "active";
     const q = searchParams.get("q");
+    const sponsorOwnerId = searchParams.get("sponsorOwnerId");
 
     const page = Number(searchParams.get("page") || 1);
     const limit = Math.min(Number(searchParams.get("limit") || 12), 50);
@@ -39,6 +40,10 @@ export async function GET(req: NextRequest) {
         { targetAudience: { $regex: q, $options: "i" } },
         { category: { $regex: q, $options: "i" } },
       ];
+    }
+
+    if (sponsorOwnerId) {
+      query.sponsorOwnerId = sponsorOwnerId;
     }
 
     // 📦 Fetch sponsorships
