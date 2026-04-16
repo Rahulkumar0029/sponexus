@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server';
-import mongoose from 'mongoose';
-import { connectDB } from '@/lib/db';
-import { Sponsor } from '@/models/Sponsor';
+import { NextRequest, NextResponse } from "next/server";
+import mongoose from "mongoose";
+
+import { connectDB } from "@/lib/db";
+import Sponsor from "@/models/Sponsor";
 
 export async function GET(
   _request: NextRequest,
@@ -12,7 +13,7 @@ export async function GET(
 
     if (!id || !mongoose.Types.ObjectId.isValid(id)) {
       return NextResponse.json(
-        { success: false, message: 'Invalid sponsor ID' },
+        { success: false, message: "Invalid sponsor ID" },
         { status: 400 }
       );
     }
@@ -23,7 +24,7 @@ export async function GET(
 
     if (!sponsor) {
       return NextResponse.json(
-        { success: false, message: 'Sponsor not found' },
+        { success: false, message: "Sponsor not found" },
         { status: 404 }
       );
     }
@@ -31,15 +32,15 @@ export async function GET(
     return NextResponse.json(
       {
         success: true,
-        sponsor,
+        data: sponsor,
       },
       { status: 200 }
     );
   } catch (error) {
-    console.error('Error fetching sponsor:', error);
+    console.error("Error fetching sponsor:", error);
 
     return NextResponse.json(
-      { success: false, message: 'Failed to fetch sponsor' },
+      { success: false, message: "Failed to fetch sponsor" },
       { status: 500 }
     );
   }

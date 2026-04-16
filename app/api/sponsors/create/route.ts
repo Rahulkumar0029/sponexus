@@ -1,148 +1,157 @@
-import { NextRequest, NextResponse } from 'next/server';
-import mongoose from 'mongoose';
-import { connectDB } from '@/lib/db';
-import { SponsorshipModel } from '@/models/Sponsorship';
-import { Sponsor } from '@/models/Sponsor';
+import { NextRequest, NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
+
+import { connectDB } from "@/lib/db";
+import Sponsor from "@/models/Sponsor";
+import User from "@/models/User";
+import { authOptions } from "@/lib/nextAuthOptions";
+
+function normalizeArray(value: any): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.map((v) => String(v).trim()).filter(Boolean);
+}
 
 export async function POST(request: NextRequest) {
   try {
     await connectDB();
 
+    // 🔐 AUTH CHECK
+    const session = await getServerSession(authOptions);
+
+    if (!session?.user?.email) {
+      return NextResponse.json(
+        { success: false, message: "Authentication required" },
+        { status: 401 }
+      );
+    }
+
+    // 🔍 GET USER FROM DB (DO NOT TRUST SESSION ONLY)
+    const user = await User.findOne({ email: session.user.email });
+
+    if (!user) {
+      return NextResponse.json(
+        { success: false, message: "User not found" },
+        { status: 404 }
+      );
+    }
+
+    if (user.role !== "SPONSOR") {
+      return NextResponse.json(
+        { success: false, message: "Only sponsors can create profile" },
+        { status: 403 }
+      );
+    }
+
     const body = await request.json();
 
     const {
-      sponsorOwnerId,
-      sponsorshipTitle,
-      sponsorshipType,
-      budget,
-      category,
+      brandName,
+      companyName,
+      website,
+      officialEmail,
+      phone,
+      industry,
+      companySize,
+      about,
+      logoUrl,
       targetAudience,
-      city,
-      locationPreference,
-      campaignGoal,
-      deliverablesExpected,
-      customMessage,
-      bannerRequirement,
-      stallRequirement,
-      mikeAnnouncement,
-      socialMediaMention,
-      productDisplay,
-      contactPersonName,
-      contactPhone,
+      preferredCategories,
+      preferredLocations,
+      sponsorshipInterests,
+      instagramUrl,
+      linkedinUrl,
     } = body;
 
-    if (!sponsorOwnerId || !mongoose.Types.ObjectId.isValid(sponsorOwnerId)) {
+    // 🔴 VALIDATION
+    if (!brandName?.trim()) {
       return NextResponse.json(
-        { success: false, message: 'Invalid sponsor owner ID' },
+        { success: false, message: "Brand name is required" },
         { status: 400 }
       );
     }
 
-    const sponsorProfile = await Sponsor.findOne({ ownerId: String(sponsorOwnerId) });
-
-    if (!sponsorProfile) {
+    if (!companyName?.trim()) {
       return NextResponse.json(
-        { success: false, message: 'Sponsor profile not found. Complete profile first.' },
+        { success: false, message: "Company name is required" },
         { status: 400 }
       );
     }
 
-    if (!sponsorshipTitle?.trim()) {
+    if (!officialEmail?.trim()) {
       return NextResponse.json(
-        { success: false, message: 'Sponsorship title is required' },
+        { success: false, message: "Official email is required" },
         { status: 400 }
       );
     }
 
-    if (!sponsorshipType?.trim()) {
+    if (!phone?.trim()) {
       return NextResponse.json(
-        { success: false, message: 'Sponsorship type is required' },
+        { success: false, message: "Phone number is required" },
         { status: 400 }
       );
     }
 
-    if (!budget || Number.isNaN(Number(budget)) || Number(budget) < 0) {
+    if (!industry?.trim()) {
       return NextResponse.json(
-        { success: false, message: 'Valid budget is required' },
+        { success: false, message: "Industry is required" },
         { status: 400 }
       );
     }
 
-    if (!category?.trim()) {
-      return NextResponse.json(
-        { success: false, message: 'Category is required' },
-        { status: 400 }
+    // 🧠 CHECK IF PROFILE EXISTS (UPSERT LOGIC)
+    let sponsorProfile = await Sponsor.findOne({ userId: user._id });
+
+    const profileData = {
+      userId: user._id,
+
+      brandName: brandName.trim(),
+      companyName: companyName.trim(),
+      website: website?.trim() || "",
+      officialEmail: officialEmail.trim().toLowerCase(),
+      phone: phone.trim(),
+      industry: industry.trim(),
+      companySize: companySize?.trim() || "",
+      about: about?.trim() || "",
+      logoUrl: logoUrl?.trim() || "",
+
+      targetAudience: targetAudience?.trim() || "",
+
+      preferredCategories: normalizeArray(preferredCategories),
+      preferredLocations: normalizeArray(preferredLocations),
+      sponsorshipInterests: normalizeArray(sponsorshipInterests),
+
+      instagramUrl: instagramUrl?.trim() || "",
+      linkedinUrl: linkedinUrl?.trim() || "",
+
+      isProfileComplete: true,
+      isPublic: true,
+    };
+
+    if (sponsorProfile) {
+      // 🔄 UPDATE
+      sponsorProfile = await Sponsor.findOneAndUpdate(
+        { userId: user._id },
+        profileData,
+        { new: true, runValidators: true }
       );
+    } else {
+      // 🆕 CREATE
+      sponsorProfile = await Sponsor.create(profileData);
     }
-
-    if (!targetAudience?.trim()) {
-      return NextResponse.json(
-        { success: false, message: 'Target audience is required' },
-        { status: 400 }
-      );
-    }
-
-    if (!locationPreference?.trim()) {
-      return NextResponse.json(
-        { success: false, message: 'Location preference is required' },
-        { status: 400 }
-      );
-    }
-
-    if (!campaignGoal?.trim()) {
-      return NextResponse.json(
-        { success: false, message: 'Campaign goal is required' },
-        { status: 400 }
-      );
-    }
-
-    if (!contactPhone?.trim()) {
-      return NextResponse.json(
-        { success: false, message: 'Contact phone is required' },
-        { status: 400 }
-      );
-    }
-
-    const sponsorship = await SponsorshipModel.create({
-      sponsorOwnerId,
-      sponsorProfileId: sponsorProfile._id,
-
-      sponsorshipTitle: sponsorshipTitle.trim(),
-      sponsorshipType: sponsorshipType.trim(),
-      budget: Number(budget),
-      category: category.trim(),
-      targetAudience: targetAudience.trim(),
-      city: city?.trim() || '',
-      locationPreference: locationPreference.trim(),
-      campaignGoal: campaignGoal.trim(),
-      deliverablesExpected: deliverablesExpected?.trim() || '',
-      customMessage: customMessage?.trim() || '',
-
-      bannerRequirement: Boolean(bannerRequirement),
-      stallRequirement: Boolean(stallRequirement),
-      mikeAnnouncement: Boolean(mikeAnnouncement),
-      socialMediaMention: Boolean(socialMediaMention),
-      productDisplay: Boolean(productDisplay),
-
-      contactPersonName: contactPersonName?.trim() || '',
-      contactPhone: contactPhone.trim(),
-
-      status: 'active',
-    });
 
     return NextResponse.json(
       {
         success: true,
-        message: 'Sponsorship created successfully',
-        sponsorship,
+        message: "Sponsor profile saved successfully",
+        sponsor: sponsorProfile,
       },
-      { status: 201 }
+      { status: 200 }
     );
   } catch (error) {
-    console.error('Error creating sponsorship:', error);
+    console.error("Error creating sponsor profile:", error);
 
     return NextResponse.json(
-      { success: false, message: 'Failed to create sponsorship' },
+      { success: false, message: "Failed to save sponsor profile" },
       { status: 500 }
     );
   }

@@ -1,7 +1,8 @@
-import { NextRequest, NextResponse } from 'next/server';
-import mongoose from 'mongoose';
-import { connectDB } from '@/lib/db';
-import { EventModel } from '@/models/Event';
+import { NextRequest, NextResponse } from "next/server";
+import mongoose from "mongoose";
+
+import { connectDB } from "@/lib/db";
+import { EventModel } from "@/models/Event";
 
 export async function GET(
   _request: NextRequest,
@@ -12,10 +13,9 @@ export async function GET(
 
     const eventId = params.id;
 
-    // ✅ Validate ID
     if (!eventId || !mongoose.Types.ObjectId.isValid(eventId)) {
       return NextResponse.json(
-        { success: false, message: 'Invalid event ID' },
+        { success: false, message: "Invalid event ID" },
         { status: 400 }
       );
     }
@@ -23,35 +23,32 @@ export async function GET(
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const event = await EventModel.findById(eventId)
-      .populate('organizerId', 'firstName lastName companyName')
+    const event: any = await EventModel.findById(eventId)
+      .populate("organizerId", "firstName lastName companyName")
       .lean();
 
-    // ❌ Not found
     if (!event) {
       return NextResponse.json(
-        { success: false, message: 'Event not found' },
+        { success: false, message: "Event not found" },
         { status: 404 }
       );
     }
 
-    // 🚫 Prevent showing draft events publicly
-    if (event.status === 'DRAFT') {
+    if (event.status === "DRAFT") {
       return NextResponse.json(
-        { success: false, message: 'Event not available' },
+        { success: false, message: "Event not available" },
         { status: 403 }
       );
     }
 
-    // 📊 Add computed fields (VERY IMPORTANT for frontend)
     const isPast = event.endDate ? new Date(event.endDate) < today : false;
     const isActive =
-      event.status === 'PUBLISHED' || event.status === 'ONGOING';
+      event.status === "PUBLISHED" || event.status === "ONGOING";
 
     return NextResponse.json(
       {
         success: true,
-        event: {
+        data: {
           ...event,
           isPast,
           isActive,
@@ -60,10 +57,10 @@ export async function GET(
       { status: 200 }
     );
   } catch (error) {
-    console.error('Error fetching event:', error);
+    console.error("Error fetching event:", error);
 
     return NextResponse.json(
-      { success: false, message: 'Failed to fetch event' },
+      { success: false, message: "Failed to fetch event" },
       { status: 500 }
     );
   }

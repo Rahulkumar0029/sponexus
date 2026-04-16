@@ -1,120 +1,161 @@
-import mongoose from 'mongoose';
+import mongoose, { Document, Model, Schema, Types } from "mongoose";
 
-const sponsorshipSchema = new mongoose.Schema(
+export interface ISponsor extends Document {
+  userId: Types.ObjectId;
+
+  // Brand identity
+  brandName: string;
+  companyName: string;
+  website: string;
+  officialEmail: string;
+  phone: string;
+
+  // Business profile
+  industry: string;
+  companySize: string;
+  about: string;
+  logoUrl: string;
+
+  // Preferences for matching
+  targetAudience: string;
+  preferredCategories: string[];
+  preferredLocations: string[];
+  sponsorshipInterests: string[];
+
+  // Optional public contact / social presence
+  instagramUrl: string;
+  linkedinUrl: string;
+
+  // Profile completeness / visibility
+  isProfileComplete: boolean;
+  isPublic: boolean;
+
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+const SponsorSchema = new Schema<ISponsor>(
   {
-    sponsorOwnerId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'User',
+    userId: {
+      type: Schema.Types.ObjectId,
+      ref: "User",
       required: true,
+      unique: true,
       index: true,
     },
 
-    sponsorProfileId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Sponsor',
+    brandName: {
+      type: String,
       required: true,
-      index: true,
+      trim: true,
+      maxlength: 100,
     },
 
-    // 🔥 Public Sponsorship Post
-    sponsorshipTitle: {
+    companyName: {
       type: String,
       required: true,
       trim: true,
       maxlength: 120,
     },
 
-    sponsorshipType: {
+    website: {
+      type: String,
+      trim: true,
+      default: "",
+      maxlength: 300,
+    },
+
+    officialEmail: {
       type: String,
       required: true,
       trim: true,
+      lowercase: true,
+      maxlength: 150,
     },
 
-    budget: {
-      type: Number,
-      required: true,
-      min: 0,
-      validate: {
-        validator: Number.isFinite,
-        message: 'Budget must be a valid number',
-      },
-    },
-
-    category: {
+    phone: {
       type: String,
       required: true,
       trim: true,
+      maxlength: 30,
+    },
+
+    industry: {
+      type: String,
+      required: true,
+      trim: true,
+      maxlength: 80,
       index: true,
+    },
+
+    companySize: {
+      type: String,
+      trim: true,
+      default: "",
+      maxlength: 50,
+    },
+
+    about: {
+      type: String,
+      trim: true,
+      default: "",
+      maxlength: 2000,
+    },
+
+    logoUrl: {
+      type: String,
+      trim: true,
+      default: "",
+      maxlength: 500,
     },
 
     targetAudience: {
       type: String,
-      required: true,
       trim: true,
+      default: "",
+      maxlength: 300,
     },
 
-    city: {
-      type: String,
-      trim: true,
-      default: '',
-    },
-
-    locationPreference: {
-      type: String,
-      required: true,
-      trim: true,
+    preferredCategories: {
+      type: [String],
+      default: [],
       index: true,
     },
 
-    campaignGoal: {
-      type: String,
-      required: true,
-      trim: true,
-    },
-
-    deliverablesExpected: {
-      type: String,
-      trim: true,
-      default: '',
-    },
-
-    customMessage: {
-      type: String,
-      trim: true,
-      default: '',
-    },
-
-    // 🔥 Requirements
-    bannerRequirement: { type: Boolean, default: false },
-    stallRequirement: { type: Boolean, default: false },
-    mikeAnnouncement: { type: Boolean, default: false },
-    socialMediaMention: { type: Boolean, default: false },
-    productDisplay: { type: Boolean, default: false },
-
-    // 📞 Contact
-    contactPersonName: {
-      type: String,
-      trim: true,
-      default: '',
-    },
-
-    contactPhone: {
-      type: String,
-      required: true,
-      trim: true,
-    },
-
-    // 🔄 Lifecycle
-    status: {
-      type: String,
-      enum: ['active', 'paused', 'closed'],
-      default: 'active',
+    preferredLocations: {
+      type: [String],
+      default: [],
       index: true,
     },
 
-    expiresAt: {
-      type: Date,
-      default: null,
+    sponsorshipInterests: {
+      type: [String],
+      default: [],
+    },
+
+    instagramUrl: {
+      type: String,
+      trim: true,
+      default: "",
+      maxlength: 300,
+    },
+
+    linkedinUrl: {
+      type: String,
+      trim: true,
+      default: "",
+      maxlength: 300,
+    },
+
+    isProfileComplete: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+
+    isPublic: {
+      type: Boolean,
+      default: true,
       index: true,
     },
   },
@@ -123,14 +164,15 @@ const sponsorshipSchema = new mongoose.Schema(
   }
 );
 
-// 🔥 PERFORMANCE INDEXES (FINAL)
-sponsorshipSchema.index({ sponsorOwnerId: 1, createdAt: -1 });
-sponsorshipSchema.index({ status: 1, createdAt: -1 });
+// One sponsor profile per user
+SponsorSchema.index({ userId: 1 }, { unique: true });
 
-// marketplace filters
-sponsorshipSchema.index({ category: 1, locationPreference: 1, status: 1 });
-sponsorshipSchema.index({ status: 1, expiresAt: 1 });
+// Useful for discovery / matching
+SponsorSchema.index({ industry: 1, isPublic: 1 });
+SponsorSchema.index({ preferredCategories: 1, preferredLocations: 1 });
 
-export const SponsorshipModel =
-  mongoose.models.Sponsorship ||
-  mongoose.model('Sponsorship', sponsorshipSchema);
+// Prevent model overwrite in dev / hot reload
+const Sponsor: Model<ISponsor> =
+  mongoose.models.Sponsor || mongoose.model<ISponsor>("Sponsor", SponsorSchema);
+
+export default Sponsor;

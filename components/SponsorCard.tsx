@@ -1,23 +1,31 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
+import Link from "next/link";
 
-interface Sponsor {
+interface SponsorCardSponsor {
   _id: string;
-  brandName: string;
-  description?: string;
-  preferredCategories?: string[];
-  targetAudience?: string;
-  locationPreference?: string;
+  userId?: string;
+  brandName?: string;
+  companyName?: string;
   website?: string;
   officialEmail?: string;
-  officialPhone?: string;
-  ownerId: string;
+  phone?: string;
+  industry?: string;
+  companySize?: string;
+  about?: string;
+  logoUrl?: string;
+  targetAudience?: string;
+  preferredCategories?: string[];
+  preferredLocations?: string[];
+  sponsorshipInterests?: string[];
+  isProfileComplete?: boolean;
+  isPublic?: boolean;
   createdAt?: string;
+  updatedAt?: string;
 }
 
 interface SponsorCardProps {
-  sponsor: Sponsor;
+  sponsor: SponsorCardSponsor;
   matchScore?: number;
 }
 
@@ -26,7 +34,11 @@ export function SponsorCard({ sponsor, matchScore }: SponsorCardProps) {
     ? sponsor.preferredCategories
     : [];
 
-  const hasContactInfo = Boolean(sponsor.officialPhone || sponsor.officialEmail);
+  const locations = Array.isArray(sponsor.preferredLocations)
+    ? sponsor.preferredLocations
+    : [];
+
+  const hasContactInfo = Boolean(sponsor.phone || sponsor.officialEmail);
 
   return (
     <Link href={`/sponsors/${sponsor._id}`}>
@@ -38,24 +50,22 @@ export function SponsorCard({ sponsor, matchScore }: SponsorCardProps) {
         )}
 
         <div className="flex flex-1 flex-col space-y-4">
-          {/* Brand */}
-          <div>
+          <div className="pr-16">
             <h3 className="text-lg font-semibold text-text-light transition group-hover:text-accent-orange">
-              {sponsor.brandName || 'Unnamed Sponsor'}
+              {sponsor.brandName || sponsor.companyName || "Unnamed Sponsor"}
             </h3>
+
             <p className="mt-1 text-xs text-text-muted">
-              {hasContactInfo ? 'Profile ready for contact' : 'Profile details available'}
+              {hasContactInfo ? "Profile ready for contact" : "Profile details available"}
             </p>
           </div>
 
-          {/* Description */}
           <p className="line-clamp-3 flex-1 text-sm text-text-muted">
-            {sponsor.description?.trim()
-              ? sponsor.description
-              : 'This sponsor is exploring meaningful partnerships on Sponexus.'}
+            {sponsor.about?.trim()
+              ? sponsor.about
+              : "This sponsor is exploring meaningful partnerships on Sponexus."}
           </p>
 
-          {/* Categories */}
           <div className="flex flex-wrap gap-2">
             {categories.length > 0 ? (
               <>
@@ -78,26 +88,39 @@ export function SponsorCard({ sponsor, matchScore }: SponsorCardProps) {
             )}
           </div>
 
-          {/* Details */}
           <div className="mt-auto grid grid-cols-2 gap-4 border-t border-white/10 pt-4 text-sm">
+            <div>
+              <p className="text-xs text-text-muted">Industry</p>
+              <p className="line-clamp-1 font-medium text-text-light">
+                {sponsor.industry || "Not specified"}
+              </p>
+            </div>
+
             <div>
               <p className="text-xs text-text-muted">Target</p>
               <p className="line-clamp-1 font-medium text-text-light">
-                {sponsor.targetAudience || 'Not specified'}
+                {sponsor.targetAudience || "Not specified"}
               </p>
             </div>
 
             <div>
               <p className="text-xs text-text-muted">Location</p>
               <p className="line-clamp-1 font-medium text-text-light">
-                {sponsor.locationPreference || 'Flexible'}
+                {locations.length > 0 ? locations.join(", ") : "Flexible"}
+              </p>
+            </div>
+
+            <div>
+              <p className="text-xs text-text-muted">Company</p>
+              <p className="line-clamp-1 font-medium text-text-light">
+                {sponsor.companyName || sponsor.brandName || "Not added"}
               </p>
             </div>
 
             <div className="col-span-2">
               <p className="text-xs text-text-muted">Website</p>
               <p className="line-clamp-1 font-medium text-text-light">
-                {sponsor.website || 'Not added'}
+                {sponsor.website || "Not added"}
               </p>
             </div>
           </div>
