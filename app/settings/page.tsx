@@ -131,7 +131,7 @@ export default function SettingsPage() {
   const [successMessage, setSuccessMessage] = useState("");
 
   const [user, setUser] = useState<CurrentUser | null>(null);
-  const [sponsorProfile, setSponsorProfile] = useState<SponsorProfile | null>(null);
+  const [, setSponsorProfile] = useState<SponsorProfile | null>(null);
 
   const [organizerForm, setOrganizerForm] = useState<OrganizerFormState>({
     role: "ORGANIZER",

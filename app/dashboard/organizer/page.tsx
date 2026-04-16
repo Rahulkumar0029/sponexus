@@ -7,26 +7,17 @@ import { Button } from '@/components/Button';
 import { EventCard } from '@/components/EventCard';
 import { SponsorCard } from '@/components/SponsorCard';
 import { EmptyState } from '@/components/EmptyState';
+import { Event } from '@/types/event';
 import { useAuth } from '@/hooks/useAuth';
 import { useMatch } from '@/hooks/useMatch';
 
-type DashboardEvent = {
-  _id: string;
-  title?: string;
-  name?: string;
-  category?: string;
-  location?: string;
-  startDate?: string;
-  budget?: string;
-  status?: string;
-};
 
 export default function OrganizerDashboardPage() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
   const { matches, loading: matchLoading, error: matchError, findMatches } = useMatch();
 
-  const [events, setEvents] = useState<DashboardEvent[]>([]);
+  const [events, setEvents] = useState<Event[]>([]);
   const [eventsLoading, setEventsLoading] = useState(true);
   const [eventsError, setEventsError] = useState('');
 
@@ -40,6 +31,20 @@ export default function OrganizerDashboardPage() {
 
     if (user.role !== 'ORGANIZER') {
       router.replace('/dashboard/sponsor');
+    }
+
+
+    const isProfileComplete = Boolean(
+      user.organizationName?.trim() &&
+        user.eventFocus?.trim() &&
+        user.organizerTargetAudience?.trim() &&
+        user.organizerLocation?.trim() &&
+        user.phone?.trim()
+    );
+
+    if (!isProfileComplete) {
+      router.replace('/settings');
+      return;
     }
   }, [authLoading, user, router]);
 
@@ -121,8 +126,8 @@ export default function OrganizerDashboardPage() {
             <Link href="/events/create">
               <Button variant="primary">+ Create Event</Button>
             </Link>
-            <Link href="/sponsors">
-              <Button variant="secondary">Explore Sponsors</Button>
+            <Link href="/sponsorships">
+              <Button variant="secondary">Explore Sponsorships</Button>
             </Link>
           </div>
         </div>
@@ -193,14 +198,14 @@ export default function OrganizerDashboardPage() {
             </div>
 
             <div className="rounded-[24px] border border-white/10 bg-white/[0.05] p-6 backdrop-blur-xl">
-              <h3 className="text-xl font-semibold text-white">Find Sponsors</h3>
+              <h3 className="text-xl font-semibold text-white">Explore Sponsorships</h3>
               <p className="mt-3 text-sm leading-relaxed text-text-muted">
-                Explore sponsor profiles that align with your event goals and audience.
+                Browse active sponsorship posts that align with your event category, audience, and location.
               </p>
               <div className="mt-6">
-                <Link href="/sponsors">
+                <Link href="/sponsorships">
                   <Button variant="secondary" fullWidth>
-                    Browse Sponsors
+                    Explore Sponsorships
                   </Button>
                 </Link>
               </div>

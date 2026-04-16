@@ -12,6 +12,23 @@ export function Navbar() {
   const { user, loading, isAuthenticated, logout } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
 
+  const isOrganizer = user?.role === 'ORGANIZER';
+  const logoHref = isOrganizer ? '/dashboard/organizer' : '/';
+
+  const primaryLinks = isOrganizer
+    ? [
+        { href: '/sponsorships', label: 'Explore Sponsorships' },
+        { href: '/events', label: 'My Events' },
+        { href: '/match', label: 'Matches' },
+        { href: '/deals', label: 'Deals' },
+      ]
+    : [
+        { href: '/events', label: 'Events' },
+        { href: '/sponsors', label: 'Sponsors' },
+        { href: '/match', label: 'Match' },
+        { href: '/deals', label: 'Deals' },
+      ];
+
   const handleLogout = async () => {
     await logout();
     setIsOpen(false);
@@ -19,164 +36,83 @@ export function Navbar() {
   };
 
   return (
-    <nav className="sticky top-0 z-50 bg-dark-layer/80 backdrop-blur-md border-b border-white/10">
-      <div className="container-custom px-4 py-4 flex justify-between items-center">
-        {/* Brand */}
-        <Link href="/" className="flex items-center gap-3 group">
-          <div className="relative h-10 w-10 overflow-hidden rounded-xl border border-white/10 bg-white/5 shadow-[0_0_18px_rgba(245,158,11,0.10)]">
-            <Image
-              src="/logo-circle.jpeg"
-              alt="Sponexus Logo"
-              fill
-              priority
-              className="object-cover transition-transform duration-300 group-hover:scale-105"
-            />
+    <nav className="sticky top-0 z-50 border-b border-white/10 bg-dark-layer/80 backdrop-blur-md">
+      <div className="container-custom flex items-center justify-between px-4 py-4">
+        <Link href={logoHref} className="group flex items-center gap-3">
+          <div className="relative h-10 w-10 overflow-hidden rounded-xl border border-white/10 bg-white/5">
+            <Image src="/logo-circle.jpeg" alt="Sponexus Logo" fill priority className="object-cover transition-transform duration-300 group-hover:scale-105" />
           </div>
-
           <div className="flex flex-col leading-none">
             <span className="text-2xl font-bold gradient-text">Sponexus</span>
-            <span className="hidden sm:block text-[11px] tracking-[0.18em] uppercase text-text-muted/80">
+            <span className="hidden text-[11px] uppercase tracking-[0.18em] text-text-muted/80 sm:block">
               Smart Matching
             </span>
           </div>
         </Link>
 
-        {/* Desktop Nav */}
-        <div className="hidden md:flex gap-8 items-center">
-          <Link href="/events" className="text-text-light hover:text-accent-orange smooth-transition">
-            Events
-          </Link>
-          <Link href="/sponsors" className="text-text-light hover:text-accent-orange smooth-transition">
-            Sponsors
-          </Link>
-          <Link href="/match" className="text-text-light hover:text-accent-orange smooth-transition">
-            Match
-          </Link>
+        <div className="hidden items-center gap-8 md:flex">
+          {primaryLinks.map((link) => (
+            <Link key={link.href} href={link.href} className="smooth-transition text-text-light hover:text-accent-orange">
+              {link.label}
+            </Link>
+          ))}
 
           {loading ? (
             <div className="text-text-muted">Loading...</div>
           ) : isAuthenticated && user ? (
-            <div className="flex items-center gap-4 pl-4 border-l border-white/10">
-              <span className="hidden sm:inline text-text-muted">
-                Hello, {user.firstName || user.name}
-              </span>
-
+            <div className="flex items-center gap-4 border-l border-white/10 pl-4">
+              <span className="hidden text-text-muted sm:inline">Hello, {user.firstName || user.name}</span>
               <Link href="/dashboard">
-                <Button variant="secondary" size="sm">
-                  Dashboard
-                </Button>
+                <Button variant="secondary" size="sm">Dashboard</Button>
               </Link>
-
-              <Link href="/settings" className="text-text-light hover:text-accent-orange smooth-transition">
-                Settings
+              <Link href="/settings" className="smooth-transition text-text-light hover:text-accent-orange">
+                Profile
               </Link>
-
-              <button
-                onClick={handleLogout}
-                className="text-text-light hover:text-accent-orange smooth-transition"
-              >
+              <button onClick={handleLogout} className="smooth-transition text-text-light hover:text-accent-orange">
                 Logout
               </button>
             </div>
           ) : (
             <div className="flex items-center gap-3">
-              <Link href="/login">
-                <Button variant="ghost" size="sm">
-                  Login
-                </Button>
-              </Link>
-
-              <Link href="/register">
-                <Button variant="primary" size="sm">
-                  Register
-                </Button>
-              </Link>
+              <Link href="/login"><Button variant="ghost" size="sm">Login</Button></Link>
+              <Link href="/register"><Button variant="primary" size="sm">Register</Button></Link>
             </div>
           )}
         </div>
 
-        {/* Mobile Toggle */}
-        <button
-          onClick={() => setIsOpen(!isOpen)}
-          className="md:hidden text-accent-orange text-2xl hover:text-yellow-400 smooth-transition"
-          aria-label="Toggle menu"
-        >
+        <button onClick={() => setIsOpen(!isOpen)} className="text-2xl text-accent-orange md:hidden" aria-label="Toggle menu">
           {isOpen ? '✕' : '☰'}
         </button>
       </div>
 
-      {/* Mobile Menu */}
       {isOpen && (
-        <div className="md:hidden bg-dark-base border-t border-white/10 mt-4 pt-4 space-y-4 pb-4">
-          <Link
-            href="/events"
-            className="block text-text-light hover:text-accent-orange py-2 px-4"
-            onClick={() => setIsOpen(false)}
-          >
-            Events
-          </Link>
+        <div className="mt-2 space-y-2 border-t border-white/10 bg-dark-base px-4 py-4 md:hidden">
+          {primaryLinks.map((link) => (
+            <Link key={link.href} href={link.href} className="block py-2 text-text-light" onClick={() => setIsOpen(false)}>
+              {link.label}
+            </Link>
+          ))}
 
-          <Link
-            href="/sponsors"
-            className="block text-text-light hover:text-accent-orange py-2 px-4"
-            onClick={() => setIsOpen(false)}
-          >
-            Sponsors
-          </Link>
-
-          <Link
-            href="/match"
-            className="block text-text-light hover:text-accent-orange py-2 px-4"
-            onClick={() => setIsOpen(false)}
-          >
-            Match
-          </Link>
-
-          <div className="border-t border-white/10 pt-4 px-4 space-y-3">
+          <div className="border-t border-white/10 pt-3">
             {loading ? (
               <div className="text-text-muted">Loading...</div>
             ) : isAuthenticated && user ? (
               <>
-                <Link
-                  href="/dashboard"
-                  className="block text-text-light hover:text-accent-orange py-2"
-                  onClick={() => setIsOpen(false)}
-                >
+                <Link href="/dashboard" className="block py-2 text-text-light" onClick={() => setIsOpen(false)}>
                   Dashboard
                 </Link>
-
-                <Link
-                  href="/settings"
-                  className="block text-text-light hover:text-accent-orange py-2"
-                  onClick={() => setIsOpen(false)}
-                >
-                  Settings
+                <Link href="/settings" className="block py-2 text-text-light" onClick={() => setIsOpen(false)}>
+                  Profile
                 </Link>
-
-                <button
-                  onClick={() => {
-                    handleLogout();
-                    setIsOpen(false);
-                  }}
-                  className="block text-text-light hover:text-accent-orange py-2"
-                >
+                <button onClick={handleLogout} className="block py-2 text-text-light">
                   Logout
                 </button>
               </>
             ) : (
               <>
-                <Link
-                  href="/login"
-                  className="block text-text-light hover:text-accent-orange py-2"
-                  onClick={() => setIsOpen(false)}
-                >
-                  Login
-                </Link>
-
+                <Link href="/login" className="block py-2 text-text-light" onClick={() => setIsOpen(false)}>Login</Link>
                 <Link href="/register" onClick={() => setIsOpen(false)}>
-                  <Button variant="primary" className="w-full">
-                    Register
-                  </Button>
+                  <Button className="w-full">Register</Button>
                 </Link>
               </>
             )}

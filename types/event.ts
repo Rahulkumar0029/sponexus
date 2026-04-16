@@ -1,17 +1,17 @@
 export type EventCategory =
-  | "CONFERENCE"
-  | "WORKSHOP"
-  | "WEBINAR"
-  | "FESTIVAL"
-  | "MEETUP"
-  | "OTHER";
+  | 'CONFERENCE'
+  | 'WORKSHOP'
+  | 'WEBINAR'
+  | 'FESTIVAL'
+  | 'MEETUP'
+  | 'OTHER';
 
 export type EventStatus =
-  | "DRAFT"
-  | "PUBLISHED"
-  | "ONGOING"
-  | "COMPLETED"
-  | "CANCELLED";
+  | 'DRAFT'
+  | 'PUBLISHED'
+  | 'ONGOING'
+  | 'COMPLETED'
+  | 'CANCELLED';
 
 export interface IEvent {
   _id?: string;
@@ -27,6 +27,9 @@ export interface IEvent {
   attendeeCount: number;
   eventType: EventCategory;
   image?: string;
+  images?: string[];
+  video?: string;
+  organizerProvides?: string[];
   status: EventStatus;
   createdAt?: Date | string;
   updatedAt?: Date | string;
@@ -46,6 +49,9 @@ export interface CreateEventInput {
   attendeeCount: number;
   eventType: EventCategory;
   image?: string;
+  images?: string[];
+  video?: string;
+  organizerProvides?: string[];
 }
 
 export interface EventResponse {

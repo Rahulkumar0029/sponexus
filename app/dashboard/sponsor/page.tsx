@@ -128,7 +128,7 @@ export default function SponsorDashboardPage() {
     const loadMatches = async () => {
       if (!user || user.role !== "SPONSOR") return;
 
-      const userId = user._id || user.id;
+      const userId = user._id;
       if (!userId) return;
 
       try {

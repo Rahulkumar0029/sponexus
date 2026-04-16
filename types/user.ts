@@ -13,6 +13,11 @@ export interface IUser {
   bio?: string;
   phone?: string;
 
+  organizationName?: string;
+  eventFocus?: string;
+  organizerTargetAudience?: string;
+  organizerLocation?: string;
+
   // Forgot password fields
   resetPasswordToken?: string;
   resetPasswordExpires?: Date;
