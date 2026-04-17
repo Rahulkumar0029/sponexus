@@ -1,102 +1,127 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { connectDB } from '@/lib/db';
-import { UserModel } from '@/models/User';
-import { Sponsor } from '@/models/Sponsor';
-import { hashPassword, generateToken } from '@/lib/auth';
-import { validateRegistration } from '@/lib/validations';
-import { RegisterInput } from '@/types/user';
+import { NextRequest, NextResponse } from "next/server";
+
+import { connectDB } from "@/lib/db";
+import User from "@/lib/models/User";
+import { generateRandomToken, hashPassword, hashToken } from "@/lib/auth";
+import { sendVerificationEmail } from "@/lib/email";
 
 export async function POST(request: NextRequest) {
   try {
     await connectDB();
 
-    const body: RegisterInput = await request.json();
-    const { email, password, confirmPassword, role, firstName, lastName, companyName } = body;
+    const body = await request.json();
 
-    const normalizedRole = role.toUpperCase() as 'ORGANIZER' | 'SPONSOR';
+    const firstName =
+      typeof body.firstName === "string" ? body.firstName.trim() : "";
+    const lastName =
+      typeof body.lastName === "string" ? body.lastName.trim() : "";
+    const email =
+      typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
+    const password = typeof body.password === "string" ? body.password : "";
+    const role =
+      body.role === "ORGANIZER" || body.role === "SPONSOR" ? body.role : null;
+    const companyName =
+      typeof body.companyName === "string" ? body.companyName.trim() : "";
 
-    // Validation
-    const validation = validateRegistration({
-      email,
-      password,
-      confirmPassword,
-      firstName,
-      lastName,
-      companyName,
-      role: normalizedRole,
-    });
-
-    if (!validation.isValid) {
+    if (!firstName || !lastName || !email || !password || !role) {
       return NextResponse.json(
         {
           success: false,
-          message: 'Validation failed',
-          errors: validation.errors,
+          message:
+            "First name, last name, email, password, and role are required",
         },
         { status: 400 }
       );
     }
 
-    // Check if user already exists
-    const existingUser = await UserModel.findOne({ email: email.toLowerCase() });
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    if (!emailRegex.test(email)) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Please enter a valid email address",
+        },
+        { status: 400 }
+      );
+    }
+
+    if (password.length < 8) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Password must be at least 8 characters",
+        },
+        { status: 400 }
+      );
+    }
+
+    const existingUser = await User.findOne({ email });
+
     if (existingUser) {
       return NextResponse.json(
-        { success: false, message: 'Email already registered' },
+        {
+          success: false,
+          message: "An account with this email already exists",
+        },
         { status: 409 }
       );
     }
 
-    // Hash password
     const hashedPassword = await hashPassword(password);
 
-    // Create user
-    const user = await UserModel.create({
-      email: email.toLowerCase(),
+    const rawVerificationToken = generateRandomToken(32);
+    const hashedVerificationToken = hashToken(rawVerificationToken);
+    const verificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+    const user = await User.create({
+      firstName,
+      lastName,
+      email,
       password: hashedPassword,
-      role: normalizedRole,
-      firstName: firstName.trim(),
-      lastName: lastName.trim(),
-      companyName: companyName.trim(),
+      role,
+      companyName,
+      isEmailVerified: false,
+      isProfileComplete: false,
+      emailVerificationToken: hashedVerificationToken,
+      emailVerificationExpires: verificationExpires,
     });
 
-    // If sponsor, create a basic sponsor profile shell
-    if (normalizedRole === 'SPONSOR') {
-      await Sponsor.create({
-        ownerId: String(user._id),
-        brandName: companyName.trim(),
-        description: '',
-        preferredCategories: ['Technology'],
-        targetAudience: '',
-        locationPreference: '',
-        website: '',
-        officialEmail: email.toLowerCase(),
-        officialPhone: '',
-      });
+    const appUrl = process.env.APP_URL;
+
+    if (!appUrl) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Missing APP_URL environment variable",
+        },
+        { status: 500 }
+      );
     }
 
-    // Generate token
-    const token = generateToken({
-      userId: String(user._id),
-      email: user.email,
-      role: user.role,
-    });
+    const verificationLink = `${appUrl}/verify-email?token=${rawVerificationToken}`;
 
-    const userResponse = user.toObject();
-    delete userResponse.password;
+    await sendVerificationEmail({
+      to: user.email,
+      name: user.firstName || user.name || "User",
+      verificationLink,
+    });
 
     return NextResponse.json(
       {
         success: true,
-        message: 'User registered successfully',
-        user: userResponse,
-        token,
+        message: "Registration successful. Please verify your email.",
       },
       { status: 201 }
     );
   } catch (error) {
-    console.error('Registration error:', error);
+    console.error("Register error:", error);
+
     return NextResponse.json(
-      { success: false, message: 'Registration failed' },
+      {
+        success: false,
+        message: "Registration failed",
+      },
       { status: 500 }
     );
   }

@@ -1,57 +1,87 @@
-import { NextResponse } from 'next/server';
-import bcrypt from 'bcryptjs';
-import { connectDB } from '@/lib/db';
-import { UserModel } from '@/models/User';
+import { NextResponse } from "next/server";
+
+import { connectDB } from "@/lib/db";
+import { hashPassword, hashToken } from "@/lib/auth";
+import User from "@/lib/models/User";
 
 export async function POST(req: Request) {
   try {
     await connectDB();
 
-    const { token, password } = await req.json();
+    const body = await req.json();
 
-    if (!token || !password) {
+    const token = typeof body.token === "string" ? body.token.trim() : "";
+    const password = typeof body.password === "string" ? body.password : "";
+    const confirmPassword = typeof body.confirmPassword === "string" ? body.confirmPassword : "";
+
+    if (!token || !password || !confirmPassword) {
       return NextResponse.json(
-        { message: 'Token and password are required' },
+        {
+          success: false,
+          message: "Token, password, and confirm password are required",
+        },
         { status: 400 }
       );
     }
 
-    if (password.length < 6) {
+    if (password.length < 8) {
       return NextResponse.json(
-        { message: 'Password must be at least 6 characters' },
+        {
+          success: false,
+          message: "Password must be at least 8 characters",
+        },
         { status: 400 }
       );
     }
 
-    const user = await UserModel.findOne({
-      resetPasswordToken: token,
+    if (password !== confirmPassword) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Passwords do not match",
+        },
+        { status: 400 }
+      );
+    }
+
+    const hashedToken = hashToken(token);
+
+    const user = await User.findOne({
+      resetPasswordToken: hashedToken,
       resetPasswordExpires: { $gt: new Date() },
-    }).select('+password +resetPasswordToken');
+    }).select("+password +resetPasswordToken +resetPasswordExpires");
 
     if (!user) {
       return NextResponse.json(
-        { message: 'Invalid or expired reset token' },
+        {
+          success: false,
+          message: "Invalid or expired reset token",
+        },
         { status: 400 }
       );
     }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    user.password = hashedPassword;
-    user.resetPasswordToken = undefined;
-    user.resetPasswordExpires = undefined;
+    user.password = await hashPassword(password);
+    user.resetPasswordToken = null;
+    user.resetPasswordExpires = null;
 
     await user.save();
 
     return NextResponse.json(
-      { message: 'Password reset successful' },
+      {
+        success: true,
+        message: "Password reset successful",
+      },
       { status: 200 }
     );
   } catch (error) {
-    console.error('Reset password error:', error);
+    console.error("Reset password error:", error);
 
     return NextResponse.json(
-      { message: 'Server error' },
+      {
+        success: false,
+        message: "Server error",
+      },
       { status: 500 }
     );
   }

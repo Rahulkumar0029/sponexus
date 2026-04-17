@@ -1,12 +1,29 @@
 export interface ISponsor {
   _id: string;
-  ownerId: string;
+  userId: string;
+
   brandName: string;
-  description: string;
-  budget: string;
-  preferredCategories: string[];
+  companyName: string;
+  website: string;
+  officialEmail: string;
+  phone: string;
+
+  industry: string;
+  companySize: string;
+  about: string;
+  logoUrl: string;
+
   targetAudience: string;
-  locationPreference: string;
+  preferredCategories: string[];
+  preferredLocations: string[];
+  sponsorshipInterests: string[];
+
+  instagramUrl: string;
+  linkedinUrl: string;
+
+  isProfileComplete: boolean;
+  isPublic: boolean;
+
   createdAt: string;
   updatedAt?: string;
 }
@@ -14,14 +31,22 @@ export interface ISponsor {
 export type Sponsor = ISponsor;
 
 export interface CreateSponsorInput {
+  brandName: string;
   companyName: string;
-  description: string;
-  categories: string[];
-  targetAudience: string[];
-  locations: string[];
-  budget: number;
-  logo?: string;
   website?: string;
+  officialEmail: string;
+  phone: string;
+  industry: string;
+  companySize?: string;
+  about?: string;
+  logoUrl?: string;
+  targetAudience?: string;
+  preferredCategories?: string[];
+  preferredLocations?: string[];
+  sponsorshipInterests?: string[];
+  instagramUrl?: string;
+  linkedinUrl?: string;
+  isPublic?: boolean;
 }
 
 export interface SponsorResponse {

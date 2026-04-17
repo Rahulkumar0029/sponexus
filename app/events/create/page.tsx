@@ -1,449 +1,539 @@
-'use client';
+"use client";
 
-import { useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { Input } from '@/components/Input';
-import { Button } from '@/components/Button';
+import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import { Button } from "@/components/Button";
+import { useAuth } from "@/hooks/useAuth";
 
-const eventTypes = ['CONFERENCE', 'WORKSHOP', 'WEBINAR', 'FESTIVAL', 'MEETUP', 'OTHER'];
-
-const categories = [
-  'Technology',
-  'Finance',
-  'Health',
-  'Entertainment',
-  'Sports',
-  'Education',
-  'Marketing',
-  'Sustainability',
-];
-
-const audiences = ['Students', 'Professionals', 'Entrepreneurs', 'General Public', 'Developers'];
+type MediaType = "image" | "video";
 
 type UploadedMedia = {
   url: string;
   publicId: string;
-  type: 'image' | 'video';
+  type: MediaType;
   title?: string;
-  uploadedAt?: string | Date;
+  uploadedAt?: string;
 };
+
+const EVENT_TYPES = [
+  "CONFERENCE",
+  "WORKSHOP",
+  "WEBINAR",
+  "FESTIVAL",
+  "MEETUP",
+  "OTHER",
+] as const;
+
+function splitCommaValues(value: string): string[] {
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function splitLineValues(value: string): string[] {
+  return value
+    .split("\n")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function guessMediaType(url: string): MediaType {
+  const lower = url.toLowerCase();
+
+  if (
+    lower.includes(".mp4") ||
+    lower.includes(".mov") ||
+    lower.includes(".avi") ||
+    lower.includes(".webm") ||
+    lower.includes(".mkv")
+  ) {
+    return "video";
+  }
+
+  return "image";
+}
+
+function toMediaItems(urls: string[], titlePrefix: string): UploadedMedia[] {
+  return urls.map((url, index) => ({
+    url,
+    publicId: url,
+    type: guessMediaType(url),
+    title: `${titlePrefix} ${index + 1}`,
+    uploadedAt: new Date().toISOString(),
+  }));
+}
 
 export default function CreateEventPage() {
   const router = useRouter();
+  const { user, loading: authLoading } = useAuth();
 
-  const [user, setUser] = useState<any>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [successMessage, setSuccessMessage] = useState('');
+  const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
+  const [categoriesInput, setCategoriesInput] = useState("");
+  const [targetAudienceInput, setTargetAudienceInput] = useState("");
+  const [location, setLocation] = useState("");
+  const [budget, setBudget] = useState("");
+  const [attendeeCount, setAttendeeCount] = useState("");
+  const [eventType, setEventType] =
+    useState<(typeof EVENT_TYPES)[number]>("CONFERENCE");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
 
-  const today = useMemo(() => new Date().toISOString().split('T')[0], []);
+  const [coverImage, setCoverImage] = useState("");
+  const [venueImagesInput, setVenueImagesInput] = useState("");
+  const [pastEventMediaInput, setPastEventMediaInput] = useState("");
 
-  const [formData, setFormData] = useState({
-    title: '',
-    description: '',
-    categories: [] as string[],
-    targetAudience: [] as string[],
-    location: '',
-    budget: '',
-    startDate: '',
-    endDate: '',
-    attendeeCount: '',
-    eventType: 'CONFERENCE',
-    image: '',
-  });
+  const [publishMode, setPublishMode] = useState<"draft" | "publish">("publish");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState("");
+  const [successMessage, setSuccessMessage] = useState("");
 
-  const [venueImages, setVenueImages] = useState<File[]>([]);
-  const [pastEventMedia, setPastEventMedia] = useState<File[]>([]);
+  const categories = useMemo(() => splitCommaValues(categoriesInput), [categoriesInput]);
+  const targetAudience = useMemo(
+    () => splitCommaValues(targetAudienceInput),
+    [targetAudienceInput]
+  );
+  const venueImages = useMemo(
+    () => toMediaItems(splitLineValues(venueImagesInput), "Venue Media"),
+    [venueImagesInput]
+  );
+  const pastEventMedia = useMemo(
+    () => toMediaItems(splitLineValues(pastEventMediaInput), "Past Event Media"),
+    [pastEventMediaInput]
+  );
 
-  useEffect(() => {
-    const storedUser = localStorage.getItem('user');
+  const today = useMemo(() => {
+    const now = new Date();
+    const yyyy = now.getFullYear();
+    const mm = String(now.getMonth() + 1).padStart(2, "0");
+    const dd = String(now.getDate()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd}`;
+  }, []);
 
-    if (!storedUser) {
-      router.push('/login');
-      return;
+  const validateForm = () => {
+    if (!user) {
+      return "Please login first.";
     }
 
-    const parsedUser = JSON.parse(storedUser);
-
-    if (parsedUser.role !== 'ORGANIZER') {
-      router.push('/dashboard');
-      return;
+    if (user.role !== "ORGANIZER") {
+      return "Only organizers can create events.";
     }
 
-    setUser(parsedUser);
-  }, [router]);
-
-  const handleChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>
-  ) => {
-    const { name, value } = e.target;
-
-    setFormData((prev) => {
-      const updated = { ...prev, [name]: value };
-
-      if (name === 'startDate' && updated.endDate && updated.endDate < value) {
-        updated.endDate = '';
-      }
-
-      return updated;
-    });
-
-    if (error) setError('');
-  };
-
-  const toggleArray = (field: 'categories' | 'targetAudience', value: string) => {
-    setFormData((prev) => ({
-      ...prev,
-      [field]: prev[field].includes(value)
-        ? prev[field].filter((item) => item !== value)
-        : [...prev[field], value],
-    }));
-  };
-
-  const handleVenueImagesChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-    setVenueImages(files);
-  };
-
-  const handlePastMediaChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-    setPastEventMedia(files);
-  };
-
-  const validateDates = () => {
-    if (!formData.startDate || !formData.endDate) return true;
-
-    if (formData.startDate < today) {
-      setError('Start date cannot be in the past.');
-      return false;
+    if (!title.trim()) {
+      return "Event title is required.";
     }
 
-    if (formData.endDate < today) {
-      setError('End date cannot be in the past.');
-      return false;
+    if (!description.trim()) {
+      return "Event description is required.";
     }
 
-    if (formData.endDate < formData.startDate) {
-      setError('End date cannot be before start date.');
-      return false;
+    if (categories.length === 0) {
+      return "At least one category is required.";
     }
 
-    return true;
-  };
-
-  const uploadFiles = async (files: File[]): Promise<UploadedMedia[]> => {
-    if (!files.length) return [];
-
-    const uploadFormData = new FormData();
-    files.forEach((file) => {
-      uploadFormData.append('files', file);
-    });
-
-    const uploadRes = await fetch('/api/upload', {
-      method: 'POST',
-      body: uploadFormData,
-    });
-
-    const uploadData = await uploadRes.json();
-
-    if (!uploadRes.ok || !uploadData.success) {
-      throw new Error(uploadData.message || 'File upload failed');
+    if (!location.trim()) {
+      return "Location is required.";
     }
 
-    return uploadData.files || [];
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    setSuccessMessage('');
+    if (!budget || Number.isNaN(Number(budget)) || Number(budget) < 0) {
+      return "Budget must be a valid non-negative number.";
+    }
 
     if (
-      !formData.title ||
-      !formData.description ||
-      !formData.location ||
-      !formData.budget ||
-      !formData.startDate ||
-      !formData.endDate
+      !attendeeCount ||
+      Number.isNaN(Number(attendeeCount)) ||
+      Number(attendeeCount) < 1
     ) {
-      setError('Please fill all required fields.');
+      return "Expected attendees must be at least 1.";
+    }
+
+    if (!startDate || !endDate) {
+      return "Start date and end date are required.";
+    }
+
+    if (new Date(endDate) < new Date(startDate)) {
+      return "End date cannot be before start date.";
+    }
+
+    return "";
+  };
+
+  const submitEvent = async (mode: "draft" | "publish") => {
+    setError("");
+    setSuccessMessage("");
+
+    const validationError = validateForm();
+    if (validationError) {
+      setError(validationError);
       return;
     }
 
-    if (!validateDates()) return;
-
-    setLoading(true);
+    setSubmitting(true);
+    setPublishMode(mode);
 
     try {
-      const uploadedVenueImages = await uploadFiles(venueImages);
-      const uploadedPastMedia = await uploadFiles(pastEventMedia);
-
       const payload = {
-        title: formData.title,
-        description: formData.description,
-        categories: formData.categories,
-        targetAudience: formData.targetAudience,
-        location: formData.location,
-        budget: parseInt(formData.budget, 10),
-        startDate: formData.startDate,
-        endDate: formData.endDate,
-        attendeeCount: parseInt(formData.attendeeCount, 10) || 100,
-        eventType: formData.eventType,
-        organizerId: user._id,
-        coverImage: formData.image || uploadedVenueImages[0]?.url || '',
-        venueImages: uploadedVenueImages,
-        pastEventMedia: uploadedPastMedia,
+        title: title.trim(),
+        description: description.trim(),
+        categories,
+        targetAudience,
+        location: location.trim(),
+        budget: Number(budget),
+        startDate,
+        endDate,
+        attendeeCount: Number(attendeeCount),
+        eventType,
+        coverImage: coverImage.trim(),
+        venueImages,
+        pastEventMedia,
+        status: mode === "publish" ? "PUBLISHED" : "DRAFT",
       };
 
-      const res = await fetch('/api/events/create', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const response = await fetch("/api/events/create", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        credentials: "include",
         body: JSON.stringify(payload),
       });
 
-      const data = await res.json();
+      const data = await response.json();
 
-      if (!res.ok) {
-        throw new Error(data.message || 'Failed to create event');
+      if (!response.ok) {
+        setError(data.message || "Failed to create event.");
+        return;
       }
 
-      setSuccessMessage('Event created successfully.');
-      router.push(`/events/${data.event._id}`);
-    } catch (err: any) {
-      setError(err.message || 'Something went wrong.');
+      setSuccessMessage(
+        mode === "publish"
+          ? "Event published successfully."
+          : "Event saved as draft successfully."
+      );
+
+      if (data?.event?._id) {
+        router.push(`/events/${data.event._id}`);
+        return;
+      }
+
+      router.push("/dashboard/organizer");
+    } catch (err) {
+      setError("Something went wrong while creating the event.");
     } finally {
-      setLoading(false);
+      setSubmitting(false);
     }
   };
 
+  if (authLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-dark-base px-4 text-text-light">
+        Loading...
+      </div>
+    );
+  }
+
   if (!user) {
-    return <div className="p-10 text-white">Loading...</div>;
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-dark-base px-4">
+        <div className="w-full max-w-xl rounded-3xl border border-white/10 bg-white/[0.04] p-8 text-center text-text-light">
+          <h1 className="text-2xl font-bold">Login required</h1>
+          <p className="mt-3 text-text-muted">
+            You need to login before creating an event.
+          </p>
+          <div className="mt-6">
+            <Button asChild variant="primary">
+              <a href="/login">Go to Login</a>
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (user.role !== "ORGANIZER") {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-dark-base px-4">
+        <div className="w-full max-w-xl rounded-3xl border border-white/10 bg-white/[0.04] p-8 text-center text-text-light">
+          <h1 className="text-2xl font-bold">Organizer access only</h1>
+          <p className="mt-3 text-text-muted">
+            Only organizers can create events on Sponexus.
+          </p>
+          <div className="mt-6">
+            <Button asChild variant="secondary">
+              <a href="/dashboard/sponsor">Go to Dashboard</a>
+            </Button>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (
-    <div className="relative min-h-screen flex items-center justify-center px-4 py-12">
-      <div className="absolute inset-0 -z-20 bg-[radial-gradient(circle_at_20%_30%,rgba(251,191,36,0.08),transparent_40%),radial-gradient(circle_at_80%_70%,rgba(59,130,246,0.08),transparent_40%),linear-gradient(135deg,#020617,#07152f,#020617)]" />
+    <main className="min-h-screen bg-dark-base px-4 py-8 text-text-light">
+      <div className="container-custom mx-auto max-w-5xl">
+        <div className="mb-8">
+          <p className="text-sm uppercase tracking-[0.18em] text-accent-orange">
+            Organizer Portal
+          </p>
+          <h1 className="mt-2 text-3xl font-bold sm:text-4xl">Create Event</h1>
+          <p className="mt-3 max-w-2xl text-text-muted">
+            Build a sponsor-ready event listing with clear details, audience,
+            budget, and trust media so the right sponsors can evaluate fit fast.
+          </p>
+        </div>
 
-      <div className="absolute inset-0 -z-10 pointer-events-none">
-        <div className="absolute top-20 left-10 w-72 h-72 bg-blue-500/10 rounded-full blur-3xl" />
-        <div className="absolute bottom-10 right-10 w-80 h-80 bg-amber-500/10 rounded-full blur-3xl" />
-      </div>
-
-      <div className="w-full max-w-4xl">
-        <div className="rounded-[28px] border border-white/10 bg-white/[0.05] p-8 shadow-[0_0_50px_rgba(245,158,11,0.08)] backdrop-blur-xl">
-          <div className="mb-8 text-center">
-            <h1 className="text-3xl sm:text-4xl font-bold text-white">Create Event</h1>
-            <p className="text-sm text-text-muted mt-2">
-              Add your event details and improve sponsor trust with venue and past-event media
-            </p>
+        {error ? (
+          <div className="mb-6 rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+            {error}
           </div>
+        ) : null}
 
-          {error && (
-            <div className="mb-6 rounded-xl border border-red-500/40 bg-red-500/10 p-4 text-red-300">
-              {error}
-            </div>
-          )}
+        {successMessage ? (
+          <div className="mb-6 rounded-2xl border border-green-500/30 bg-green-500/10 px-4 py-3 text-sm text-green-300">
+            {successMessage}
+          </div>
+        ) : null}
 
-          {successMessage && (
-            <div className="mb-6 rounded-xl border border-green-500/40 bg-green-500/10 p-4 text-green-300">
-              {successMessage}
-            </div>
-          )}
+        <form
+          className="space-y-8"
+          onSubmit={(e) => {
+            e.preventDefault();
+            submitEvent("publish");
+          }}
+        >
+          <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-6 sm:p-8">
+            <h2 className="text-xl font-semibold">Basic Event Details</h2>
+            <div className="mt-6 grid gap-5 md:grid-cols-2">
+              <div className="md:col-span-2">
+                <label className="mb-2 block text-sm font-medium text-text-light">
+                  Event Title
+                </label>
+                <input
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="Enter event title"
+                  className="w-full rounded-2xl border border-white/10 bg-dark-layer px-4 py-3 text-text-light outline-none transition focus:border-accent-orange"
+                />
+              </div>
 
-          <form onSubmit={handleSubmit} className="space-y-6">
-            <Input
-              label="Event Title"
-              name="title"
-              value={formData.title}
-              onChange={handleChange}
-              placeholder="Tech Summit 2026"
-              required
-            />
+              <div className="md:col-span-2">
+                <label className="mb-2 block text-sm font-medium text-text-light">
+                  Description
+                </label>
+                <textarea
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                  placeholder="Describe your event clearly for sponsors"
+                  rows={5}
+                  className="w-full rounded-2xl border border-white/10 bg-dark-layer px-4 py-3 text-text-light outline-none transition focus:border-accent-orange"
+                />
+              </div>
 
-            <div>
-              <label className="block mb-2 text-sm font-medium text-white">Description</label>
-              <textarea
-                name="description"
-                placeholder="Describe your event, goals, audience, and what makes it attractive for sponsors..."
-                value={formData.description}
-                onChange={handleChange}
-                className="w-full rounded-xl bg-white/5 border border-white/10 px-4 py-4 text-white placeholder:text-gray-400 focus:outline-none focus:border-accent-orange/50 focus:ring-1 focus:ring-accent-orange/30 min-h-[140px]"
-                required
-              />
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block mb-2 text-sm font-medium text-white">Event Type</label>
+                <label className="mb-2 block text-sm font-medium text-text-light">
+                  Categories
+                </label>
+                <input
+                  value={categoriesInput}
+                  onChange={(e) => setCategoriesInput(e.target.value)}
+                  placeholder="Tech, College Fest, Sports"
+                  className="w-full rounded-2xl border border-white/10 bg-dark-layer px-4 py-3 text-text-light outline-none transition focus:border-accent-orange"
+                />
+                <p className="mt-2 text-xs text-text-muted">
+                  Use comma separated values.
+                </p>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-text-light">
+                  Target Audience
+                </label>
+                <input
+                  value={targetAudienceInput}
+                  onChange={(e) => setTargetAudienceInput(e.target.value)}
+                  placeholder="Students, Founders, Gamers"
+                  className="w-full rounded-2xl border border-white/10 bg-dark-layer px-4 py-3 text-text-light outline-none transition focus:border-accent-orange"
+                />
+                <p className="mt-2 text-xs text-text-muted">
+                  Use comma separated values.
+                </p>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-text-light">
+                  Event Type
+                </label>
                 <select
-                  name="eventType"
-                  value={formData.eventType}
-                  onChange={handleChange}
-                  className="w-full rounded-xl bg-[#0B1220] border border-white/10 px-4 py-3 text-white focus:outline-none focus:border-accent-orange/50 focus:ring-1 focus:ring-accent-orange/30"
+                  value={eventType}
+                  onChange={(e) =>
+                    setEventType(e.target.value as (typeof EVENT_TYPES)[number])
+                  }
+                  className="w-full rounded-2xl border border-white/10 bg-dark-layer px-4 py-3 text-text-light outline-none transition focus:border-accent-orange"
                 >
-                  {eventTypes.map((type) => (
-                    <option key={type} value={type} className="bg-[#0B1220] text-white">
+                  {EVENT_TYPES.map((type) => (
+                    <option key={type} value={type}>
                       {type}
                     </option>
                   ))}
                 </select>
               </div>
 
-              <Input
-                label="Location"
-                name="location"
-                value={formData.location}
-                onChange={handleChange}
-                placeholder="Gurugram, Haryana"
-                required
-              />
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <Input
-                label="Budget (₹)"
-                name="budget"
-                value={formData.budget}
-                onChange={handleChange}
-                placeholder="50000"
-                required
-              />
-              <Input
-                label="Expected Attendees"
-                name="attendeeCount"
-                value={formData.attendeeCount}
-                onChange={handleChange}
-                placeholder="500"
-              />
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <Input
-                label="Start Date"
-                type="date"
-                name="startDate"
-                value={formData.startDate}
-                onChange={handleChange}
-                required
-                min={today}
-              />
-              <Input
-                label="End Date"
-                type="date"
-                name="endDate"
-                value={formData.endDate}
-                onChange={handleChange}
-                required
-                min={formData.startDate || today}
-              />
-            </div>
-
-            <div>
-              <h3 className="text-white mb-3 font-semibold">Categories</h3>
-              <div className="flex flex-wrap gap-2">
-                {categories.map((cat) => (
-                  <button
-                    key={cat}
-                    type="button"
-                    onClick={() => toggleArray('categories', cat)}
-                    className={`px-3 py-2 rounded-full text-sm transition ${
-                      formData.categories.includes(cat)
-                        ? 'bg-accent-orange text-black'
-                        : 'bg-white/5 border border-white/10 text-text-muted hover:border-accent-orange/40'
-                    }`}
-                  >
-                    {cat}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <h3 className="text-white mb-3 font-semibold">Target Audience</h3>
-              <div className="flex flex-wrap gap-2">
-                {audiences.map((aud) => (
-                  <button
-                    key={aud}
-                    type="button"
-                    onClick={() => toggleArray('targetAudience', aud)}
-                    className={`px-3 py-2 rounded-full text-sm transition ${
-                      formData.targetAudience.includes(aud)
-                        ? 'bg-accent-orange text-black'
-                        : 'bg-white/5 border border-white/10 text-text-muted hover:border-accent-orange/40'
-                    }`}
-                  >
-                    {aud}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 gap-5">
               <div>
-                <label className="block mb-2 text-sm font-medium text-white">Venue Images</label>
-                <input
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  onChange={handleVenueImagesChange}
-                  className="block w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-text-muted file:mr-4 file:rounded-lg file:border-0 file:bg-accent-orange file:px-4 file:py-2 file:text-black hover:file:brightness-110"
-                />
-                <p className="mt-2 text-xs text-text-muted">
-                  Upload venue photos so sponsors can verify the event space.
-                </p>
-                {venueImages.length > 0 && (
-                  <p className="mt-2 text-xs text-green-300">
-                    {venueImages.length} venue file(s) selected
-                  </p>
-                )}
-              </div>
-
-              <div>
-                <label className="block mb-2 text-sm font-medium text-white">
-                  Past Event Photos / Videos
+                <label className="mb-2 block text-sm font-medium text-text-light">
+                  Location
                 </label>
                 <input
-                  type="file"
-                  accept="image/*,video/*"
-                  multiple
-                  onChange={handlePastMediaChange}
-                  className="block w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-text-muted file:mr-4 file:rounded-lg file:border-0 file:bg-accent-orange file:px-4 file:py-2 file:text-black hover:file:brightness-110"
+                  value={location}
+                  onChange={(e) => setLocation(e.target.value)}
+                  placeholder="Delhi NCR / Online / Campus Name"
+                  className="w-full rounded-2xl border border-white/10 bg-dark-layer px-4 py-3 text-text-light outline-none transition focus:border-accent-orange"
                 />
-                <p className="mt-2 text-xs text-text-muted">
-                  Add previous event media to improve credibility and sponsor confidence.
-                </p>
-                {pastEventMedia.length > 0 && (
-                  <p className="mt-2 text-xs text-green-300">
-                    {pastEventMedia.length} past media file(s) selected
-                  </p>
-                )}
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-text-light">
+                  Budget Required
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  value={budget}
+                  onChange={(e) => setBudget(e.target.value)}
+                  placeholder="50000"
+                  className="w-full rounded-2xl border border-white/10 bg-dark-layer px-4 py-3 text-text-light outline-none transition focus:border-accent-orange"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-text-light">
+                  Expected Attendees
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  value={attendeeCount}
+                  onChange={(e) => setAttendeeCount(e.target.value)}
+                  placeholder="1000"
+                  className="w-full rounded-2xl border border-white/10 bg-dark-layer px-4 py-3 text-text-light outline-none transition focus:border-accent-orange"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-text-light">
+                  Start Date
+                </label>
+                <input
+                  type="date"
+                  min={today}
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                  className="w-full rounded-2xl border border-white/10 bg-dark-layer px-4 py-3 text-text-light outline-none transition focus:border-accent-orange"
+                />
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-text-light">
+                  End Date
+                </label>
+                <input
+                  type="date"
+                  min={startDate || today}
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                  className="w-full rounded-2xl border border-white/10 bg-dark-layer px-4 py-3 text-text-light outline-none transition focus:border-accent-orange"
+                />
               </div>
             </div>
+          </section>
 
-            <Input
-              label="Featured Event Image URL (Optional)"
-              name="image"
-              value={formData.image}
-              onChange={handleChange}
-              placeholder="https://example.com/cover-image.jpg"
-            />
+          <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-6 sm:p-8">
+            <h2 className="text-xl font-semibold">Media & Trust Proof</h2>
+            <div className="mt-6 grid gap-5">
+              <div>
+                <label className="mb-2 block text-sm font-medium text-text-light">
+                  Cover Image URL
+                </label>
+                <input
+                  value={coverImage}
+                  onChange={(e) => setCoverImage(e.target.value)}
+                  placeholder="https://..."
+                  className="w-full rounded-2xl border border-white/10 bg-dark-layer px-4 py-3 text-text-light outline-none transition focus:border-accent-orange"
+                />
+              </div>
 
-            <div className="flex gap-4 pt-4">
-              <Button type="submit" fullWidth loading={loading}>
-                {loading ? 'Creating...' : 'Create Event 🚀'}
+              <div>
+                <label className="mb-2 block text-sm font-medium text-text-light">
+                  Venue Media URLs
+                </label>
+                <textarea
+                  value={venueImagesInput}
+                  onChange={(e) => setVenueImagesInput(e.target.value)}
+                  placeholder={"One URL per line\nhttps://...\nhttps://..."}
+                  rows={4}
+                  className="w-full rounded-2xl border border-white/10 bg-dark-layer px-4 py-3 text-text-light outline-none transition focus:border-accent-orange"
+                />
+                <p className="mt-2 text-xs text-text-muted">
+                  Add one image/video URL per line for venue or event space proof.
+                </p>
+              </div>
+
+              <div>
+                <label className="mb-2 block text-sm font-medium text-text-light">
+                  Past Event Media URLs
+                </label>
+                <textarea
+                  value={pastEventMediaInput}
+                  onChange={(e) => setPastEventMediaInput(e.target.value)}
+                  placeholder={"One URL per line\nhttps://...\nhttps://..."}
+                  rows={4}
+                  className="w-full rounded-2xl border border-white/10 bg-dark-layer px-4 py-3 text-text-light outline-none transition focus:border-accent-orange"
+                />
+                <p className="mt-2 text-xs text-text-muted">
+                  Add proof from previous editions to build sponsor trust.
+                </p>
+              </div>
+            </div>
+          </section>
+
+          <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-6 sm:p-8">
+            <h2 className="text-xl font-semibold">Publishing</h2>
+            <div className="mt-4 rounded-2xl border border-white/10 bg-dark-layer px-4 py-4 text-sm text-text-muted">
+              Save as <span className="text-white">Draft</span> if you still need to
+              review details. Publish when the event is ready for sponsor discovery.
+            </div>
+
+            <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:justify-end">
+              <Button
+                type="button"
+                variant="ghost"
+                onClick={() => router.push("/dashboard/organizer")}
+              >
+                Cancel
               </Button>
 
               <Button
                 type="button"
                 variant="secondary"
-                onClick={() => router.push('/dashboard')}
+                loading={submitting && publishMode === "draft"}
+                disabled={submitting}
+                onClick={() => submitEvent("draft")}
               >
-                Cancel
+                Save Draft
+              </Button>
+
+              <Button
+                type="submit"
+                variant="primary"
+                loading={submitting && publishMode === "publish"}
+                disabled={submitting}
+              >
+                Publish Event
               </Button>
             </div>
-          </form>
-        </div>
+          </section>
+        </form>
       </div>
-    </div>
+    </main>
   );
 }

@@ -1,152 +1,65 @@
-'use client';
+"use client";
 
-import { useEffect, useMemo, useState } from 'react';
-import { useParams, useRouter } from 'next/navigation';
-import Link from 'next/link';
-import { Button } from '@/components/Button';
+import Image from "next/image";
+import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
+import { useParams, useRouter } from "next/navigation";
+import { Button } from "@/components/Button";
+import { useAuth } from "@/hooks/useAuth";
+import { Event } from "@/types/event";
 
-type EventMediaItem = {
-  url: string;
-  publicId: string;
-  type: 'image' | 'video';
-  title?: string;
-  uploadedAt?: string;
-};
-
-type OrganizerRef =
-  | {
-      _id?: string;
-      firstName?: string;
-      lastName?: string;
-      companyName?: string;
-      name?: string;
-      email?: string;
-    }
-  | string
-  | null
-  | undefined;
-
-type EventType = {
-  _id: string;
-  title: string;
-  description?: string;
-  eventType?: string;
-  status?: string;
-  coverImage?: string;
-  categories?: string[];
-  targetAudience?: string[];
-  venueImages?: EventMediaItem[];
-  pastEventMedia?: EventMediaItem[];
-  location?: string;
-  budget?: number | string;
-  attendeeCount?: number | string;
-  startDate?: string;
-  endDate?: string;
-  organizerId?: OrganizerRef;
+type EventDetailResponse = Event & {
   isPast?: boolean;
   isActive?: boolean;
 };
 
-type StoredUser = {
-  _id?: string;
-  name?: string;
-  email?: string;
-  role?: string;
-  brandName?: string;
-  preferredCategories?: string[];
-  officialPhone?: string;
+type MediaItem = {
+  url: string;
+  publicId: string;
+  type: "image" | "video";
+  title?: string;
+  uploadedAt?: string;
 };
-
-function formatCurrency(value: number | string | undefined) {
-  const amount = Number(value || 0);
-  if (Number.isNaN(amount)) return '₹0';
-  return `₹${amount.toLocaleString('en-IN')}`;
-}
-
-function formatDate(value?: string) {
-  if (!value) return 'Not available';
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return 'Invalid date';
-
-  return date.toLocaleDateString('en-IN', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-  });
-}
-
-function getSafeArray<T>(value: T[] | undefined | null): T[] {
-  return Array.isArray(value) ? value : [];
-}
-
-function getOrganizerId(organizer: OrganizerRef): string | null {
-  if (!organizer) return null;
-  if (typeof organizer === 'string') return organizer;
-  return organizer._id || null;
-}
 
 export default function EventDetailPage() {
   const params = useParams();
   const router = useRouter();
-  const rawEventId = params?.id;
-  const eventId = Array.isArray(rawEventId) ? rawEventId[0] : rawEventId;
+  const { user, loading: authLoading, isAuthenticated } = useAuth();
 
-  const [event, setEvent] = useState<EventType | null>(null);
+  const eventId = typeof params?.id === "string" ? params.id : "";
+  const [event, setEvent] = useState<EventDetailResponse | null>(null);
   const [loading, setLoading] = useState(true);
-  const [user, setUser] = useState<StoredUser | null>(null);
-  const [error, setError] = useState('');
+  const [actionLoading, setActionLoading] = useState(false);
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    try {
-      const storedUser = localStorage.getItem('user');
-      if (storedUser) {
-        const parsedUser = JSON.parse(storedUser) as StoredUser;
-        setUser(parsedUser);
-      }
-    } catch (err) {
-      console.error('Failed to parse user from localStorage:', err);
-      setUser(null);
-      localStorage.removeItem('user');
-    }
-  }, []);
-
-  useEffect(() => {
-    if (!eventId || typeof eventId !== 'string') {
-      setError('Invalid event ID');
-      setLoading(false);
-      return;
-    }
-
-    const controller = new AbortController();
-
     const fetchEvent = async () => {
+      if (!eventId) {
+        setError("Invalid event ID.");
+        setLoading(false);
+        return;
+      }
+
       try {
         setLoading(true);
-        setError('');
+        setError("");
 
-        const res = await fetch(`/api/events/${encodeURIComponent(eventId)}`, {
-          method: 'GET',
-          cache: 'no-store',
-          signal: controller.signal,
+        const response = await fetch(`/api/events/${eventId}`, {
+          method: "GET",
+          cache: "no-store",
         });
 
-        const data = await res.json();
+        const data = await response.json();
 
-        if (!res.ok || !data?.success) {
-          throw new Error(data?.message || 'Failed to fetch event');
-        }
-
-        setEvent(data.event as EventType);
-      } catch (err: unknown) {
-        if (err instanceof DOMException && err.name === 'AbortError') {
+        if (!response.ok) {
+          setError(data.message || "Failed to load event.");
+          setEvent(null);
           return;
         }
 
-        const message =
-          err instanceof Error ? err.message : 'Failed to load event';
-
-        setError(message);
+        setEvent(data.data || null);
+      } catch {
+        setError("Something went wrong while loading the event.");
         setEvent(null);
       } finally {
         setLoading(false);
@@ -154,384 +67,420 @@ export default function EventDetailPage() {
     };
 
     fetchEvent();
-
-    return () => {
-      controller.abort();
-    };
   }, [eventId]);
 
-  const venueImages = useMemo(
-    () => getSafeArray<EventMediaItem>(event?.venueImages),
-    [event]
-  );
+  const isOwner = useMemo(() => {
+    if (!user || !event?.organizerId) return false;
 
-  const pastEventMedia = useMemo(
-    () => getSafeArray<EventMediaItem>(event?.pastEventMedia),
-    [event]
-  );
+    const organizer =
+      typeof event.organizerId === "string"
+        ? event.organizerId
+        : (event.organizerId as any)?._id;
 
-  const hasVenueImages = venueImages.length > 0;
-  const hasPastMedia = pastEventMedia.length > 0;
+    return organizer === user._id;
+  }, [user, event]);
 
-  const organizerId = getOrganizerId(event?.organizerId);
-  const isOwner = Boolean(user?._id && organizerId && user._id === organizerId);
-  const isSponsor = user?.role === 'SPONSOR';
+  const organizerDisplay = useMemo(() => {
+    if (!event?.organizerId) return "Organizer not available";
 
-  const isEventPast = useMemo(() => {
-    if (!event) return false;
-    if (typeof event.isPast === 'boolean') return event.isPast;
-    if (!event.endDate) return false;
-    return new Date(event.endDate) < new Date();
+    if (typeof event.organizerId === "string") return "Organizer";
+
+    const organizer = event.organizerId as any;
+    const firstName = organizer?.firstName || "";
+    const lastName = organizer?.lastName || "";
+    const companyName = organizer?.companyName || "";
+
+    const fullName = `${firstName} ${lastName}`.trim();
+
+    return companyName || fullName || "Organizer";
   }, [event]);
 
-  const isEventActive = useMemo(() => {
-    if (!event) return false;
-    if (typeof event.isActive === 'boolean') return event.isActive;
-    return event.status === 'PUBLISHED' || event.status === 'ONGOING';
+  const formattedDateRange = useMemo(() => {
+    if (!event?.startDate) return "Date not set";
+
+    const start = new Date(event.startDate).toLocaleDateString("en-IN", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+
+    const end = event.endDate
+      ? new Date(event.endDate).toLocaleDateString("en-IN", {
+          month: "short",
+          day: "numeric",
+          year: "numeric",
+        })
+      : "";
+
+    return end && end !== start ? `${start} - ${end}` : start;
   }, [event]);
 
-  const sponsorProfileComplete = useMemo(() => {
-    if (!isSponsor || !user) return false;
+  const formattedBudget = useMemo(() => {
+    if (!event || typeof event.budget !== "number" || event.budget <= 0) {
+      return "Not specified";
+    }
 
-    return Boolean(
-      user.brandName &&
-        Array.isArray(user.preferredCategories) &&
-        user.preferredCategories.length > 0 &&
-        user.officialPhone
-    );
-  }, [isSponsor, user]);
+    return `₹${event.budget.toLocaleString("en-IN")}`;
+  }, [event]);
 
-  const sponsorButtonLabel = useMemo(() => {
-    if (!isSponsor) return 'Login to Continue';
-    if (isEventPast || !isEventActive) return 'Event Closed';
-    if (!sponsorProfileComplete) return 'Complete Profile First';
-    return 'Sponsor This Event';
-  }, [isSponsor, isEventPast, isEventActive, sponsorProfileComplete]);
+  const formattedAttendees = useMemo(() => {
+    if (!event || typeof event.attendeeCount !== "number" || event.attendeeCount <= 0) {
+      return "N/A";
+    }
 
-  const handleSponsorAction = () => {
-    if (!user) {
-      router.push('/login');
+    return event.attendeeCount.toLocaleString("en-IN");
+  }, [event]);
+
+  const categories = Array.isArray(event?.categories) ? event!.categories : [];
+  const targetAudience = Array.isArray(event?.targetAudience)
+    ? event!.targetAudience
+    : [];
+
+  const venueImages: MediaItem[] = Array.isArray(event?.venueImages)
+    ? (event!.venueImages as MediaItem[])
+    : [];
+
+  const pastEventMedia: MediaItem[] = Array.isArray(event?.pastEventMedia)
+    ? (event!.pastEventMedia as MediaItem[])
+    : [];
+
+  const handleSponsorInterest = async () => {
+    if (!isAuthenticated) {
+      router.push(`/login?redirect=/events/${eventId}`);
       return;
     }
 
-    if (!isSponsor) {
-      router.push('/events');
+    if (user?.role !== "SPONSOR") {
       return;
     }
 
-    if (isEventPast || !isEventActive) return;
+    try {
+      setActionLoading(true);
 
-    if (!sponsorProfileComplete) {
-      router.push('/settings');
-      return;
+      // Temporary CTA flow until direct deal initiation / sponsor-now flow is finalized
+      router.push("/match");
+    } finally {
+      setActionLoading(false);
     }
-
-    // Temporary flow until dedicated sponsor-now page is built
-    router.push('/match');
   };
 
-  if (loading) {
+  if (loading || authLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center px-4">
-        <div className="rounded-2xl border border-white/10 bg-white/[0.05] px-6 py-4 text-text-muted backdrop-blur-xl">
-          Loading event...
-        </div>
+      <div className="flex min-h-screen items-center justify-center bg-dark-base px-4 text-text-light">
+        Loading event...
       </div>
     );
   }
 
   if (error || !event) {
     return (
-      <div className="relative min-h-screen flex items-center justify-center px-4">
-        <div className="absolute inset-0 -z-20 bg-[radial-gradient(circle_at_20%_30%,rgba(251,191,36,0.08),transparent_40%),radial-gradient(circle_at_80%_70%,rgba(59,130,246,0.08),transparent_40%),linear-gradient(135deg,#020617,#07152f,#020617)]" />
-
-        <div className="w-full max-w-lg rounded-2xl border border-white/10 bg-white/[0.05] p-10 text-center backdrop-blur-xl">
-          <h2 className="mb-4 text-2xl font-bold text-white">Event Not Found</h2>
-          <p className="mb-6 text-text-muted">
-            {error || 'Event not available'}
+      <div className="flex min-h-screen items-center justify-center bg-dark-base px-4">
+        <div className="w-full max-w-2xl rounded-3xl border border-white/10 bg-white/[0.04] p-8 text-center text-text-light">
+          <h1 className="text-2xl font-bold">Event unavailable</h1>
+          <p className="mt-3 text-text-muted">
+            {error || "This event could not be loaded."}
           </p>
-          <Link href="/events">
-            <Button>Browse Events</Button>
-          </Link>
+          <div className="mt-6">
+            <Button asChild variant="primary">
+              <Link href="/events">Back to Events</Link>
+            </Button>
+          </div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="relative min-h-screen px-4 py-12">
-      <div className="absolute inset-0 -z-20 bg-[radial-gradient(circle_at_20%_30%,rgba(251,191,36,0.08),transparent_40%),radial-gradient(circle_at_80%_70%,rgba(59,130,246,0.08),transparent_40%),linear-gradient(135deg,#020617,#07152f,#020617)]" />
+    <main className="min-h-screen bg-dark-base px-4 py-8 text-text-light">
+      <div className="container-custom mx-auto max-w-6xl">
+        <div className="mb-8 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <p className="text-sm uppercase tracking-[0.18em] text-accent-orange">
+              {event.isPast ? "Past Event" : event.isActive ? "Active Event" : "Event"}
+            </p>
+            <h1 className="mt-2 text-3xl font-bold sm:text-4xl">
+              {event.title || "Untitled Event"}
+            </h1>
+            <p className="mt-3 max-w-3xl text-text-muted">
+              {event.description || "No description available."}
+            </p>
+          </div>
 
-      <div className="absolute inset-0 -z-10 pointer-events-none">
-        <div className="absolute top-20 left-10 h-72 w-72 rounded-full bg-blue-500/10 blur-3xl" />
-        <div className="absolute bottom-10 right-10 h-80 w-80 rounded-full bg-amber-500/10 blur-3xl" />
-      </div>
+          <div className="flex flex-col gap-3 sm:flex-row lg:flex-col">
+            {isOwner ? (
+              <>
+                <Button
+                  variant="secondary"
+                  onClick={() => router.push("/dashboard/organizer")}
+                >
+                  Back to Dashboard
+                </Button>
 
-      <div className="mx-auto max-w-6xl space-y-10">
-        {/* Top bar */}
-        <div className="flex items-center justify-between gap-4">
-          <button
-            type="button"
-            onClick={() => router.back()}
-            className="text-sm text-text-muted transition hover:text-white"
-          >
-            ← Back
-          </button>
-
-          {isEventPast ? (
-            <span className="rounded-full bg-red-500/20 px-3 py-1 text-sm text-red-300">
-              Past Event
-            </span>
-          ) : isEventActive ? (
-            <span className="rounded-full bg-green-500/20 px-3 py-1 text-sm text-green-300">
-              Active Event
-            </span>
-          ) : (
-            <span className="rounded-full bg-yellow-500/20 px-3 py-1 text-sm text-yellow-300">
-              Not Active
-            </span>
-          )}
+                <Button
+                  variant="primary"
+                  onClick={() => router.push("/events")}
+                >
+                  View My Events
+                </Button>
+              </>
+            ) : user?.role === "SPONSOR" ? (
+              <Button
+                variant="primary"
+                loading={actionLoading}
+                onClick={handleSponsorInterest}
+              >
+                {actionLoading ? "Opening..." : "Interested in This Event"}
+              </Button>
+            ) : (
+              <Button asChild variant="primary">
+                <Link href={`/login?redirect=/events/${eventId}`}>Login to Continue</Link>
+              </Button>
+            )}
+          </div>
         </div>
 
-        {/* Hero Image */}
-        {event.coverImage && (
-          <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.04]">
-            <img
+        {event.coverImage ? (
+          <div className="relative mb-8 h-[260px] w-full overflow-hidden rounded-3xl border border-white/10 bg-dark-layer sm:h-[380px]">
+            <Image
               src={event.coverImage}
-              alt={event.title || 'Event cover'}
-              className="h-[350px] w-full object-cover"
+              alt={event.title || "Event cover image"}
+              fill
+              className="object-cover"
+              sizes="100vw"
+              priority
             />
           </div>
-        )}
+        ) : null}
 
-        {/* Title */}
-        <div>
-          <h1 className="mb-3 text-4xl font-bold text-white">
-            {event.title || 'Untitled Event'}
-          </h1>
+        <div className="grid gap-8 lg:grid-cols-[1.6fr_0.9fr]">
+          <div className="space-y-8">
+            <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-6 sm:p-8">
+              <h2 className="text-xl font-semibold">Event Overview</h2>
 
-          <div className="flex flex-wrap gap-2">
-            {event.eventType && (
-              <span className="rounded-full bg-accent-orange/20 px-3 py-1 text-sm text-accent-orange">
-                {event.eventType}
-              </span>
-            )}
-
-            {event.status && (
-              <span className="rounded-full bg-blue-500/20 px-3 py-1 text-sm text-blue-400">
-                {event.status}
-              </span>
-            )}
-          </div>
-        </div>
-
-        <div className="grid gap-8 lg:grid-cols-3">
-          {/* Left */}
-          <div className="space-y-6 lg:col-span-2">
-            <div className="rounded-2xl border border-white/10 bg-white/[0.05] p-6">
-              <h2 className="mb-3 text-xl font-semibold text-white">About Event</h2>
-              <p className="leading-relaxed text-text-muted">
-                {event.description || 'No description available.'}
-              </p>
-            </div>
-
-            {event.organizerId && typeof event.organizerId !== 'string' && (
-              <div className="rounded-2xl border border-white/10 bg-white/[0.05] p-6">
-                <h3 className="mb-3 font-semibold text-white">Organizer</h3>
-                <p className="text-text-light">
-                  {event.organizerId.firstName || ''} {event.organizerId.lastName || ''}
-                </p>
-                <p className="mt-1 text-sm text-text-muted">
-                  {event.organizerId.companyName || 'Organizer'}
-                </p>
-              </div>
-            )}
-
-            <div className="rounded-2xl border border-white/10 bg-white/[0.05] p-6">
-              <h3 className="mb-3 font-semibold text-white">Categories</h3>
-              {getSafeArray(event.categories).length > 0 ? (
-                <div className="flex flex-wrap gap-2">
-                  {getSafeArray(event.categories).map((cat) => (
-                    <span
-                      key={cat}
-                      className="rounded-full bg-accent-orange/20 px-3 py-1 text-sm text-accent-orange"
-                    >
-                      {cat}
-                    </span>
-                  ))}
+              <div className="mt-6 grid gap-5 sm:grid-cols-2">
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-text-muted">Date</p>
+                  <p className="mt-1 font-medium text-text-light">{formattedDateRange}</p>
                 </div>
-              ) : (
-                <p className="text-sm text-text-muted">No categories added yet.</p>
-              )}
-            </div>
 
-            <div className="rounded-2xl border border-white/10 bg-white/[0.05] p-6">
-              <h3 className="mb-3 font-semibold text-white">Target Audience</h3>
-              {getSafeArray(event.targetAudience).length > 0 ? (
-                <div className="flex flex-wrap gap-2">
-                  {getSafeArray(event.targetAudience).map((aud) => (
-                    <span
-                      key={aud}
-                      className="rounded-full bg-blue-500/20 px-3 py-1 text-sm text-blue-400"
-                    >
-                      {aud}
-                    </span>
-                  ))}
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-text-muted">Budget</p>
+                  <p className="mt-1 font-medium text-accent-orange">{formattedBudget}</p>
                 </div>
-              ) : (
-                <p className="text-sm text-text-muted">
-                  No target audience details added yet.
-                </p>
-              )}
-            </div>
 
-            {hasVenueImages && (
-              <div className="rounded-2xl border border-white/10 bg-white/[0.05] p-6">
-                <h3 className="mb-4 font-semibold text-white">Venue Gallery</h3>
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-text-muted">Location</p>
+                  <p className="mt-1 font-medium text-text-light">
+                    {event.location || "Not specified"}
+                  </p>
+                </div>
 
-                <div className="grid gap-4 sm:grid-cols-2">
-                  {venueImages.map((media) => (
-                    <a
-                      key={media.publicId}
-                      href={media.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="group block overflow-hidden rounded-2xl border border-white/10 bg-white/5"
-                    >
-                      <img
-                        src={media.url}
-                        alt={media.title || 'Venue image'}
-                        className="h-56 w-full object-cover transition duration-300 group-hover:scale-[1.03]"
-                      />
-                      <div className="p-3">
-                        <p className="text-sm text-text-light">
-                          {media.title || 'Venue image'}
-                        </p>
-                      </div>
-                    </a>
-                  ))}
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-text-muted">
+                    Expected Attendees
+                  </p>
+                  <p className="mt-1 font-medium text-text-light">
+                    👥 {formattedAttendees}
+                  </p>
+                </div>
+
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-text-muted">Event Type</p>
+                  <p className="mt-1 font-medium text-text-light">
+                    {event.eventType || "Event"}
+                  </p>
+                </div>
+
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-text-muted">Organizer</p>
+                  <p className="mt-1 font-medium text-text-light">{organizerDisplay}</p>
                 </div>
               </div>
-            )}
+            </section>
 
-            {hasPastMedia && (
-              <div className="rounded-2xl border border-white/10 bg-white/[0.05] p-6">
-                <h3 className="mb-4 font-semibold text-white">Past Event Media</h3>
+            <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-6 sm:p-8">
+              <h2 className="text-xl font-semibold">Categories</h2>
 
-                <div className="grid gap-4 sm:grid-cols-2">
-                  {pastEventMedia.map((media) => (
+              <div className="mt-5 flex flex-wrap gap-3">
+                {categories.length > 0 ? (
+                  categories.map((category) => (
+                    <span
+                      key={category}
+                      className="rounded-full bg-accent-orange/10 px-4 py-2 text-sm text-accent-orange"
+                    >
+                      {category}
+                    </span>
+                  ))
+                ) : (
+                  <p className="text-text-muted">No categories added.</p>
+                )}
+              </div>
+            </section>
+
+            <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-6 sm:p-8">
+              <h2 className="text-xl font-semibold">Target Audience</h2>
+
+              <div className="mt-5 flex flex-wrap gap-3">
+                {targetAudience.length > 0 ? (
+                  targetAudience.map((audience) => (
+                    <span
+                      key={audience}
+                      className="rounded-full bg-white/5 px-4 py-2 text-sm text-text-light"
+                    >
+                      {audience}
+                    </span>
+                  ))
+                ) : (
+                  <p className="text-text-muted">No audience details added.</p>
+                )}
+              </div>
+            </section>
+
+            {venueImages.length > 0 && (
+              <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-6 sm:p-8">
+                <h2 className="text-xl font-semibold">Venue & Event Space</h2>
+                <div className="mt-6 grid gap-4 sm:grid-cols-2">
+                  {venueImages.map((item, index) => (
                     <div
-                      key={media.publicId}
-                      className="overflow-hidden rounded-2xl border border-white/10 bg-white/5"
+                      key={`${item.publicId}-${index}`}
+                      className="overflow-hidden rounded-2xl border border-white/10 bg-dark-layer"
                     >
-                      {media.type === 'image' ? (
-                        <a
-                          href={media.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="group block"
-                        >
-                          <img
-                            src={media.url}
-                            alt={media.title || 'Past event media'}
-                            className="h-56 w-full object-cover transition duration-300 group-hover:scale-[1.03]"
-                          />
-                        </a>
-                      ) : (
+                      {item.type === "video" ? (
                         <video
                           controls
-                          preload="metadata"
-                          className="h-56 w-full bg-black object-cover"
-                        >
-                          <source src={media.url} />
-                          Your browser does not support the video tag.
-                        </video>
+                          className="h-56 w-full object-cover"
+                          src={item.url}
+                        />
+                      ) : (
+                        <div className="relative h-56 w-full">
+                          <Image
+                            src={item.url}
+                            alt={item.title || `Venue media ${index + 1}`}
+                            fill
+                            className="object-cover"
+                            sizes="(max-width: 768px) 100vw, 50vw"
+                          />
+                        </div>
                       )}
 
-                      <div className="p-3">
-                        <p className="text-sm text-text-light">
-                          {media.title ||
-                            (media.type === 'video'
-                              ? 'Past event video'
-                              : 'Past event image')}
-                        </p>
-                        <p className="mt-1 text-xs uppercase text-text-muted">
-                          {media.type}
-                        </p>
-                      </div>
+                      {item.title ? (
+                        <div className="px-4 py-3 text-sm text-text-muted">
+                          {item.title}
+                        </div>
+                      ) : null}
                     </div>
                   ))}
                 </div>
-              </div>
+              </section>
+            )}
+
+            {pastEventMedia.length > 0 && (
+              <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-6 sm:p-8">
+                <h2 className="text-xl font-semibold">Past Event Proof</h2>
+                <p className="mt-2 text-sm text-text-muted">
+                  Previous event media to help sponsors evaluate trust and execution quality.
+                </p>
+
+                <div className="mt-6 grid gap-4 sm:grid-cols-2">
+                  {pastEventMedia.map((item, index) => (
+                    <div
+                      key={`${item.publicId}-${index}`}
+                      className="overflow-hidden rounded-2xl border border-white/10 bg-dark-layer"
+                    >
+                      {item.type === "video" ? (
+                        <video
+                          controls
+                          className="h-56 w-full object-cover"
+                          src={item.url}
+                        />
+                      ) : (
+                        <div className="relative h-56 w-full">
+                          <Image
+                            src={item.url}
+                            alt={item.title || `Past event media ${index + 1}`}
+                            fill
+                            className="object-cover"
+                            sizes="(max-width: 768px) 100vw, 50vw"
+                          />
+                        </div>
+                      )}
+
+                      {item.title ? (
+                        <div className="px-4 py-3 text-sm text-text-muted">
+                          {item.title}
+                        </div>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              </section>
             )}
           </div>
 
-          {/* Right Sidebar */}
-          <div className="space-y-6">
-            <div className="space-y-4 rounded-2xl border border-white/10 bg-white/[0.05] p-6">
-              <div>
-                <p className="text-sm text-text-muted">Location</p>
-                <p className="text-white">{event.location || 'Not specified'}</p>
+          <aside className="space-y-6">
+            <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-6">
+              <h2 className="text-lg font-semibold">Why this matters</h2>
+              <div className="mt-4 space-y-3 text-sm text-text-muted">
+                <p>• Strong event details improve sponsor confidence.</p>
+                <p>• Clear audience and budget help better-fit matching.</p>
+                <p>• Venue and past-event proof build credibility fast.</p>
               </div>
+            </section>
 
-              <div>
-                <p className="text-sm text-text-muted">Budget</p>
-                <p className="text-2xl font-bold text-accent-orange">
-                  {formatCurrency(event.budget)}
+            {isOwner ? (
+              <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-6">
+                <h2 className="text-lg font-semibold">Organizer Actions</h2>
+                <div className="mt-4 space-y-3">
+                  <Button
+                    variant="secondary"
+                    className="w-full"
+                    onClick={() => router.push("/events")}
+                  >
+                    Go to My Events
+                  </Button>
+
+                  <Button
+                    variant="ghost"
+                    className="w-full"
+                    onClick={() => router.push("/dashboard/organizer")}
+                  >
+                    Back to Dashboard
+                  </Button>
+                </div>
+              </section>
+            ) : user?.role === "SPONSOR" ? (
+              <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-6">
+                <h2 className="text-lg font-semibold">Sponsor Action</h2>
+                <p className="mt-2 text-sm text-text-muted">
+                  Interested in this event? Continue to matching and next-step sponsor flow.
                 </p>
-              </div>
-
-              <div>
-                <p className="text-sm text-text-muted">Attendees</p>
-                <p className="text-white">
-                  {event.attendeeCount !== undefined &&
-                  event.attendeeCount !== null &&
-                  event.attendeeCount !== ''
-                    ? event.attendeeCount
-                    : 'Not specified'}
+                <div className="mt-4">
+                  <Button
+                    variant="primary"
+                    className="w-full"
+                    loading={actionLoading}
+                    onClick={handleSponsorInterest}
+                  >
+                    {actionLoading ? "Opening..." : "Continue"}
+                  </Button>
+                </div>
+              </section>
+            ) : (
+              <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-6">
+                <h2 className="text-lg font-semibold">Want to sponsor this?</h2>
+                <p className="mt-2 text-sm text-text-muted">
+                  Login as a sponsor to explore opportunities and continue the next step.
                 </p>
-              </div>
-
-              <div>
-                <p className="text-sm text-text-muted">Dates</p>
-                <p className="text-white">
-                  {formatDate(event.startDate)} - {formatDate(event.endDate)}
-                </p>
-              </div>
-            </div>
-
-            {!isOwner && (
-              <Button
-                fullWidth
-                onClick={handleSponsorAction}
-                disabled={isSponsor && (isEventPast || !isEventActive)}
-              >
-                {sponsorButtonLabel}
-              </Button>
+                <div className="mt-4">
+                  <Button asChild variant="primary" className="w-full">
+                    <Link href={`/login?redirect=/events/${eventId}`}>Login as Sponsor</Link>
+                  </Button>
+                </div>
+              </section>
             )}
-
-            {isOwner && (
-              <Link href={`/events/${event._id}/edit`}>
-                <Button variant="secondary" fullWidth>
-                  Edit Event
-                </Button>
-              </Link>
-            )}
-
-            {isSponsor && !isOwner && !sponsorProfileComplete && !isEventPast && (
-              <p className="text-sm text-text-muted">
-                Complete your sponsor profile first so you can move ahead with relevant event opportunities.
-              </p>
-            )}
-
-            {isEventPast && (
-              <p className="text-sm text-red-300">
-                This event has already ended, so sponsorship actions are closed.
-              </p>
-            )}
-          </div>
+          </aside>
         </div>
       </div>
-    </div>
+    </main>
   );
 }

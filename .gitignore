@@ -1,57 +1,41 @@
-# dependencies
+# =========================
+# DEPENDENCIES
+# =========================
 /node_modules
 /.pnp
-.pnp.*
-.yarn/*
+.pnp.js
 
 # testing
 /coverage
 
 # Next.js
-.next/
-out/
+.next
+/out
 
 # production
-build/
-dist/
-
-# TypeScript
-*.tsbuildinfo
+/build
 
 # misc
 .DS_Store
-Thumbs.db
 *.pem
-structure.txt
 
-# debug / logs
+# debug
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-pnpm-debug.log*
-*.log
 
 # local env files
 .env
-.env.*
 .env.local
 !.env.example
 
-# vercel
+# =========================
+# VERCEL
+# =========================
 .vercel
 
-# cache / temp
-.cache
-.tmp
-.temp
-
-# uploads
-/uploads
-/public/uploads
-
 # IDE
-.vscode/*
-!.vscode/extensions.json
-.idea/
+.vscode
+.idea
 *.swp
 *.swo

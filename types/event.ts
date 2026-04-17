@@ -1,6 +1,17 @@
-export type EventCategory = 'CONFERENCE' | 'WORKSHOP' | 'WEBINAR' | 'FESTIVAL' | 'MEETUP' | 'OTHER';
+export type EventCategory =
+  | "CONFERENCE"
+  | "WORKSHOP"
+  | "WEBINAR"
+  | "FESTIVAL"
+  | "MEETUP"
+  | "OTHER";
 
-export type EventStatus = 'DRAFT' | 'PUBLISHED' | 'ONGOING' | 'COMPLETED' | 'CANCELLED';
+export type EventStatus =
+  | "DRAFT"
+  | "PUBLISHED"
+  | "ONGOING"
+  | "COMPLETED"
+  | "CANCELLED";
 
 export interface IEvent {
   _id?: string;
@@ -11,15 +22,14 @@ export interface IEvent {
   targetAudience: string[];
   location: string;
   budget: number;
-  startDate: Date;
-  endDate: Date;
+  startDate: Date | string;
+  endDate: Date | string;
   attendeeCount: number;
   eventType: EventCategory;
-  category?: EventCategory;
   image?: string;
   status: EventStatus;
-  createdAt?: Date;
-  updatedAt?: Date;
+  createdAt?: Date | string;
+  updatedAt?: Date | string;
 }
 
 export type Event = IEvent;

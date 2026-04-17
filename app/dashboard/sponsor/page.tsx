@@ -1,37 +1,112 @@
-'use client';
+"use client";
 
-import { useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import Link from 'next/link';
-import { Button } from '@/components/Button';
-import { EventCard } from '@/components/EventCard';
-import { EmptyState } from '@/components/EmptyState';
-import { useAuth } from '@/hooks/useAuth';
-import { useMatch } from '@/hooks/useMatch';
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
+
+import { Button } from "@/components/Button";
+import { EventCard } from "@/components/EventCard";
+import { EmptyState } from "@/components/EmptyState";
+import { useAuth } from "@/hooks/useAuth";
+import { useMatch } from "@/hooks/useMatch";
+
+type CurrentUser = {
+  _id?: string;
+  id?: string;
+  role?: "ORGANIZER" | "SPONSOR";
+  name?: string;
+  firstName?: string;
+  email?: string;
+};
 
 type SponsorProfile = {
   _id?: string;
+  userId?: string;
   brandName?: string;
-  preferredCategories?: string[];
-  targetAudience?: string;
-  locationPreference?: string;
+  companyName?: string;
   website?: string;
   officialEmail?: string;
-  officialPhone?: string;
+  phone?: string;
+  industry?: string;
+  companySize?: string;
+  about?: string;
+  logoUrl?: string;
+  targetAudience?: string;
+  preferredCategories?: string[];
+  preferredLocations?: string[];
+  sponsorshipInterests?: string[];
+  isProfileComplete?: boolean;
+  isPublic?: boolean;
 };
 
-type MatchedEvent = {
-  _id?: string;
-  title?: string;
-  status?: string;
-  startDate?: string;
+type SettingsMeResponse = {
+  success: boolean;
+  user?: CurrentUser;
+  sponsorProfile?: SponsorProfile | null;
+  message?: string;
 };
 
 type MatchItem = {
   score: number;
-  sponsor?: SponsorProfile;
-  event?: MatchedEvent;
+  event?: {
+    _id?: string;
+    title?: string;
+    description?: string;
+    categories?: string[];
+    targetAudience?: string[];
+    location?: string;
+    budget?: number;
+    startDate?: string;
+    endDate?: string;
+    attendeeCount?: number;
+    eventType?: string;
+    image?: string;
+    status?: string;
+  };
 };
+
+type SponsorshipItem = {
+  _id?: string;
+  sponsorshipTitle?: string;
+  sponsorshipType?: string;
+  category?: string;
+  budget?: number;
+  campaignGoal?: string;
+  locationPreference?: string;
+  targetAudience?: string;
+  status?: "active" | "paused" | "closed";
+  createdAt?: string;
+  expiresAt?: string | null;
+};
+
+type SponsorshipListResponse = {
+  success: boolean;
+  data?: SponsorshipItem[];
+  pagination?: {
+    total?: number;
+    page?: number;
+    limit?: number;
+    pages?: number;
+  };
+  message?: string;
+};
+
+function formatCurrency(value?: number) {
+  if (typeof value !== "number" || Number.isNaN(value)) return "Not specified";
+  return `₹${value.toLocaleString("en-IN")}`;
+}
+
+function formatDate(value?: string | null) {
+  if (!value) return "No expiry";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "No expiry";
+
+  return date.toLocaleDateString("en-IN", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}
 
 export default function SponsorDashboardPage() {
   const router = useRouter();
@@ -44,62 +119,135 @@ export default function SponsorDashboardPage() {
   } = useMatch();
 
   const [profileLoading, setProfileLoading] = useState(true);
-  const [profileError, setProfileError] = useState('');
+  const [profileError, setProfileError] = useState("");
   const [sponsorProfile, setSponsorProfile] = useState<SponsorProfile | null>(null);
+
+  const [postsLoading, setPostsLoading] = useState(true);
+  const [postsError, setPostsError] = useState("");
+  const [sponsorshipPosts, setSponsorshipPosts] = useState<SponsorshipItem[]>([]);
+  const [postTotal, setPostTotal] = useState(0);
 
   useEffect(() => {
     if (authLoading) return;
 
     if (!user) {
-      router.replace('/login');
+      router.replace("/login");
       return;
     }
 
-    if (user.role !== 'SPONSOR') {
-      router.replace('/dashboard/organizer');
+    if (user.role === "ORGANIZER") {
+      router.replace("/dashboard/organizer");
+      return;
+    }
+
+    if (user.role !== "SPONSOR") {
+      router.replace("/login");
     }
   }, [authLoading, user, router]);
 
   useEffect(() => {
-    const loadSponsorDashboard = async () => {
-      if (!user || user.role !== 'SPONSOR') return;
-
-      setProfileLoading(true);
-      setProfileError('');
+    const loadProfile = async () => {
+      if (!user || user.role !== "SPONSOR") return;
 
       try {
-        const result = await findMatches({ sponsorOwnerId: user._id });
+        setProfileLoading(true);
+        setProfileError("");
 
-        if (result?.success && result.matches?.length > 0) {
-          setSponsorProfile((result.matches[0] as any)?.sponsor || null);
-        } else {
-          setSponsorProfile(null);
+        const res = await fetch("/api/settings/me", {
+          method: "GET",
+          credentials: "include",
+          cache: "no-store",
+        });
+
+        const data: SettingsMeResponse = await res.json();
+
+        if (!res.ok || !data.success) {
+          throw new Error(data.message || "Unable to load sponsor profile");
         }
+
+        setSponsorProfile(data.sponsorProfile || null);
       } catch (err: any) {
-        setProfileError(err?.message || 'Unable to load sponsor dashboard data');
+        setProfileError(err?.message || "Unable to load sponsor profile");
+        setSponsorProfile(null);
       } finally {
         setProfileLoading(false);
       }
     };
 
-    loadSponsorDashboard();
-  }, [user, findMatches]);
+    loadProfile();
+  }, [user]);
+
+  useEffect(() => {
+    const loadSponsorshipPosts = async () => {
+      if (!user || user.role !== "SPONSOR") return;
+
+      try {
+        setPostsLoading(true);
+        setPostsError("");
+
+        const res = await fetch("/api/sponsorships/get?page=1&limit=6", {
+          method: "GET",
+          credentials: "include",
+          cache: "no-store",
+        });
+
+        const data: SponsorshipListResponse = await res.json();
+
+        if (!res.ok || !data.success) {
+          throw new Error(data.message || "Unable to load sponsorship posts");
+        }
+
+        setSponsorshipPosts(Array.isArray(data.data) ? data.data : []);
+        setPostTotal(data.pagination?.total || 0);
+      } catch (err: any) {
+        setPostsError(err?.message || "Unable to load sponsorship posts");
+        setSponsorshipPosts([]);
+        setPostTotal(0);
+      } finally {
+        setPostsLoading(false);
+      }
+    };
+
+    loadSponsorshipPosts();
+  }, [user]);
 
   const profileCompletion = useMemo(() => {
     if (!sponsorProfile) return 20;
 
     let score = 20;
 
-    if (sponsorProfile.brandName) score += 20;
-    if (sponsorProfile.preferredCategories?.length) score += 20;
-    if (sponsorProfile.targetAudience) score += 20;
-    if (sponsorProfile.locationPreference) score += 20;
-    if (sponsorProfile.website) score += 20;
+    if (sponsorProfile.brandName) score += 15;
+    if (sponsorProfile.companyName) score += 10;
+    if (sponsorProfile.preferredCategories?.length) score += 15;
+    if (sponsorProfile.targetAudience) score += 15;
+    if (sponsorProfile.preferredLocations?.length) score += 15;
+    if (sponsorProfile.website) score += 10;
+    if (sponsorProfile.officialEmail) score += 10;
+    if (sponsorProfile.phone) score += 10;
 
     return Math.min(score, 100);
   }, [sponsorProfile]);
 
-  const isProfileComplete = profileCompletion >= 80;
+  const isProfileComplete =
+    Boolean(sponsorProfile?.isProfileComplete) || profileCompletion >= 80;
+
+  useEffect(() => {
+    const loadMatches = async () => {
+      if (!user || user.role !== "SPONSOR") return;
+      if (!isProfileComplete) return;
+
+      const userId = user._id || user.id;
+      if (!userId) return;
+
+      try {
+        await findMatches({ sponsorOwnerId: userId });
+      } catch {
+        // keep hook-managed error state
+      }
+    };
+
+    loadMatches();
+  }, [user, isProfileComplete, findMatches]);
 
   const activeMatches = useMemo(() => {
     const now = new Date();
@@ -110,13 +258,13 @@ export default function SponsorDashboardPage() {
 
       const status = event.status?.toUpperCase();
 
-      if (status === 'COMPLETED' || status === 'CANCELLED') {
+      if (status === "COMPLETED" || status === "CANCELLED") {
         return false;
       }
 
       if (event.startDate) {
         const eventDate = new Date(event.startDate);
-        if (!isNaN(eventDate.getTime()) && eventDate < now) {
+        if (!Number.isNaN(eventDate.getTime()) && eventDate < now) {
           return false;
         }
       }
@@ -125,25 +273,29 @@ export default function SponsorDashboardPage() {
     });
   }, [matches]);
 
+  const activePostCount = useMemo(() => {
+    return sponsorshipPosts.filter((post) => post.status === "active").length;
+  }, [sponsorshipPosts]);
+
   const primaryActionLabel = isProfileComplete
-    ? '🚀 Sponsor Now'
-    : 'Complete Profile';
+    ? "Create Sponsorship"
+    : "Complete Profile";
 
   const primaryActionDescription = isProfileComplete
-    ? 'Your sponsor profile is ready. Now create your sponsorship post and move toward real event partnerships.'
-    : 'Complete your core sponsor details first so Sponexus can unlock better opportunities for you.';
+    ? "Your sponsor profile is ready. Create a sponsorship post so organizers can discover your offering and start real conversations."
+    : "Complete your important sponsor details first so Sponexus can unlock stronger opportunities and better matching.";
 
   const handlePrimaryAction = () => {
     if (isProfileComplete) {
-      router.push('/sponsorships/create');
+      router.push("/sponsorships/create");
     } else {
-      router.push('/settings');
+      router.push("/settings");
     }
   };
 
-  if (authLoading || (!user && authLoading)) {
+  if (authLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center text-text-muted">
+      <div className="flex min-h-screen items-center justify-center text-text-muted">
         Loading sponsor dashboard...
       </div>
     );
@@ -153,17 +305,14 @@ export default function SponsorDashboardPage() {
 
   return (
     <div className="relative min-h-screen px-4 py-12">
-      {/* Background */}
       <div className="absolute inset-0 -z-20 bg-[radial-gradient(circle_at_20%_30%,rgba(251,191,36,0.08),transparent_40%),radial-gradient(circle_at_80%_70%,rgba(59,130,246,0.08),transparent_40%),linear-gradient(135deg,#020617,#07152f,#020617)]" />
 
-      {/* Glow */}
-      <div className="absolute inset-0 -z-10 pointer-events-none">
-        <div className="absolute top-20 left-10 h-72 w-72 rounded-full bg-blue-500/10 blur-3xl" />
+      <div className="pointer-events-none absolute inset-0 -z-10">
+        <div className="absolute left-10 top-20 h-72 w-72 rounded-full bg-blue-500/10 blur-3xl" />
         <div className="absolute bottom-10 right-10 h-80 w-80 rounded-full bg-amber-500/10 blur-3xl" />
       </div>
 
       <div className="container-custom max-w-7xl">
-        {/* Header */}
         <div className="mb-10 flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <p className="mb-3 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-text-muted backdrop-blur-md">
@@ -172,13 +321,15 @@ export default function SponsorDashboardPage() {
             </p>
 
             <h1 className="text-4xl font-bold text-white md:text-5xl">
-              Welcome back,{' '}
-              <span className="gradient-text">{user.firstName || user.name}</span>
+              Welcome back,{" "}
+              <span className="gradient-text">
+                {user.firstName || user.name || "Sponsor"}
+              </span>
             </h1>
 
             <p className="mt-3 max-w-2xl text-text-muted">
-              Discover relevant event opportunities, keep your sponsor details ready,
-              and move toward meaningful partnerships.
+              Manage your sponsor profile, publish sponsorship opportunities, and
+              discover event partnerships that fit your brand goals.
             </p>
           </div>
 
@@ -187,36 +338,37 @@ export default function SponsorDashboardPage() {
               {primaryActionLabel}
             </Button>
 
-            <Link href="/settings">
-              <Button variant="secondary">My Sponsor Profile</Button>
+            <Link href="/sponsorships">
+              <Button variant="secondary">My Sponsorships</Button>
             </Link>
           </div>
         </div>
 
-        {/* Summary cards */}
         <div className="mb-12 grid grid-cols-1 gap-6 md:grid-cols-3">
-          <div className="rounded-[24px] border border-white/10 bg-white/[0.05] p-6 backdrop-blur-xl">
-            <p className="text-sm text-text-muted">Role</p>
-            <h3 className="mt-2 text-2xl font-semibold text-white">Sponsor</h3>
-            <p className="mt-3 text-sm text-text-muted">
-              Your workspace is optimized for event discovery and sponsorship fit.
-            </p>
-          </div>
-
           <div className="rounded-[24px] border border-white/10 bg-white/[0.05] p-6 backdrop-blur-xl">
             <p className="text-sm text-text-muted">Profile Completion</p>
             <h3 className="mt-2 text-2xl font-semibold text-white">
               {profileCompletion}%
             </h3>
             <p className="mt-3 text-sm text-text-muted">
-              Complete only the important profile details to improve matching.
+              A stronger sponsor profile improves visibility and matching quality.
+            </p>
+          </div>
+
+          <div className="rounded-[24px] border border-white/10 bg-white/[0.05] p-6 backdrop-blur-xl">
+            <p className="text-sm text-text-muted">Total Sponsorship Posts</p>
+            <h3 className="mt-2 text-2xl font-semibold text-white">
+              {postsLoading ? "..." : postTotal}
+            </h3>
+            <p className="mt-3 text-sm text-text-muted">
+              Your published and managed sponsorship opportunities inside Sponexus.
             </p>
           </div>
 
           <div className="rounded-[24px] border border-white/10 bg-white/[0.05] p-6 backdrop-blur-xl">
             <p className="text-sm text-text-muted">Active Match Count</p>
             <h3 className="mt-2 text-2xl font-semibold text-white">
-              {activeMatches.length}
+              {isProfileComplete ? activeMatches.length : 0}
             </h3>
             <p className="mt-3 text-sm text-text-muted">
               Upcoming event opportunities currently recommended for your profile.
@@ -224,20 +376,17 @@ export default function SponsorDashboardPage() {
           </div>
         </div>
 
-        {/* Quick actions */}
         <div className="mb-12">
           <div className="mb-6">
             <h2 className="text-2xl font-bold text-white">Quick Actions</h2>
             <p className="mt-2 text-sm text-text-muted">
-              Start from the most important things a sponsor needs to do.
+              Start from the most important sponsor-side actions first.
             </p>
           </div>
 
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
             <div className="rounded-[24px] border border-white/10 bg-white/[0.05] p-6 backdrop-blur-xl">
-              <h3 className="text-xl font-semibold text-white">
-                {primaryActionLabel}
-              </h3>
+              <h3 className="text-xl font-semibold text-white">{primaryActionLabel}</h3>
               <p className="mt-3 text-sm leading-relaxed text-text-muted">
                 {primaryActionDescription}
               </p>
@@ -249,12 +398,10 @@ export default function SponsorDashboardPage() {
             </div>
 
             <div className="rounded-[24px] border border-white/10 bg-white/[0.05] p-6 backdrop-blur-xl">
-              <h3 className="text-xl font-semibold text-white">
-                My Sponsor Profile
-              </h3>
+              <h3 className="text-xl font-semibold text-white">My Sponsor Profile</h3>
               <p className="mt-3 text-sm leading-relaxed text-text-muted">
-                Review your saved sponsor details and update them anytime from your
-                settings.
+                Review and update your core sponsor identity, visibility, and
+                matching preferences.
               </p>
               <div className="mt-6">
                 <Link href="/settings">
@@ -266,15 +413,15 @@ export default function SponsorDashboardPage() {
             </div>
 
             <div className="rounded-[24px] border border-white/10 bg-white/[0.05] p-6 backdrop-blur-xl">
-              <h3 className="text-xl font-semibold text-white">View Matches</h3>
+              <h3 className="text-xl font-semibold text-white">Manage Sponsorships</h3>
               <p className="mt-3 text-sm leading-relaxed text-text-muted">
-                See your smartest recommended upcoming event opportunities based on
-                your profile.
+                View your current sponsorship posts, track their status, and create
+                new opportunities for organizers.
               </p>
               <div className="mt-6">
-                <Link href="/match">
+                <Link href="/sponsorships">
                   <Button variant="secondary" fullWidth>
-                    Open Match Page
+                    Open Sponsorships
                   </Button>
                 </Link>
               </div>
@@ -282,19 +429,18 @@ export default function SponsorDashboardPage() {
           </div>
         </div>
 
-        {/* Profile overview */}
         <div className="mb-12 rounded-[24px] border border-white/10 bg-white/[0.05] p-6 backdrop-blur-xl">
           <div className="mb-5 flex items-center justify-between gap-4">
             <div>
               <h2 className="text-2xl font-bold text-white">Profile Overview</h2>
               <p className="mt-2 text-sm text-text-muted">
-                These core details are currently powering your recommendations.
+                These core sponsor details are currently shaping your marketplace fit.
               </p>
             </div>
 
             <Link href="/settings">
               <Button size="sm" variant="secondary">
-                {isProfileComplete ? 'Edit Profile' : 'Complete Profile'}
+                {isProfileComplete ? "Edit Profile" : "Complete Profile"}
               </Button>
             </Link>
           </div>
@@ -310,49 +456,65 @@ export default function SponsorDashboardPage() {
               <div className="rounded-2xl bg-white/5 p-4">
                 <p className="text-sm text-text-muted">Brand</p>
                 <p className="mt-1 font-semibold text-white">
-                  {sponsorProfile.brandName || 'Not added'}
+                  {sponsorProfile.brandName || "Not added"}
+                </p>
+              </div>
+
+              <div className="rounded-2xl bg-white/5 p-4">
+                <p className="text-sm text-text-muted">Company</p>
+                <p className="mt-1 font-semibold text-white">
+                  {sponsorProfile.companyName || "Not added"}
                 </p>
               </div>
 
               <div className="rounded-2xl bg-white/5 p-4">
                 <p className="text-sm text-text-muted">Target Audience</p>
                 <p className="mt-1 font-semibold text-white">
-                  {sponsorProfile.targetAudience || 'Not added'}
+                  {sponsorProfile.targetAudience || "Not added"}
                 </p>
               </div>
 
               <div className="rounded-2xl bg-white/5 p-4">
-                <p className="text-sm text-text-muted">Location Preference</p>
+                <p className="text-sm text-text-muted">Preferred Locations</p>
                 <p className="mt-1 font-semibold text-white">
-                  {sponsorProfile.locationPreference || 'Not added'}
+                  {sponsorProfile.preferredLocations?.length
+                    ? sponsorProfile.preferredLocations.join(", ")
+                    : "Not added"}
                 </p>
               </div>
 
               <div className="rounded-2xl bg-white/5 p-4">
                 <p className="text-sm text-text-muted">Website</p>
                 <p className="mt-1 break-words font-semibold text-white">
-                  {sponsorProfile.website || 'Not added'}
+                  {sponsorProfile.website || "Not added"}
                 </p>
               </div>
 
               <div className="rounded-2xl bg-white/5 p-4">
                 <p className="text-sm text-text-muted">Official Email</p>
                 <p className="mt-1 break-words font-semibold text-white">
-                  {sponsorProfile.officialEmail || 'Not added'}
+                  {sponsorProfile.officialEmail || "Not added"}
                 </p>
               </div>
 
               <div className="rounded-2xl bg-white/5 p-4">
-                <p className="text-sm text-text-muted">Official Phone</p>
+                <p className="text-sm text-text-muted">Phone</p>
                 <p className="mt-1 font-semibold text-white">
-                  {sponsorProfile.officialPhone || 'Not added'}
+                  {sponsorProfile.phone || "Not added"}
+                </p>
+              </div>
+
+              <div className="rounded-2xl bg-white/5 p-4">
+                <p className="text-sm text-text-muted">Industry</p>
+                <p className="mt-1 font-semibold text-white">
+                  {sponsorProfile.industry || "Not added"}
                 </p>
               </div>
 
               <div className="rounded-2xl bg-white/5 p-4 md:col-span-2 xl:col-span-1">
                 <p className="text-sm text-text-muted">Status</p>
                 <p className="mt-1 font-semibold text-white">
-                  {isProfileComplete ? 'Ready for sponsorship' : 'Needs completion'}
+                  {isProfileComplete ? "Ready for sponsorship" : "Needs completion"}
                 </p>
               </div>
 
@@ -379,20 +541,113 @@ export default function SponsorDashboardPage() {
           ) : (
             <EmptyState
               title="Your sponsor details are incomplete"
-              description="Complete only the important sponsor information in settings to unlock stronger event recommendations."
+              description="Complete the important sponsor information first to unlock stronger recommendations and sponsor-side actions."
               actionLabel="Complete Profile"
-              onAction={() => router.push('/settings')}
+              onAction={() => router.push("/settings")}
             />
           )}
         </div>
 
-        {/* Top event matches */}
+        <div className="mb-12 rounded-[24px] border border-white/10 bg-white/[0.05] p-6 backdrop-blur-xl">
+          <div className="mb-6 flex items-center justify-between gap-4">
+            <div>
+              <h2 className="text-2xl font-bold text-white">Recent Sponsorship Posts</h2>
+              <p className="mt-2 text-sm text-text-muted">
+                Your latest sponsorship opportunities managed from this workspace.
+              </p>
+            </div>
+
+            <Link href="/sponsorships">
+              <Button size="sm" variant="secondary">
+                View All
+              </Button>
+            </Link>
+          </div>
+
+          {postsLoading ? (
+            <div className="text-text-muted">Loading sponsorship posts...</div>
+          ) : postsError ? (
+            <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-red-300">
+              {postsError}
+            </div>
+          ) : sponsorshipPosts.length > 0 ? (
+            <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+              {sponsorshipPosts.map((post) => (
+                <div
+                  key={post._id}
+                  className="rounded-2xl border border-white/10 bg-white/5 p-5"
+                >
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <h3 className="text-lg font-semibold text-white">
+                        {post.sponsorshipTitle || "Untitled Sponsorship"}
+                      </h3>
+                      <p className="mt-2 text-sm text-text-muted">
+                        {post.category || "No category"} •{" "}
+                        {post.locationPreference || "No location"} •{" "}
+                        {formatCurrency(post.budget)}
+                      </p>
+                    </div>
+
+                    <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium uppercase tracking-wide text-text-light">
+                      {post.status || "active"}
+                    </span>
+                  </div>
+
+                  <p className="mt-4 text-sm leading-relaxed text-text-muted">
+                    {post.campaignGoal || "No campaign goal added yet."}
+                  </p>
+
+                  <div className="mt-5 grid grid-cols-2 gap-3 text-sm">
+                    <div className="rounded-xl bg-white/5 p-3">
+                      <p className="text-text-muted">Audience</p>
+                      <p className="mt-1 font-semibold text-white">
+                        {post.targetAudience || "Not added"}
+                      </p>
+                    </div>
+
+                    <div className="rounded-xl bg-white/5 p-3">
+                      <p className="text-text-muted">Expires</p>
+                      <p className="mt-1 font-semibold text-white">
+                        {formatDate(post.expiresAt)}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+                    <Link href={`/sponsorships/${post._id}`} className="flex-1">
+                      <Button variant="secondary" fullWidth>
+                        View Details
+                      </Button>
+                    </Link>
+
+                    <Link href="/sponsorships/create" className="flex-1">
+                      <Button variant="primary" fullWidth>
+                        New Post
+                      </Button>
+                    </Link>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <EmptyState
+              title="No sponsorship posts yet"
+              description="Create your first sponsorship opportunity so organizers can discover your brand offering on Sponexus."
+              actionLabel={isProfileComplete ? "Create Sponsorship" : "Complete Profile"}
+              onAction={() =>
+                router.push(isProfileComplete ? "/sponsorships/create" : "/settings")
+              }
+            />
+          )}
+        </div>
+
         <div>
           <div className="mb-6 flex items-center justify-between gap-4">
             <div>
               <h2 className="text-2xl font-bold text-white">Top Event Matches</h2>
               <p className="mt-2 text-sm text-text-muted">
-                Recommended upcoming event opportunities for your sponsorship preferences.
+                Recommended upcoming event opportunities based on your sponsor profile.
               </p>
             </div>
 
@@ -403,7 +658,14 @@ export default function SponsorDashboardPage() {
             </Link>
           </div>
 
-          {matchLoading ? (
+          {!isProfileComplete ? (
+            <EmptyState
+              title="Complete your profile to unlock matches"
+              description="Your event recommendations become more relevant after your sponsor profile is properly completed."
+              actionLabel="Complete Profile"
+              onAction={() => router.push("/settings")}
+            />
+          ) : matchLoading ? (
             <div className="rounded-[24px] border border-white/10 bg-white/[0.05] p-10 text-center text-text-muted backdrop-blur-xl">
               Loading event matches...
             </div>
@@ -415,9 +677,9 @@ export default function SponsorDashboardPage() {
             <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
               {activeMatches.slice(0, 6).map((match, index) => (
                 <div
-                  key={index}
+                  key={`${match.event?._id || index}-${match.score}`}
                   className={`overflow-hidden rounded-[24px] bg-transparent ${
-                    index === 0 ? 'border border-accent-orange shadow-glow-orange' : ''
+                    index === 0 ? "border border-accent-orange shadow-glow-orange" : ""
                   }`}
                 >
                   {index === 0 && (
@@ -425,17 +687,19 @@ export default function SponsorDashboardPage() {
                       BEST MATCH
                     </div>
                   )}
-                  <EventCard event={(match as any).event} matchScore={match.score} />
+                  {match.event && (
+                    <EventCard event={match.event as any} matchScore={match.score} />
+                  )}
                 </div>
               ))}
             </div>
           ) : (
             <EmptyState
               title="No active event matches yet"
-              description="Complete your sponsor settings first so Sponexus can recommend better upcoming event opportunities."
-              actionLabel={isProfileComplete ? '🚀 Sponsor Now' : 'Complete Profile'}
+              description="Create a stronger sponsor profile and sponsorship presence so Sponexus can recommend better upcoming event opportunities."
+              actionLabel={isProfileComplete ? "Create Sponsorship" : "Complete Profile"}
               onAction={() =>
-                router.push(isProfileComplete ? '/sponsorships/create' : '/settings')
+                router.push(isProfileComplete ? "/sponsorships/create" : "/settings")
               }
             />
           )}

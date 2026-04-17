@@ -1,8 +1,27 @@
-import bcrypt from 'bcryptjs';
-import jwt from 'jsonwebtoken';
+import bcrypt from "bcryptjs";
+import jwt from "jsonwebtoken";
+import crypto from "crypto";
 
 const SALT_ROUNDS = 10;
-const JWT_SECRET = process.env.NEXTAUTH_SECRET || 'your-secret-key';
+
+function getJwtSecret() {
+  const secret = process.env.NEXTAUTH_SECRET || process.env.JWT_SECRET;
+
+  if (!secret) {
+    throw new Error("Missing NEXTAUTH_SECRET or JWT_SECRET environment variable");
+  }
+
+  return secret;
+}
+
+export type AuthRole = "ORGANIZER" | "SPONSOR";
+
+export interface AuthTokenPayload {
+  userId: string;
+  email: string;
+  role: AuthRole;
+  type: "access";
+}
 
 export async function hashPassword(password: string): Promise<string> {
   const salt = await bcrypt.genSalt(SALT_ROUNDS);
@@ -16,23 +35,38 @@ export async function comparePasswords(
   return bcrypt.compare(password, hashedPassword);
 }
 
-export function generateToken(data: object, expiresIn = '24h'): string {
-  return jwt.sign(data, JWT_SECRET, { expiresIn } as any);
+export function generateAccessToken(
+  payload: Omit<AuthTokenPayload, "type">,
+  expiresIn: string = "7d"
+): string {
+  return jwt.sign(
+    {
+      ...payload,
+      type: "access",
+    },
+    getJwtSecret(),
+    { expiresIn } as jwt.SignOptions
+  );
 }
 
-export function verifyToken(token: string): any {
+export function verifyAccessToken(token: string): AuthTokenPayload | null {
   try {
-    return jwt.verify(token, JWT_SECRET);
-  } catch (error) {
+    const decoded = jwt.verify(token, getJwtSecret()) as AuthTokenPayload;
+
+    if (!decoded || decoded.type !== "access" || !decoded.userId || !decoded.email || !decoded.role) {
+      return null;
+    }
+
+    return decoded;
+  } catch {
     return null;
   }
 }
 
-export function generateRandomString(length: number = 12): string {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  let result = '';
-  for (let i = 0; i < length; i++) {
-    result += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return result;
+export function generateRandomToken(bytes: number = 32): string {
+  return crypto.randomBytes(bytes).toString("hex");
+}
+
+export function hashToken(rawToken: string): string {
+  return crypto.createHash("sha256").update(rawToken).digest("hex");
 }

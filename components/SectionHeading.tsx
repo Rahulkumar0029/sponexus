@@ -5,6 +5,8 @@ interface SectionHeadingProps {
   subtitle?: string;
   align?: 'left' | 'center' | 'right';
   className?: string;
+  size?: 'default' | 'compact';
+  as?: 'h1' | 'h2' | 'h3';
 }
 
 export function SectionHeading({
@@ -12,6 +14,8 @@ export function SectionHeading({
   subtitle,
   align = 'center',
   className = '',
+  size = 'default',
+  as = 'h2',
 }: SectionHeadingProps) {
   const alignClass = {
     left: 'text-left',
@@ -19,13 +23,31 @@ export function SectionHeading({
     right: 'text-right',
   }[align];
 
+  const subtitleAlignClass = {
+    left: 'mr-auto',
+    center: 'mx-auto',
+    right: 'ml-auto',
+  }[align];
+
+  const sizeClass =
+    size === 'compact'
+      ? 'text-2xl sm:text-3xl'
+      : 'text-4xl sm:text-5xl';
+
+  const HeadingTag = as;
+
   return (
     <div className={`${alignClass} ${className}`}>
-      <h2 className="text-4xl sm:text-5xl font-bold mb-4">
+      <HeadingTag className={`${sizeClass} font-bold mb-4`}>
         <span className="gradient-text">{title}</span>
-      </h2>
+      </HeadingTag>
+
       {subtitle && (
-        <p className="text-lg text-text-muted max-w-2xl mx-auto">{subtitle}</p>
+        <p
+          className={`text-lg text-text-muted max-w-2xl ${subtitleAlignClass}`}
+        >
+          {subtitle}
+        </p>
       )}
     </div>
   );

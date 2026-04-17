@@ -1,36 +1,40 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { connectDB } from '@/lib/db';
-import { UserModel } from '@/models/User';
-import { Sponsor } from '@/models/Sponsor';
+import { NextResponse } from "next/server";
 
-export async function GET(request: NextRequest) {
+import { connectDB } from "@/lib/db";
+import User from "@/lib/models/User";
+import Sponsor from "@/lib/models/Sponsor";
+import { getCurrentUser } from "@/lib/current-user";
+
+export async function GET() {
   try {
     await connectDB();
 
-    const { searchParams } = new URL(request.url);
-    const userId = searchParams.get('userId');
-    const role = searchParams.get('role');
+    const currentUser = await getCurrentUser();
 
-    if (!userId) {
+    if (!currentUser) {
       return NextResponse.json(
-        { success: false, message: 'User ID is required' },
-        { status: 400 }
+        { success: false, message: "Authentication required" },
+        { status: 401 }
       );
     }
 
-    const user = await UserModel.findById(userId).lean();
+    const user = await User.findById(currentUser._id)
+      .select("-password -emailVerificationToken -resetPasswordToken")
+      .lean();
 
     if (!user) {
       return NextResponse.json(
-        { success: false, message: 'User not found' },
+        { success: false, message: "User not found" },
         { status: 404 }
       );
     }
 
     let sponsorProfile = null;
 
-    if (role === 'SPONSOR') {
-      sponsorProfile = await Sponsor.findOne({ ownerId: String(user._id) }).lean();
+    if (user.role === "SPONSOR") {
+      sponsorProfile = await Sponsor.findOne({
+        userId: user._id,
+      }).lean();
     }
 
     return NextResponse.json(
@@ -42,9 +46,10 @@ export async function GET(request: NextRequest) {
       { status: 200 }
     );
   } catch (error) {
-    console.error('Settings me error:', error);
+    console.error("Settings me error:", error);
+
     return NextResponse.json(
-      { success: false, message: 'Failed to load settings' },
+      { success: false, message: "Failed to load settings" },
       { status: 500 }
     );
   }

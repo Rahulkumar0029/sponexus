@@ -1,71 +1,113 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { connectDB } from '@/lib/db';
-import { UserModel } from '@/models/User';
-import { comparePasswords, generateToken } from '@/lib/auth';
-import { validateLogin } from '@/lib/validations';
-import { LoginInput } from '@/types/user';
+import { NextRequest, NextResponse } from "next/server";
+
+import { connectDB } from "@/lib/db";
+import { comparePasswords, generateAccessToken } from "@/lib/auth";
+import User from "@/lib/models/User";
 
 export async function POST(request: NextRequest) {
   try {
     await connectDB();
 
-    const body: LoginInput = await request.json();
-    const { email, password } = body;
+    const body = await request.json();
 
-    // Validation
-    const validation = validateLogin({ email, password });
-    if (!validation.isValid) {
+    const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
+    const password = typeof body.password === "string" ? body.password : "";
+
+    if (!email || !password) {
       return NextResponse.json(
         {
           success: false,
-          message: 'Validation failed',
-          errors: validation.errors,
+          message: "Email and password are required",
         },
         { status: 400 }
       );
     }
 
-    // Find user
-    const user = await UserModel.findOne({ email: email.toLowerCase() }).select('+password');
-    if (!user) {
+    const user = await User.findOne({ email }).select("+password");
+
+    if (!user || !user.password) {
       return NextResponse.json(
-        { success: false, message: 'Invalid credentials' },
+        {
+          success: false,
+          message: "Invalid credentials",
+        },
         { status: 401 }
       );
     }
 
-    // Compare passwords
     const isPasswordValid = await comparePasswords(password, user.password);
+
     if (!isPasswordValid) {
       return NextResponse.json(
-        { success: false, message: 'Invalid credentials' },
+        {
+          success: false,
+          message: "Invalid credentials",
+        },
         { status: 401 }
       );
     }
 
-    // Generate token
-    const token = generateToken({
-      userId: user._id,
+    const token = generateAccessToken({
+      userId: String(user._id),
       email: user.email,
       role: user.role,
     });
 
-    const userResponse = user.toObject();
-    delete userResponse.password;
+    const safeUser = {
+      _id: String(user._id),
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      companyName: user.companyName || "",
+      avatar: user.avatar || "",
+      bio: user.bio || "",
+      phone: user.phone || "",
+      organizationName: user.organizationName || "",
+      eventFocus: user.eventFocus || "",
+      organizerTargetAudience: user.organizerTargetAudience || "",
+      organizerLocation: user.organizerLocation || "",
+      isEmailVerified: user.isEmailVerified,
+      isProfileComplete: user.isProfileComplete,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt,
+    };
 
-    return NextResponse.json(
+    const response = NextResponse.json(
       {
         success: true,
-        message: 'Login successful',
-        user: userResponse,
-        token,
+        message: "Login successful",
+        user: safeUser,
       },
       { status: 200 }
     );
+
+    response.cookies.set("auth-token", token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/",
+      maxAge: 60 * 60 * 24 * 7,
+    });
+
+    response.cookies.set("user-role", user.role, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/",
+      maxAge: 60 * 60 * 24 * 7,
+    });
+
+    return response;
   } catch (error) {
-    console.error('Login error:', error);
+    console.error("Login error:", error);
+
     return NextResponse.json(
-      { success: false, message: 'Login failed' },
+      {
+        success: false,
+        message: "Login failed",
+      },
       { status: 500 }
     );
   }

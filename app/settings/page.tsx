@@ -1,170 +1,301 @@
-'use client';
+"use client";
 
-import { useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import Link from 'next/link';
-import { Button } from '@/components/Button';
-import { EventCard } from '@/components/EventCard';
-import { EmptyState } from '@/components/EmptyState';
-import { useAuth } from '@/hooks/useAuth';
-import { useMatch } from '@/hooks/useMatch';
+import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+
+import { Button } from "@/components/Button";
+import { EmptyState } from "@/components/EmptyState";
+import { useAuth } from "@/hooks/useAuth";
+
+type CurrentUser = {
+  _id?: string;
+  id?: string;
+  role?: "ORGANIZER" | "SPONSOR";
+  name?: string;
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+  phone?: string;
+  companyName?: string;
+  bio?: string;
+};
 
 type SponsorProfile = {
   _id?: string;
+  userId?: string;
   brandName?: string;
-  preferredCategories?: string[];
-  targetAudience?: string;
-  locationPreference?: string;
+  companyName?: string;
   website?: string;
   officialEmail?: string;
-  officialPhone?: string;
+  phone?: string;
+  industry?: string;
+  companySize?: string;
+  about?: string;
+  logoUrl?: string;
+  targetAudience?: string;
+  preferredCategories?: string[];
+  preferredLocations?: string[];
+  sponsorshipInterests?: string[];
+  instagramUrl?: string;
+  linkedinUrl?: string;
+  isProfileComplete?: boolean;
+  isPublic?: boolean;
 };
 
-type MatchedEvent = {
-  _id?: string;
-  title?: string;
-  status?: string;
-  startDate?: string;
+type SettingsMeResponse = {
+  success: boolean;
+  user?: CurrentUser;
+  sponsorProfile?: SponsorProfile | null;
+  message?: string;
 };
 
-type MatchItem = {
-  score: number;
-  sponsor?: SponsorProfile;
-  event?: MatchedEvent;
+type SponsorFormState = {
+  brandName: string;
+  companyName: string;
+  website: string;
+  officialEmail: string;
+  phone: string;
+  industry: string;
+  companySize: string;
+  about: string;
+  logoUrl: string;
+  targetAudience: string;
+  preferredCategories: string;
+  preferredLocations: string;
+  sponsorshipInterests: string;
+  instagramUrl: string;
+  linkedinUrl: string;
+  isPublic: boolean;
 };
 
-export default function SponsorDashboardPage() {
+const initialSponsorForm: SponsorFormState = {
+  brandName: "",
+  companyName: "",
+  website: "",
+  officialEmail: "",
+  phone: "",
+  industry: "",
+  companySize: "",
+  about: "",
+  logoUrl: "",
+  targetAudience: "",
+  preferredCategories: "",
+  preferredLocations: "",
+  sponsorshipInterests: "",
+  instagramUrl: "",
+  linkedinUrl: "",
+  isPublic: true,
+};
+
+function toCommaSeparated(value?: string[]) {
+  return Array.isArray(value) ? value.join(", ") : "";
+}
+
+function parseCommaSeparated(value: string) {
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+export default function SettingsPage() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
-  const {
-    matches,
-    loading: matchLoading,
-    error: matchError,
-    findMatches,
-  } = useMatch();
 
-  const [profileLoading, setProfileLoading] = useState(true);
-  const [profileError, setProfileError] = useState('');
+  const [pageLoading, setPageLoading] = useState(true);
+  const [pageError, setPageError] = useState("");
+
+  const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [sponsorProfile, setSponsorProfile] = useState<SponsorProfile | null>(null);
+
+  const [sponsorForm, setSponsorForm] = useState<SponsorFormState>(initialSponsorForm);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
+  const [saveSuccess, setSaveSuccess] = useState("");
 
   useEffect(() => {
     if (authLoading) return;
 
     if (!user) {
-      router.replace('/login');
-      return;
-    }
-
-    if (user.role !== 'SPONSOR') {
-      router.replace('/dashboard/organizer');
+      router.replace("/login");
     }
   }, [authLoading, user, router]);
 
-  // ✅ Load sponsor profile from saved user data, not from match results
   useEffect(() => {
-    if (!user || user.role !== 'SPONSOR') return;
-
-    setProfileLoading(true);
-    setProfileError('');
-
-    try {
-      const profile: SponsorProfile = {
-        brandName: (user as any).brandName || '',
-        preferredCategories: (user as any).preferredCategories || [],
-        targetAudience:
-          (user as any).sponsorTargetAudience ||
-          (user as any).targetAudience ||
-          '',
-        locationPreference: (user as any).locationPreference || '',
-        website: (user as any).website || '',
-        officialEmail: (user as any).officialEmail || '',
-        officialPhone: (user as any).officialPhone || '',
-      };
-
-      setSponsorProfile(profile);
-    } catch (err: any) {
-      setProfileError(err?.message || 'Unable to load sponsor profile');
-      setSponsorProfile(null);
-    } finally {
-      setProfileLoading(false);
-    }
-  }, [user]);
-
-  // ✅ Matches are separate from profile loading
-  useEffect(() => {
-    const loadMatches = async () => {
-      if (!user || user.role !== 'SPONSOR') return;
+    const loadSettings = async () => {
+      if (!user) return;
 
       try {
-        await findMatches({ sponsorOwnerId: user._id });
-      } catch {
-        // keep match error inside useMatch
+        setPageLoading(true);
+        setPageError("");
+
+        const res = await fetch("/api/settings/me", {
+          method: "GET",
+          credentials: "include",
+          cache: "no-store",
+        });
+
+        const data: SettingsMeResponse = await res.json();
+
+        if (!res.ok || !data.success) {
+          throw new Error(data.message || "Unable to load settings");
+        }
+
+        const loadedUser = data.user || null;
+        const loadedSponsorProfile = data.sponsorProfile || null;
+
+        setCurrentUser(loadedUser);
+        setSponsorProfile(loadedSponsorProfile);
+
+        if ((loadedUser?.role || user?.role) === "SPONSOR") {
+          setSponsorForm({
+            brandName: loadedSponsorProfile?.brandName || "",
+            companyName:
+              loadedSponsorProfile?.companyName ||
+              loadedUser?.companyName ||
+              "",
+            website: loadedSponsorProfile?.website || "",
+            officialEmail:
+              loadedSponsorProfile?.officialEmail || loadedUser?.email || "",
+            phone: loadedSponsorProfile?.phone || loadedUser?.phone || "",
+            industry: loadedSponsorProfile?.industry || "",
+            companySize: loadedSponsorProfile?.companySize || "",
+            about: loadedSponsorProfile?.about || loadedUser?.bio || "",
+            logoUrl: loadedSponsorProfile?.logoUrl || "",
+            targetAudience: loadedSponsorProfile?.targetAudience || "",
+            preferredCategories: toCommaSeparated(
+              loadedSponsorProfile?.preferredCategories
+            ),
+            preferredLocations: toCommaSeparated(
+              loadedSponsorProfile?.preferredLocations
+            ),
+            sponsorshipInterests: toCommaSeparated(
+              loadedSponsorProfile?.sponsorshipInterests
+            ),
+            instagramUrl: loadedSponsorProfile?.instagramUrl || "",
+            linkedinUrl: loadedSponsorProfile?.linkedinUrl || "",
+            isPublic:
+              typeof loadedSponsorProfile?.isPublic === "boolean"
+                ? loadedSponsorProfile.isPublic
+                : true,
+          });
+        }
+      } catch (err: any) {
+        setPageError(err?.message || "Unable to load settings");
+        setCurrentUser(null);
+        setSponsorProfile(null);
+      } finally {
+        setPageLoading(false);
       }
     };
 
-    loadMatches();
-  }, [user, findMatches]);
+    loadSettings();
+  }, [user]);
 
-  const profileCompletion = useMemo(() => {
-    if (!sponsorProfile) return 20;
+  const role = currentUser?.role || user?.role;
+
+  const sponsorCompletion = useMemo(() => {
+    if (role !== "SPONSOR") return 0;
 
     let score = 20;
 
-    if (sponsorProfile.brandName) score += 20;
-    if (sponsorProfile.preferredCategories?.length) score += 20;
-    if (sponsorProfile.targetAudience) score += 20;
-    if (sponsorProfile.locationPreference) score += 20;
-    if (sponsorProfile.website) score += 20;
+    if (sponsorForm.brandName.trim()) score += 15;
+    if (sponsorForm.companyName.trim()) score += 10;
+    if (sponsorForm.officialEmail.trim()) score += 10;
+    if (sponsorForm.phone.trim()) score += 10;
+    if (sponsorForm.industry.trim()) score += 15;
+    if (sponsorForm.targetAudience.trim()) score += 10;
+    if (parseCommaSeparated(sponsorForm.preferredCategories).length) score += 10;
+    if (parseCommaSeparated(sponsorForm.preferredLocations).length) score += 10;
 
     return Math.min(score, 100);
-  }, [sponsorProfile]);
+  }, [role, sponsorForm]);
 
-  const isProfileComplete = profileCompletion >= 80;
+  const isSponsorProfileReady = useMemo(() => {
+    return Boolean(sponsorProfile?.isProfileComplete) || sponsorCompletion >= 80;
+  }, [sponsorProfile, sponsorCompletion]);
 
-  const activeMatches = useMemo(() => {
-    const now = new Date();
+  const handleSponsorChange = (
+    e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
+  ) => {
+    const { name, value, type } = e.target;
 
-    return (matches as MatchItem[]).filter((match) => {
-      const event = match?.event;
-      if (!event) return false;
+    if (type === "checkbox") {
+      const checked = (e.target as HTMLInputElement).checked;
+      setSponsorForm((prev) => ({
+        ...prev,
+        [name]: checked,
+      }));
+      return;
+    }
 
-      const status = event.status?.toUpperCase();
+    setSponsorForm((prev) => ({
+      ...prev,
+      [name]: value,
+    }));
+  };
 
-      if (status === 'COMPLETED' || status === 'CANCELLED') {
-        return false;
+  const handleSponsorSave = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+
+    if (role !== "SPONSOR") {
+      setSaveError("Only sponsors can update sponsor profile settings.");
+      return;
+    }
+
+    try {
+      setSaving(true);
+      setSaveError("");
+      setSaveSuccess("");
+
+      const payload = {
+        brandName: sponsorForm.brandName,
+        companyName: sponsorForm.companyName,
+        website: sponsorForm.website,
+        officialEmail: sponsorForm.officialEmail,
+        phone: sponsorForm.phone,
+        industry: sponsorForm.industry,
+        companySize: sponsorForm.companySize,
+        about: sponsorForm.about,
+        logoUrl: sponsorForm.logoUrl,
+        targetAudience: sponsorForm.targetAudience,
+        preferredCategories: parseCommaSeparated(sponsorForm.preferredCategories),
+        preferredLocations: parseCommaSeparated(sponsorForm.preferredLocations),
+        sponsorshipInterests: parseCommaSeparated(sponsorForm.sponsorshipInterests),
+        instagramUrl: sponsorForm.instagramUrl,
+        linkedinUrl: sponsorForm.linkedinUrl,
+        isPublic: sponsorForm.isPublic,
+      };
+
+      const res = await fetch("/api/sponsors/create", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        credentials: "include",
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || "Failed to save sponsor profile");
       }
 
-      if (event.startDate) {
-        const eventDate = new Date(event.startDate);
-        if (!isNaN(eventDate.getTime()) && eventDate < now) {
-          return false;
-        }
-      }
-
-      return true;
-    });
-  }, [matches]);
-
-  const primaryActionLabel = isProfileComplete
-    ? '🚀 Sponsor Now'
-    : 'Complete Profile';
-
-  const primaryActionDescription = isProfileComplete
-    ? 'Your sponsor profile is ready. Now create your sponsorship post and move toward real event partnerships.'
-    : 'Complete your core sponsor details first so Sponexus can unlock better opportunities for you.';
-
-  const handlePrimaryAction = () => {
-    if (isProfileComplete) {
-      router.push('/sponsorships/create');
-    } else {
-      router.push('/settings');
+      setSponsorProfile(data.sponsor || null);
+      setSaveSuccess("Settings saved successfully.");
+    } catch (err: any) {
+      setSaveError(err?.message || "Failed to save sponsor profile");
+    } finally {
+      setSaving(false);
     }
   };
 
-  if (authLoading || (!user && authLoading)) {
+  if (authLoading || pageLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center text-text-muted">
-        Loading sponsor dashboard...
+      <div className="flex min-h-screen items-center justify-center text-text-muted">
+        Loading settings...
       </div>
     );
   }
@@ -175,282 +306,402 @@ export default function SponsorDashboardPage() {
     <div className="relative min-h-screen px-4 py-12">
       <div className="absolute inset-0 -z-20 bg-[radial-gradient(circle_at_20%_30%,rgba(251,191,36,0.08),transparent_40%),radial-gradient(circle_at_80%_70%,rgba(59,130,246,0.08),transparent_40%),linear-gradient(135deg,#020617,#07152f,#020617)]" />
 
-      <div className="absolute inset-0 -z-10 pointer-events-none">
-        <div className="absolute top-20 left-10 h-72 w-72 rounded-full bg-blue-500/10 blur-3xl" />
+      <div className="pointer-events-none absolute inset-0 -z-10">
+        <div className="absolute left-10 top-20 h-72 w-72 rounded-full bg-blue-500/10 blur-3xl" />
         <div className="absolute bottom-10 right-10 h-80 w-80 rounded-full bg-amber-500/10 blur-3xl" />
       </div>
 
-      <div className="container-custom max-w-7xl">
+      <div className="container-custom max-w-5xl">
         <div className="mb-10 flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <p className="mb-3 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-text-muted backdrop-blur-md">
               <span className="h-2 w-2 rounded-full bg-accent-orange" />
-              Sponsor Workspace
+              Settings
             </p>
 
             <h1 className="text-4xl font-bold text-white md:text-5xl">
-              Welcome back,{' '}
-              <span className="gradient-text">{user.firstName || user.name}</span>
+              Account & Profile Settings
             </h1>
 
-            <p className="mt-3 max-w-2xl text-text-muted">
-              Discover relevant event opportunities, keep your sponsor details ready,
-              and move toward meaningful partnerships.
+            <p className="mt-3 max-w-3xl text-text-muted">
+              Manage your account details and keep your role-based profile updated
+              for a better Sponexus experience.
             </p>
           </div>
 
           <div className="flex flex-col gap-3 sm:flex-row">
-            <Button variant="primary" onClick={handlePrimaryAction}>
-              {primaryActionLabel}
-            </Button>
-
-            <Link href="/settings">
-              <Button variant="secondary">My Sponsor Profile</Button>
-            </Link>
+            {role === "SPONSOR" ? (
+              <>
+                <Link href="/dashboard/sponsor">
+                  <Button variant="secondary">Back to Dashboard</Button>
+                </Link>
+                <Link href="/sponsorships/create">
+                  <Button variant="primary">Create Sponsorship</Button>
+                </Link>
+              </>
+            ) : (
+              <Link href="/dashboard/organizer">
+                <Button variant="secondary">Back to Dashboard</Button>
+              </Link>
+            )}
           </div>
         </div>
 
-        <div className="mb-12 grid grid-cols-1 gap-6 md:grid-cols-3">
-          <div className="rounded-[24px] border border-white/10 bg-white/[0.05] p-6 backdrop-blur-xl">
-            <p className="text-sm text-text-muted">Role</p>
-            <h3 className="mt-2 text-2xl font-semibold text-white">Sponsor</h3>
-            <p className="mt-3 text-sm text-text-muted">
-              Your workspace is optimized for event discovery and sponsorship fit.
-            </p>
+        {pageError ? (
+          <div className="mb-8 rounded-[24px] border border-red-500/30 bg-red-500/10 p-6 text-red-300">
+            {pageError}
           </div>
+        ) : null}
 
-          <div className="rounded-[24px] border border-white/10 bg-white/[0.05] p-6 backdrop-blur-xl">
-            <p className="text-sm text-text-muted">Profile Completion</p>
-            <h3 className="mt-2 text-2xl font-semibold text-white">
-              {profileCompletion}%
-            </h3>
-            <p className="mt-3 text-sm text-text-muted">
-              Complete only the important profile details to improve matching.
-            </p>
-          </div>
+        {role === "SPONSOR" ? (
+          <>
+            <div className="mb-8 grid grid-cols-1 gap-6 md:grid-cols-3">
+              <div className="rounded-[24px] border border-white/10 bg-white/[0.05] p-6 backdrop-blur-xl">
+                <p className="text-sm text-text-muted">Profile Completion</p>
+                <h3 className="mt-2 text-xl font-semibold text-white">
+                  {sponsorCompletion}%
+                </h3>
+                <p className="mt-3 text-sm text-text-muted">
+                  Complete the important sponsor fields to improve trust and matching.
+                </p>
+              </div>
 
-          <div className="rounded-[24px] border border-white/10 bg-white/[0.05] p-6 backdrop-blur-xl">
-            <p className="text-sm text-text-muted">Active Match Count</p>
-            <h3 className="mt-2 text-2xl font-semibold text-white">
-              {activeMatches.length}
-            </h3>
-            <p className="mt-3 text-sm text-text-muted">
-              Upcoming event opportunities currently recommended for your profile.
-            </p>
-          </div>
-        </div>
+              <div className="rounded-[24px] border border-white/10 bg-white/[0.05] p-6 backdrop-blur-xl">
+                <p className="text-sm text-text-muted">Profile Status</p>
+                <h3 className="mt-2 text-xl font-semibold text-white">
+                  {isSponsorProfileReady ? "Ready" : "Needs Work"}
+                </h3>
+                <p className="mt-3 text-sm text-text-muted">
+                  Sponsorship creation works best after your sponsor profile is complete.
+                </p>
+              </div>
 
-        <div className="mb-12">
-          <div className="mb-6">
-            <h2 className="text-2xl font-bold text-white">Quick Actions</h2>
-            <p className="mt-2 text-sm text-text-muted">
-              Start from the most important things a sponsor needs to do.
-            </p>
-          </div>
+              <div className="rounded-[24px] border border-white/10 bg-white/[0.05] p-6 backdrop-blur-xl">
+                <p className="text-sm text-text-muted">Visibility</p>
+                <h3 className="mt-2 text-xl font-semibold text-white">
+                  {sponsorForm.isPublic ? "Public" : "Private"}
+                </h3>
+                <p className="mt-3 text-sm text-text-muted">
+                  Public sponsor profiles can be discovered by organizers.
+                </p>
+              </div>
+            </div>
 
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-            <div className="rounded-[24px] border border-white/10 bg-white/[0.05] p-6 backdrop-blur-xl">
-              <h3 className="text-xl font-semibold text-white">
-                {primaryActionLabel}
-              </h3>
-              <p className="mt-3 text-sm leading-relaxed text-text-muted">
-                {primaryActionDescription}
-              </p>
-              <div className="mt-6">
-                <Button variant="primary" fullWidth onClick={handlePrimaryAction}>
-                  {primaryActionLabel}
+            {!isSponsorProfileReady && (
+              <div className="mb-8 rounded-[24px] border border-yellow-500/30 bg-yellow-500/10 p-5 text-yellow-200">
+                Complete your core sponsor profile fields before creating sponsorships.
+                Focus on brand name, company name, official email, phone, industry,
+                audience, categories, and locations.
+              </div>
+            )}
+
+            <form
+              onSubmit={handleSponsorSave}
+              className="rounded-[24px] border border-white/10 bg-white/[0.05] p-6 backdrop-blur-xl"
+            >
+              <div className="mb-8">
+                <h2 className="text-2xl font-bold text-white">Sponsor Profile</h2>
+                <p className="mt-2 text-sm text-text-muted">
+                  This is your main sponsor profile editor inside Sponexus.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-white">
+                    Brand Name
+                  </label>
+                  <input
+                    name="brandName"
+                    value={sponsorForm.brandName}
+                    onChange={handleSponsorChange}
+                    placeholder="Example: RedPulse"
+                    className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none placeholder:text-text-muted"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-white">
+                    Company Name
+                  </label>
+                  <input
+                    name="companyName"
+                    value={sponsorForm.companyName}
+                    onChange={handleSponsorChange}
+                    placeholder="Example: RedPulse Media Pvt Ltd"
+                    className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none placeholder:text-text-muted"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-white">
+                    Official Email
+                  </label>
+                  <input
+                    type="email"
+                    name="officialEmail"
+                    value={sponsorForm.officialEmail}
+                    onChange={handleSponsorChange}
+                    placeholder="brand@company.com"
+                    className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none placeholder:text-text-muted"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-white">
+                    Phone
+                  </label>
+                  <input
+                    name="phone"
+                    value={sponsorForm.phone}
+                    onChange={handleSponsorChange}
+                    placeholder="Primary phone number"
+                    className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none placeholder:text-text-muted"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-white">
+                    Website
+                  </label>
+                  <input
+                    name="website"
+                    value={sponsorForm.website}
+                    onChange={handleSponsorChange}
+                    placeholder="yourbrand.com"
+                    className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none placeholder:text-text-muted"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-white">
+                    Industry
+                  </label>
+                  <input
+                    name="industry"
+                    value={sponsorForm.industry}
+                    onChange={handleSponsorChange}
+                    placeholder="Example: FMCG / EdTech / FinTech"
+                    className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none placeholder:text-text-muted"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-white">
+                    Company Size
+                  </label>
+                  <input
+                    name="companySize"
+                    value={sponsorForm.companySize}
+                    onChange={handleSponsorChange}
+                    placeholder="Example: 11-50 / 51-200"
+                    className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none placeholder:text-text-muted"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-white">
+                    Logo URL
+                  </label>
+                  <input
+                    name="logoUrl"
+                    value={sponsorForm.logoUrl}
+                    onChange={handleSponsorChange}
+                    placeholder="https://..."
+                    className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none placeholder:text-text-muted"
+                  />
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="mb-2 block text-sm font-medium text-white">
+                    About
+                  </label>
+                  <textarea
+                    name="about"
+                    value={sponsorForm.about}
+                    onChange={handleSponsorChange}
+                    rows={4}
+                    placeholder="Describe your brand and partnership intent."
+                    className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none placeholder:text-text-muted"
+                  />
+                </div>
+              </div>
+
+              <div className="my-8">
+                <h3 className="text-xl font-semibold text-white">
+                  Matching Preferences
+                </h3>
+                <p className="mt-2 text-sm text-text-muted">
+                  These fields help Sponexus recommend better event opportunities.
+                </p>
+
+                <div className="mt-5 grid grid-cols-1 gap-5 md:grid-cols-2">
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-white">
+                      Target Audience
+                    </label>
+                    <input
+                      name="targetAudience"
+                      value={sponsorForm.targetAudience}
+                      onChange={handleSponsorChange}
+                      placeholder="Example: College students, Gen Z, startup founders"
+                      className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none placeholder:text-text-muted"
+                    />
+                  </div>
+
+                  <div className="flex items-center rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+                    <input
+                      type="checkbox"
+                      name="isPublic"
+                      checked={sponsorForm.isPublic}
+                      onChange={handleSponsorChange}
+                      className="h-4 w-4"
+                    />
+                    <label className="ml-3 text-sm font-medium text-white">
+                      Make sponsor profile public
+                    </label>
+                  </div>
+
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-white">
+                      Preferred Categories
+                    </label>
+                    <input
+                      name="preferredCategories"
+                      value={sponsorForm.preferredCategories}
+                      onChange={handleSponsorChange}
+                      placeholder="Tech, Cultural, Sports"
+                      className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none placeholder:text-text-muted"
+                    />
+                    <p className="mt-2 text-xs text-text-muted">
+                      Add comma-separated values.
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-white">
+                      Preferred Locations
+                    </label>
+                    <input
+                      name="preferredLocations"
+                      value={sponsorForm.preferredLocations}
+                      onChange={handleSponsorChange}
+                      placeholder="Delhi NCR, Jaipur, Mumbai"
+                      className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none placeholder:text-text-muted"
+                    />
+                    <p className="mt-2 text-xs text-text-muted">
+                      Add comma-separated values.
+                    </p>
+                  </div>
+
+                  <div className="md:col-span-2">
+                    <label className="mb-2 block text-sm font-medium text-white">
+                      Sponsorship Interests
+                    </label>
+                    <input
+                      name="sponsorshipInterests"
+                      value={sponsorForm.sponsorshipInterests}
+                      onChange={handleSponsorChange}
+                      placeholder="Title Sponsor, Stall Activation, Social Promotion"
+                      className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none placeholder:text-text-muted"
+                    />
+                    <p className="mt-2 text-xs text-text-muted">
+                      Add comma-separated values.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mb-8">
+                <h3 className="text-xl font-semibold text-white">Public Presence</h3>
+                <p className="mt-2 text-sm text-text-muted">
+                  Optional links help build trust with organizers.
+                </p>
+
+                <div className="mt-5 grid grid-cols-1 gap-5 md:grid-cols-2">
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-white">
+                      Instagram URL
+                    </label>
+                    <input
+                      name="instagramUrl"
+                      value={sponsorForm.instagramUrl}
+                      onChange={handleSponsorChange}
+                      placeholder="https://instagram.com/yourbrand"
+                      className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none placeholder:text-text-muted"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-white">
+                      LinkedIn URL
+                    </label>
+                    <input
+                      name="linkedinUrl"
+                      value={sponsorForm.linkedinUrl}
+                      onChange={handleSponsorChange}
+                      placeholder="https://linkedin.com/company/yourbrand"
+                      className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none placeholder:text-text-muted"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {saveError ? (
+                <div className="mb-5 rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+                  {saveError}
+                </div>
+              ) : null}
+
+              {saveSuccess ? (
+                <div className="mb-5 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300">
+                  {saveSuccess}
+                </div>
+              ) : null}
+
+              <div className="flex flex-col gap-3 sm:flex-row">
+                <Button type="submit" variant="primary" disabled={saving}>
+                  {saving ? "Saving..." : "Save Profile"}
                 </Button>
-              </div>
-            </div>
 
-            <div className="rounded-[24px] border border-white/10 bg-white/[0.05] p-6 backdrop-blur-xl">
-              <h3 className="text-xl font-semibold text-white">
-                My Sponsor Profile
-              </h3>
-              <p className="mt-3 text-sm leading-relaxed text-text-muted">
-                Review your saved sponsor details and update them anytime from your settings.
-              </p>
-              <div className="mt-6">
-                <Link href="/settings">
-                  <Button variant="secondary" fullWidth>
-                    Open Profile
+                <Link href="/dashboard/sponsor">
+                  <Button type="button" variant="secondary">
+                    Back to Dashboard
+                  </Button>
+                </Link>
+
+                <Link href="/sponsorships/create">
+                  <Button type="button" variant="secondary">
+                    Create Sponsorship
                   </Button>
                 </Link>
               </div>
-            </div>
-
-            <div className="rounded-[24px] border border-white/10 bg-white/[0.05] p-6 backdrop-blur-xl">
-              <h3 className="text-xl font-semibold text-white">View Matches</h3>
-              <p className="mt-3 text-sm leading-relaxed text-text-muted">
-                See your smartest recommended upcoming event opportunities based on your profile.
-              </p>
-              <div className="mt-6">
-                <Link href="/match">
-                  <Button variant="secondary" fullWidth>
-                    Open Match Page
-                  </Button>
-                </Link>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div className="mb-12 rounded-[24px] border border-white/10 bg-white/[0.05] p-6 backdrop-blur-xl">
-          <div className="mb-5 flex items-center justify-between gap-4">
-            <div>
-              <h2 className="text-2xl font-bold text-white">Profile Overview</h2>
-              <p className="mt-2 text-sm text-text-muted">
-                These core details are currently powering your recommendations.
-              </p>
-            </div>
-
-            <Link href="/settings">
-              <Button size="sm" variant="secondary">
-                {isProfileComplete ? 'Edit Profile' : 'Complete Profile'}
-              </Button>
-            </Link>
-          </div>
-
-          {profileLoading ? (
-            <div className="text-text-muted">Loading profile details...</div>
-          ) : profileError ? (
-            <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-red-300">
-              {profileError}
-            </div>
-          ) : sponsorProfile ? (
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
-              <div className="rounded-2xl bg-white/5 p-4">
-                <p className="text-sm text-text-muted">Brand</p>
-                <p className="mt-1 font-semibold text-white">
-                  {sponsorProfile.brandName || 'Not added'}
-                </p>
-              </div>
-
-              <div className="rounded-2xl bg-white/5 p-4">
-                <p className="text-sm text-text-muted">Target Audience</p>
-                <p className="mt-1 font-semibold text-white">
-                  {sponsorProfile.targetAudience || 'Not added'}
-                </p>
-              </div>
-
-              <div className="rounded-2xl bg-white/5 p-4">
-                <p className="text-sm text-text-muted">Location Preference</p>
-                <p className="mt-1 font-semibold text-white">
-                  {sponsorProfile.locationPreference || 'Not added'}
-                </p>
-              </div>
-
-              <div className="rounded-2xl bg-white/5 p-4">
-                <p className="text-sm text-text-muted">Website</p>
-                <p className="mt-1 break-words font-semibold text-white">
-                  {sponsorProfile.website || 'Not added'}
-                </p>
-              </div>
-
-              <div className="rounded-2xl bg-white/5 p-4">
-                <p className="text-sm text-text-muted">Official Email</p>
-                <p className="mt-1 break-words font-semibold text-white">
-                  {sponsorProfile.officialEmail || 'Not added'}
-                </p>
-              </div>
-
-              <div className="rounded-2xl bg-white/5 p-4">
-                <p className="text-sm text-text-muted">Official Phone</p>
-                <p className="mt-1 font-semibold text-white">
-                  {sponsorProfile.officialPhone || 'Not added'}
-                </p>
-              </div>
-
-              <div className="rounded-2xl bg-white/5 p-4 md:col-span-2 xl:col-span-1">
-                <p className="text-sm text-text-muted">Status</p>
-                <p className="mt-1 font-semibold text-white">
-                  {isProfileComplete ? 'Ready for sponsorship' : 'Needs completion'}
-                </p>
-              </div>
-
-              <div className="rounded-2xl bg-white/5 p-4 md:col-span-2 xl:col-span-3">
-                <p className="text-sm text-text-muted">Preferred Categories</p>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {sponsorProfile.preferredCategories?.length ? (
-                    sponsorProfile.preferredCategories.map((category) => (
-                      <span
-                        key={category}
-                        className="rounded-full bg-white/5 px-3 py-1 text-xs text-text-light"
-                      >
-                        {category}
-                      </span>
-                    ))
-                  ) : (
-                    <span className="text-sm text-text-muted">
-                      No categories added yet
-                    </span>
-                  )}
-                </div>
-              </div>
-            </div>
-          ) : (
+            </form>
+          </>
+        ) : role === "ORGANIZER" ? (
+          <div className="rounded-[24px] border border-white/10 bg-white/[0.05] p-6 backdrop-blur-xl">
             <EmptyState
-              title="Your sponsor details are incomplete"
-              description="Complete only the important sponsor information in settings to unlock stronger event recommendations."
-              actionLabel="Complete Profile"
-              onAction={() => router.push('/settings')}
+              title="Organizer settings section"
+              description="Your organizer settings can live here, but for sponsor department work this page now correctly keeps sponsor settings as the main editable profile flow."
+              actionLabel="Back to Organizer Dashboard"
+              onAction={() => router.push("/dashboard/organizer")}
             />
-          )}
-        </div>
-
-        <div>
-          <div className="mb-6 flex items-center justify-between gap-4">
-            <div>
-              <h2 className="text-2xl font-bold text-white">Top Event Matches</h2>
-              <p className="mt-2 text-sm text-text-muted">
-                Recommended upcoming event opportunities for your sponsorship preferences.
-              </p>
-            </div>
-
-            <Link href="/match">
-              <Button size="sm" variant="primary">
-                View All
-              </Button>
-            </Link>
           </div>
-
-          {matchLoading ? (
-            <div className="rounded-[24px] border border-white/10 bg-white/[0.05] p-10 text-center text-text-muted backdrop-blur-xl">
-              Loading event matches...
-            </div>
-          ) : matchError ? (
-            <div className="rounded-[24px] border border-red-500/30 bg-red-500/10 p-6 text-center text-red-300">
-              {matchError}
-            </div>
-          ) : activeMatches.length > 0 ? (
-            <div className="grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
-              {activeMatches.slice(0, 6).map((match, index) => (
-                <div
-                  key={index}
-                  className={`overflow-hidden rounded-[24px] bg-transparent ${
-                    index === 0 ? 'border border-accent-orange shadow-glow-orange' : ''
-                  }`}
-                >
-                  {index === 0 && (
-                    <div className="bg-accent-orange px-4 py-2 text-center text-xs font-semibold text-black">
-                      BEST MATCH
-                    </div>
-                  )}
-                  <EventCard event={(match as any).event} matchScore={match.score} />
-                </div>
-              ))}
-            </div>
-          ) : (
+        ) : (
+          <div className="rounded-[24px] border border-white/10 bg-white/[0.05] p-6 backdrop-blur-xl">
             <EmptyState
-              title="No active event matches yet"
-              description="Complete your sponsor settings first so Sponexus can recommend better upcoming event opportunities."
-              actionLabel={isProfileComplete ? '🚀 Sponsor Now' : 'Complete Profile'}
-              onAction={() =>
-                router.push(isProfileComplete ? '/sponsorships/create' : '/settings')
-              }
+              title="Settings not available"
+              description="We could not determine the correct role-based settings view for this account."
+              actionLabel="Go to Login"
+              onAction={() => router.push("/login")}
             />
-          )}
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );
