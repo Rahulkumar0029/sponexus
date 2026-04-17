@@ -1,41 +1,60 @@
 # =========================
 # DEPENDENCIES
 # =========================
-/node_modules
-/.pnp
+node_modules/
+.pnp
 .pnp.js
 
-# testing
-/coverage
+# =========================
+# TESTING / COVERAGE
+# =========================
+coverage/
 
-# Next.js
-.next
-/out
+# =========================
+# NEXT / BUILD OUTPUTS
+# =========================
+.next/
+out/
+build/
+dist/
 
-# production
-/build
-
-# misc
-.DS_Store
-*.pem
-
-# debug
+# =========================
+# LOGS
+# =========================
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+pnpm-debug.log*
 
-# local env files
+# =========================
+# ENV / SECRETS
+# =========================
 .env
-.env.local
+.env.*
 !.env.example
 
 # =========================
 # VERCEL
 # =========================
-.vercel
+.vercel/
 
-# IDE
-.vscode
-.idea
+# =========================
+# IDE / OS
+# =========================
+.vscode/
+.idea/
+.DS_Store
 *.swp
 *.swo
+
+# =========================
+# KEYS / CERTS
+# =========================
+*.pem
+*.key
+
+# =========================
+# TYPESCRIPT
+# =========================
+*.tsbuildinfo
+next-env.d.ts
