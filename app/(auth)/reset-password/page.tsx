@@ -1,12 +1,12 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Input } from '@/components/Input';
 import { Button } from '@/components/Button';
 
-export default function ResetPasswordPage() {
+function ResetPasswordForm() {
   const searchParams = useSearchParams();
   const router = useRouter();
 
@@ -59,7 +59,7 @@ export default function ResetPasswordPage() {
         setError(data.message || 'Something went wrong');
       } else {
         setMessage('Password reset successful! Redirecting to login...');
-        
+
         setTimeout(() => {
           router.push('/login');
         }, 2000);
@@ -84,7 +84,7 @@ export default function ResetPasswordPage() {
 
       <div className="w-full max-w-md">
         <div className="rounded-[28px] border border-white/10 bg-white/[0.05] p-8 shadow-[0_0_50px_rgba(245,158,11,0.08)] backdrop-blur-xl sm:p-10">
-          
+
           {/* Header */}
           <div className="text-center mb-8">
             <h1 className="text-3xl font-bold text-white">Reset Password</h1>
@@ -154,5 +154,13 @@ export default function ResetPasswordPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function ResetPasswordPage() {
+  return (
+    <Suspense fallback={null}>
+      <ResetPasswordForm />
+    </Suspense>
   );
 }
