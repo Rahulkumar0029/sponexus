@@ -1,4 +1,4 @@
-import mongoose, { Schema, Model, Document } from "mongoose";
+import mongoose, { Document, Model, Schema } from "mongoose";
 
 export interface IUser extends Document {
   name: string;
@@ -8,21 +8,25 @@ export interface IUser extends Document {
 
   firstName: string;
   lastName: string;
-  companyName: string;
+  companyName?: string;
 
   avatar?: string;
   bio?: string;
   phone?: string;
 
-  // Organizer-specific fields
   organizationName?: string;
   eventFocus?: string;
   organizerTargetAudience?: string;
   organizerLocation?: string;
 
-  // Password reset
-  resetPasswordToken?: string;
-  resetPasswordExpires?: Date;
+  isEmailVerified: boolean;
+  isProfileComplete: boolean;
+
+  emailVerificationToken?: string | null;
+  emailVerificationExpires?: Date | null;
+
+  resetPasswordToken?: string | null;
+  resetPasswordExpires?: Date | null;
 
   createdAt: Date;
   updatedAt: Date;
@@ -33,6 +37,7 @@ const userSchema = new Schema<IUser>(
     name: {
       type: String,
       trim: true,
+      default: "",
     },
 
     email: {
@@ -41,16 +46,14 @@ const userSchema = new Schema<IUser>(
       unique: true,
       lowercase: true,
       trim: true,
-      match: [
-        /^\w+([\.-]?\w+)*@\w+([\.-]?\w+)*(\.\w{2,3})+$/,
-        "Invalid email",
-      ],
+      match: [/^[^\s@]+@[^\s@]+\.[^\s@]+$/, "Invalid email"],
+      index: true,
     },
 
     password: {
       type: String,
       required: [true, "Password is required"],
-      minlength: 6,
+      minlength: 8,
       select: false,
     },
 
@@ -58,6 +61,7 @@ const userSchema = new Schema<IUser>(
       type: String,
       enum: ["ORGANIZER", "SPONSOR"],
       required: [true, "Role is required"],
+      index: true,
     },
 
     firstName: {
@@ -74,8 +78,8 @@ const userSchema = new Schema<IUser>(
 
     companyName: {
       type: String,
-      required: [true, "Company name is required"],
       trim: true,
+      default: "",
     },
 
     avatar: {
@@ -93,7 +97,6 @@ const userSchema = new Schema<IUser>(
       default: "",
     },
 
-    // Organizer-specific
     organizationName: {
       type: String,
       trim: true,
@@ -118,13 +121,40 @@ const userSchema = new Schema<IUser>(
       default: "",
     },
 
+    isEmailVerified: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+
+    isProfileComplete: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+
+    emailVerificationToken: {
+      type: String,
+      default: null,
+      select: false,
+    },
+
+    emailVerificationExpires: {
+      type: Date,
+      default: null,
+      select: false,
+    },
+
     resetPasswordToken: {
       type: String,
-      default: "",
+      default: null,
+      select: false,
     },
 
     resetPasswordExpires: {
       type: Date,
+      default: null,
+      select: false,
     },
   },
   {
@@ -132,15 +162,13 @@ const userSchema = new Schema<IUser>(
   }
 );
 
-// 🔥 Auto-generate full name
 userSchema.pre("validate", function (next) {
-  if (!this.name && this.firstName && this.lastName) {
-    this.name = `${this.firstName.trim()} ${this.lastName.trim()}`;
+  if (this.firstName || this.lastName) {
+    this.name = `${this.firstName || ""} ${this.lastName || ""}`.trim();
   }
   next();
 });
 
-// ✅ FINAL EXPORT (IMPORTANT)
 const User: Model<IUser> =
   mongoose.models.User || mongoose.model<IUser>("User", userSchema);
 

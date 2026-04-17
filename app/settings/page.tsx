@@ -1,29 +1,24 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 import { Button } from "@/components/Button";
 import { EmptyState } from "@/components/EmptyState";
-
-type UserRole = "ORGANIZER" | "SPONSOR";
+import { useAuth } from "@/hooks/useAuth";
 
 type CurrentUser = {
   _id?: string;
   id?: string;
-  role?: UserRole;
+  role?: "ORGANIZER" | "SPONSOR";
   name?: string;
   firstName?: string;
   lastName?: string;
   email?: string;
   phone?: string;
-  bio?: string;
   companyName?: string;
-  organizationName?: string;
-  eventFocus?: string;
-  organizerTargetAudience?: string;
-  organizerLocation?: string;
+  bio?: string;
 };
 
 type SponsorProfile = {
@@ -55,29 +50,12 @@ type SettingsMeResponse = {
   message?: string;
 };
 
-type OrganizerFormState = {
-  role: "ORGANIZER";
-  firstName: string;
-  lastName: string;
-  phone: string;
-  bio: string;
-  companyName: string;
-  organizationName: string;
-  eventFocus: string;
-  organizerTargetAudience: string;
-  organizerLocation: string;
-};
-
 type SponsorFormState = {
-  role: "SPONSOR";
-  firstName: string;
-  lastName: string;
-  phone: string;
-  bio: string;
-  companyName: string;
   brandName: string;
+  companyName: string;
   website: string;
   officialEmail: string;
+  phone: string;
   industry: string;
   companySize: string;
   about: string;
@@ -91,90 +69,65 @@ type SponsorFormState = {
   isPublic: boolean;
 };
 
-function arrayToText(value?: string[]) {
+const initialSponsorForm: SponsorFormState = {
+  brandName: "",
+  companyName: "",
+  website: "",
+  officialEmail: "",
+  phone: "",
+  industry: "",
+  companySize: "",
+  about: "",
+  logoUrl: "",
+  targetAudience: "",
+  preferredCategories: "",
+  preferredLocations: "",
+  sponsorshipInterests: "",
+  instagramUrl: "",
+  linkedinUrl: "",
+  isPublic: true,
+};
+
+function toCommaSeparated(value?: string[]) {
   return Array.isArray(value) ? value.join(", ") : "";
 }
 
-function textToArray(value: string) {
+function parseCommaSeparated(value: string) {
   return value
     .split(",")
     .map((item) => item.trim())
     .filter(Boolean);
 }
 
-function isValidEmail(value: string) {
-  if (!value.trim()) return false;
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
-}
-
-function isValidPhone(value: string) {
-  if (!value.trim()) return false;
-  return /^[0-9+\-\s()]{7,20}$/.test(value.trim());
-}
-
-function isValidUrl(value: string) {
-  if (!value.trim()) return true;
-  try {
-    const url = new URL(value.trim());
-    return url.protocol === "http:" || url.protocol === "https:";
-  } catch {
-    return false;
-  }
-}
-
 export default function SettingsPage() {
   const router = useRouter();
+  const { user, loading: authLoading } = useAuth();
 
-  const [bootLoading, setBootLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
+  const [pageLoading, setPageLoading] = useState(true);
   const [pageError, setPageError] = useState("");
-  const [successMessage, setSuccessMessage] = useState("");
 
-  const [user, setUser] = useState<CurrentUser | null>(null);
+  const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [sponsorProfile, setSponsorProfile] = useState<SponsorProfile | null>(null);
 
-  const [organizerForm, setOrganizerForm] = useState<OrganizerFormState>({
-    role: "ORGANIZER",
-    firstName: "",
-    lastName: "",
-    phone: "",
-    bio: "",
-    companyName: "",
-    organizationName: "",
-    eventFocus: "",
-    organizerTargetAudience: "",
-    organizerLocation: "",
-  });
+  const [sponsorForm, setSponsorForm] = useState<SponsorFormState>(initialSponsorForm);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
+  const [saveSuccess, setSaveSuccess] = useState("");
 
-  const [sponsorForm, setSponsorForm] = useState<SponsorFormState>({
-    role: "SPONSOR",
-    firstName: "",
-    lastName: "",
-    phone: "",
-    bio: "",
-    companyName: "",
-    brandName: "",
-    website: "",
-    officialEmail: "",
-    industry: "",
-    companySize: "",
-    about: "",
-    logoUrl: "",
-    targetAudience: "",
-    preferredCategories: "",
-    preferredLocations: "",
-    sponsorshipInterests: "",
-    instagramUrl: "",
-    linkedinUrl: "",
-    isPublic: true,
-  });
+  useEffect(() => {
+    if (authLoading) return;
 
-  const role = user?.role;
+    if (!user) {
+      router.replace("/login");
+    }
+  }, [authLoading, user, router]);
 
   useEffect(() => {
     const loadSettings = async () => {
+      if (!user) return;
+
       try {
-        setBootLoading(true);
+        setPageLoading(true);
         setPageError("");
 
         const res = await fetch("/api/settings/me", {
@@ -185,232 +138,161 @@ export default function SettingsPage() {
 
         const data: SettingsMeResponse = await res.json();
 
-        if (res.status === 401) {
-          router.replace("/login");
-          return;
+        if (!res.ok || !data.success) {
+          throw new Error(data.message || "Unable to load settings");
         }
 
-        if (!res.ok || !data.success || !data.user) {
-          throw new Error(data.message || "Failed to load settings");
-        }
+        const loadedUser = data.user || null;
+        const loadedSponsorProfile = data.sponsorProfile || null;
 
-        setUser(data.user);
-        setSponsorProfile(data.sponsorProfile || null);
+        setCurrentUser(loadedUser);
+        setSponsorProfile(loadedSponsorProfile);
 
-        if (data.user.role === "ORGANIZER") {
-          setOrganizerForm({
-            role: "ORGANIZER",
-            firstName: data.user.firstName || "",
-            lastName: data.user.lastName || "",
-            phone: data.user.phone || "",
-            bio: data.user.bio || "",
-            companyName: data.user.companyName || "",
-            organizationName: data.user.organizationName || "",
-            eventFocus: data.user.eventFocus || "",
-            organizerTargetAudience: data.user.organizerTargetAudience || "",
-            organizerLocation: data.user.organizerLocation || "",
-          });
-        }
-
-        if (data.user.role === "SPONSOR") {
+        if ((loadedUser?.role || user?.role) === "SPONSOR") {
           setSponsorForm({
-            role: "SPONSOR",
-            firstName: data.user.firstName || "",
-            lastName: data.user.lastName || "",
-            phone: data.sponsorProfile?.phone || data.user.phone || "",
-            bio: data.user.bio || "",
-            companyName: data.sponsorProfile?.companyName || data.user.companyName || "",
-            brandName: data.sponsorProfile?.brandName || "",
-            website: data.sponsorProfile?.website || "",
-            officialEmail: data.sponsorProfile?.officialEmail || data.user.email || "",
-            industry: data.sponsorProfile?.industry || "",
-            companySize: data.sponsorProfile?.companySize || "",
-            about: data.sponsorProfile?.about || "",
-            logoUrl: data.sponsorProfile?.logoUrl || "",
-            targetAudience: data.sponsorProfile?.targetAudience || "",
-            preferredCategories: arrayToText(data.sponsorProfile?.preferredCategories),
-            preferredLocations: arrayToText(data.sponsorProfile?.preferredLocations),
-            sponsorshipInterests: arrayToText(data.sponsorProfile?.sponsorshipInterests),
-            instagramUrl: data.sponsorProfile?.instagramUrl || "",
-            linkedinUrl: data.sponsorProfile?.linkedinUrl || "",
+            brandName: loadedSponsorProfile?.brandName || "",
+            companyName:
+              loadedSponsorProfile?.companyName ||
+              loadedUser?.companyName ||
+              "",
+            website: loadedSponsorProfile?.website || "",
+            officialEmail:
+              loadedSponsorProfile?.officialEmail || loadedUser?.email || "",
+            phone: loadedSponsorProfile?.phone || loadedUser?.phone || "",
+            industry: loadedSponsorProfile?.industry || "",
+            companySize: loadedSponsorProfile?.companySize || "",
+            about: loadedSponsorProfile?.about || loadedUser?.bio || "",
+            logoUrl: loadedSponsorProfile?.logoUrl || "",
+            targetAudience: loadedSponsorProfile?.targetAudience || "",
+            preferredCategories: toCommaSeparated(
+              loadedSponsorProfile?.preferredCategories
+            ),
+            preferredLocations: toCommaSeparated(
+              loadedSponsorProfile?.preferredLocations
+            ),
+            sponsorshipInterests: toCommaSeparated(
+              loadedSponsorProfile?.sponsorshipInterests
+            ),
+            instagramUrl: loadedSponsorProfile?.instagramUrl || "",
+            linkedinUrl: loadedSponsorProfile?.linkedinUrl || "",
             isPublic:
-              typeof data.sponsorProfile?.isPublic === "boolean"
-                ? data.sponsorProfile.isPublic
+              typeof loadedSponsorProfile?.isPublic === "boolean"
+                ? loadedSponsorProfile.isPublic
                 : true,
           });
         }
       } catch (err: any) {
-        setPageError(err?.message || "Failed to load settings");
+        setPageError(err?.message || "Unable to load settings");
+        setCurrentUser(null);
+        setSponsorProfile(null);
       } finally {
-        setBootLoading(false);
+        setPageLoading(false);
       }
     };
 
     loadSettings();
-  }, [router]);
+  }, [user]);
+
+  const role = currentUser?.role || user?.role;
 
   const sponsorCompletion = useMemo(() => {
     if (role !== "SPONSOR") return 0;
 
-    let score = 0;
+    let score = 20;
+
     if (sponsorForm.brandName.trim()) score += 15;
     if (sponsorForm.companyName.trim()) score += 10;
     if (sponsorForm.officialEmail.trim()) score += 10;
     if (sponsorForm.phone.trim()) score += 10;
     if (sponsorForm.industry.trim()) score += 15;
     if (sponsorForm.targetAudience.trim()) score += 10;
-    if (textToArray(sponsorForm.preferredCategories).length > 0) score += 10;
-    if (textToArray(sponsorForm.preferredLocations).length > 0) score += 10;
-    if (sponsorForm.website.trim()) score += 5;
-    if (sponsorForm.about.trim()) score += 5;
+    if (parseCommaSeparated(sponsorForm.preferredCategories).length) score += 10;
+    if (parseCommaSeparated(sponsorForm.preferredLocations).length) score += 10;
 
     return Math.min(score, 100);
   }, [role, sponsorForm]);
 
-  const handleOrganizerChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
-  ) => {
-    const { name, value } = e.target;
-    setOrganizerForm((prev) => ({ ...prev, [name]: value }));
-  };
+  const isSponsorProfileReady = useMemo(() => {
+    return Boolean(sponsorProfile?.isProfileComplete) || sponsorCompletion >= 80;
+  }, [sponsorProfile, sponsorCompletion]);
 
   const handleSponsorChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
+    e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
   ) => {
-    const { name, value } = e.target;
-    setSponsorForm((prev) => ({ ...prev, [name]: value }));
-  };
+    const { name, value, type } = e.target;
 
-  const handleSponsorCheckbox = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, checked } = e.target;
-    setSponsorForm((prev) => ({ ...prev, [name]: checked }));
-  };
-
-  const validateOrganizerForm = () => {
-    if (!organizerForm.firstName.trim()) return "First name is required";
-    if (!organizerForm.lastName.trim()) return "Last name is required";
-    if (!organizerForm.companyName.trim()) return "Company name is required";
-    if (organizerForm.phone.trim() && !isValidPhone(organizerForm.phone)) {
-      return "Enter a valid phone number";
+    if (type === "checkbox") {
+      const checked = (e.target as HTMLInputElement).checked;
+      setSponsorForm((prev) => ({
+        ...prev,
+        [name]: checked,
+      }));
+      return;
     }
-    return "";
+
+    setSponsorForm((prev) => ({
+      ...prev,
+      [name]: value,
+    }));
   };
 
-  const validateSponsorForm = () => {
-    if (!sponsorForm.firstName.trim()) return "First name is required";
-    if (!sponsorForm.lastName.trim()) return "Last name is required";
-    if (!sponsorForm.companyName.trim()) return "Company name is required";
-    if (!sponsorForm.brandName.trim()) return "Brand name is required";
-    if (!sponsorForm.officialEmail.trim()) return "Official email is required";
-    if (!isValidEmail(sponsorForm.officialEmail)) return "Enter a valid official email";
-    if (!sponsorForm.phone.trim()) return "Phone number is required";
-    if (!isValidPhone(sponsorForm.phone)) return "Enter a valid phone number";
-    if (!sponsorForm.industry.trim()) return "Industry is required";
-    if (!isValidUrl(sponsorForm.website)) return "Enter a valid website URL";
-    if (!isValidUrl(sponsorForm.logoUrl)) return "Enter a valid logo URL";
-    if (!isValidUrl(sponsorForm.instagramUrl)) return "Enter a valid Instagram URL";
-    if (!isValidUrl(sponsorForm.linkedinUrl)) return "Enter a valid LinkedIn URL";
-    return "";
-  };
+  const handleSponsorSave = async (e: FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
 
-  const saveOrganizerSettings = async () => {
-    const payload = {
-      role: "ORGANIZER",
-      firstName: organizerForm.firstName.trim(),
-      lastName: organizerForm.lastName.trim(),
-      phone: organizerForm.phone.trim(),
-      bio: organizerForm.bio.trim(),
-      companyName: organizerForm.companyName.trim(),
-      organizationName: organizerForm.organizationName.trim(),
-      eventFocus: organizerForm.eventFocus.trim(),
-      organizerTargetAudience: organizerForm.organizerTargetAudience.trim(),
-      organizerLocation: organizerForm.organizerLocation.trim(),
-    };
+    if (role !== "SPONSOR") {
+      setSaveError("Only sponsors can update sponsor profile settings.");
+      return;
+    }
 
-    const res = await fetch("/api/settings", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      credentials: "include",
-      body: JSON.stringify(payload),
-    });
-
-    return res.json();
-  };
-
-  const saveSponsorSettings = async () => {
-    const payload = {
-      role: "SPONSOR",
-      firstName: sponsorForm.firstName.trim(),
-      lastName: sponsorForm.lastName.trim(),
-      phone: sponsorForm.phone.trim(),
-      bio: sponsorForm.bio.trim(),
-      companyName: sponsorForm.companyName.trim(),
-      brandName: sponsorForm.brandName.trim(),
-      website: sponsorForm.website.trim(),
-      officialEmail: sponsorForm.officialEmail.trim(),
-      industry: sponsorForm.industry.trim(),
-      companySize: sponsorForm.companySize.trim(),
-      about: sponsorForm.about.trim(),
-      logoUrl: sponsorForm.logoUrl.trim(),
-      targetAudience: sponsorForm.targetAudience.trim(),
-      preferredCategories: textToArray(sponsorForm.preferredCategories),
-      preferredLocations: textToArray(sponsorForm.preferredLocations),
-      sponsorshipInterests: textToArray(sponsorForm.sponsorshipInterests),
-      instagramUrl: sponsorForm.instagramUrl.trim(),
-      linkedinUrl: sponsorForm.linkedinUrl.trim(),
-      isPublic: sponsorForm.isPublic,
-    };
-
-    const res = await fetch("/api/settings", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      credentials: "include",
-      body: JSON.stringify(payload),
-    });
-
-    return res.json();
-  };
-
-  const handleSave = async () => {
     try {
       setSaving(true);
-      setPageError("");
-      setSuccessMessage("");
+      setSaveError("");
+      setSaveSuccess("");
 
-      const validationMessage =
-        role === "ORGANIZER" ? validateOrganizerForm() : validateSponsorForm();
+      const payload = {
+        brandName: sponsorForm.brandName,
+        companyName: sponsorForm.companyName,
+        website: sponsorForm.website,
+        officialEmail: sponsorForm.officialEmail,
+        phone: sponsorForm.phone,
+        industry: sponsorForm.industry,
+        companySize: sponsorForm.companySize,
+        about: sponsorForm.about,
+        logoUrl: sponsorForm.logoUrl,
+        targetAudience: sponsorForm.targetAudience,
+        preferredCategories: parseCommaSeparated(sponsorForm.preferredCategories),
+        preferredLocations: parseCommaSeparated(sponsorForm.preferredLocations),
+        sponsorshipInterests: parseCommaSeparated(sponsorForm.sponsorshipInterests),
+        instagramUrl: sponsorForm.instagramUrl,
+        linkedinUrl: sponsorForm.linkedinUrl,
+        isPublic: sponsorForm.isPublic,
+      };
 
-      if (validationMessage) {
-        throw new Error(validationMessage);
+      const res = await fetch("/api/sponsors/create", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        credentials: "include",
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || "Failed to save sponsor profile");
       }
 
-      let data: any;
-
-      if (role === "ORGANIZER") {
-        data = await saveOrganizerSettings();
-      } else if (role === "SPONSOR") {
-        data = await saveSponsorSettings();
-      } else {
-        throw new Error("Unsupported user role");
-      }
-
-      if (!data?.success) {
-        throw new Error(data?.message || "Failed to save settings");
-      }
-
-      setSuccessMessage("Settings saved successfully");
+      setSponsorProfile(data.sponsor || null);
+      setSaveSuccess("Settings saved successfully.");
     } catch (err: any) {
-      setPageError(err?.message || "Failed to save settings");
+      setSaveError(err?.message || "Failed to save sponsor profile");
     } finally {
       setSaving(false);
     }
   };
 
-  if (bootLoading) {
+  if (authLoading || pageLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center text-text-muted">
         Loading settings...
@@ -418,20 +300,7 @@ export default function SettingsPage() {
     );
   }
 
-  if (!user) {
-    return (
-      <div className="min-h-screen px-4 py-12">
-        <div className="mx-auto max-w-2xl">
-          <EmptyState
-            title="Log in to manage settings"
-            description="Your settings are available after signing in."
-            actionLabel="Log In"
-            onAction={() => router.push("/login")}
-          />
-        </div>
-      </div>
-    );
-  }
+  if (!user) return null;
 
   return (
     <div className="relative min-h-screen px-4 py-12">
@@ -442,217 +311,398 @@ export default function SettingsPage() {
         <div className="absolute bottom-10 right-10 h-80 w-80 rounded-full bg-amber-500/10 blur-3xl" />
       </div>
 
-      <div className="mx-auto max-w-5xl">
-        <div className="mb-10 flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
+      <div className="container-custom max-w-5xl">
+        <div className="mb-10 flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <p className="mb-3 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-text-muted">
+            <p className="mb-3 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-text-muted backdrop-blur-md">
               <span className="h-2 w-2 rounded-full bg-accent-orange" />
-              Account Settings
+              Settings
             </p>
 
             <h1 className="text-4xl font-bold text-white md:text-5xl">
-              {role === "SPONSOR" ? "Sponsor Settings" : "Organizer Settings"}
+              Account & Profile Settings
             </h1>
 
-            <p className="mt-3 max-w-2xl text-text-muted">
-              {role === "SPONSOR"
-                ? "Manage your fixed sponsor profile. This profile powers matching and sponsorship visibility."
-                : "Manage your organizer identity and event-facing profile information."}
+            <p className="mt-3 max-w-3xl text-text-muted">
+              Manage your account details and keep your role-based profile updated
+              for a better Sponexus experience.
             </p>
           </div>
 
-          <div className="flex gap-3">
-            <Link href={role === "SPONSOR" ? "/dashboard/sponsor" : "/dashboard/organizer"}>
-              <Button variant="secondary">Back to Dashboard</Button>
-            </Link>
-            <Button variant="primary" onClick={handleSave} disabled={saving}>
-              {saving ? "Saving..." : "Save Settings"}
-            </Button>
+          <div className="flex flex-col gap-3 sm:flex-row">
+            {role === "SPONSOR" ? (
+              <>
+                <Link href="/dashboard/sponsor">
+                  <Button variant="secondary">Back to Dashboard</Button>
+                </Link>
+                <Link href="/sponsorships/create">
+                  <Button variant="primary">Create Sponsorship</Button>
+                </Link>
+              </>
+            ) : (
+              <Link href="/dashboard/organizer">
+                <Button variant="secondary">Back to Dashboard</Button>
+              </Link>
+            )}
           </div>
         </div>
 
-        {pageError && (
-          <div className="mb-6 rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-red-300">
+        {pageError ? (
+          <div className="mb-8 rounded-[24px] border border-red-500/30 bg-red-500/10 p-6 text-red-300">
             {pageError}
           </div>
-        )}
+        ) : null}
 
-        {successMessage && (
-          <div className="mb-6 rounded-2xl border border-green-500/30 bg-green-500/10 p-4 text-green-300">
-            {successMessage}
-          </div>
-        )}
-
-        {role === "SPONSOR" && (
-          <div className="mb-8 rounded-2xl border border-white/10 bg-white/[0.05] p-6">
-            <div className="mb-3 flex items-center justify-between gap-4">
-              <div>
-                <h2 className="text-xl font-semibold text-white">Profile Completion</h2>
-                <p className="text-sm text-text-muted">
-                  Complete the important fields to unlock strong event matching.
+        {role === "SPONSOR" ? (
+          <>
+            <div className="mb-8 grid grid-cols-1 gap-6 md:grid-cols-3">
+              <div className="rounded-[24px] border border-white/10 bg-white/[0.05] p-6 backdrop-blur-xl">
+                <p className="text-sm text-text-muted">Profile Completion</p>
+                <h3 className="mt-2 text-xl font-semibold text-white">
+                  {sponsorCompletion}%
+                </h3>
+                <p className="mt-3 text-sm text-text-muted">
+                  Complete the important sponsor fields to improve trust and matching.
                 </p>
               </div>
-              <div className="text-2xl font-bold text-accent-orange">{sponsorCompletion}%</div>
-            </div>
 
-            <div className="h-3 w-full overflow-hidden rounded-full bg-white/10">
-              <div
-                className="h-full rounded-full bg-accent-orange transition-all duration-300"
-                style={{ width: `${sponsorCompletion}%` }}
-              />
-            </div>
-          </div>
-        )}
+              <div className="rounded-[24px] border border-white/10 bg-white/[0.05] p-6 backdrop-blur-xl">
+                <p className="text-sm text-text-muted">Profile Status</p>
+                <h3 className="mt-2 text-xl font-semibold text-white">
+                  {isSponsorProfileReady ? "Ready" : "Needs Work"}
+                </h3>
+                <p className="mt-3 text-sm text-text-muted">
+                  Sponsorship creation works best after your sponsor profile is complete.
+                </p>
+              </div>
 
-        {role === "ORGANIZER" ? (
-          <div className="grid gap-8 lg:grid-cols-2">
-            <div className="rounded-2xl border border-white/10 bg-white/[0.05] p-6">
-              <h2 className="mb-5 text-xl font-semibold text-white">Basic Information</h2>
-
-              <div className="space-y-4">
-                <Field label="First Name" name="firstName" type="text" value={organizerForm.firstName} onChange={handleOrganizerChange} />
-                <Field label="Last Name" name="lastName" type="text" value={organizerForm.lastName} onChange={handleOrganizerChange} />
-                <Field label="Phone" name="phone" type="tel" value={organizerForm.phone} onChange={handleOrganizerChange} />
-                <Field label="Company Name" name="companyName" type="text" value={organizerForm.companyName} onChange={handleOrganizerChange} />
-                <TextAreaField label="Bio" name="bio" value={organizerForm.bio} onChange={handleOrganizerChange} />
+              <div className="rounded-[24px] border border-white/10 bg-white/[0.05] p-6 backdrop-blur-xl">
+                <p className="text-sm text-text-muted">Visibility</p>
+                <h3 className="mt-2 text-xl font-semibold text-white">
+                  {sponsorForm.isPublic ? "Public" : "Private"}
+                </h3>
+                <p className="mt-3 text-sm text-text-muted">
+                  Public sponsor profiles can be discovered by organizers.
+                </p>
               </div>
             </div>
 
-            <div className="rounded-2xl border border-white/10 bg-white/[0.05] p-6">
-              <h2 className="mb-5 text-xl font-semibold text-white">Organizer Profile</h2>
-
-              <div className="space-y-4">
-                <Field label="Organization Name" name="organizationName" type="text" value={organizerForm.organizationName} onChange={handleOrganizerChange} />
-                <Field label="Event Focus" name="eventFocus" type="text" value={organizerForm.eventFocus} onChange={handleOrganizerChange} />
-                <Field label="Target Audience" name="organizerTargetAudience" type="text" value={organizerForm.organizerTargetAudience} onChange={handleOrganizerChange} />
-                <Field label="Primary Location" name="organizerLocation" type="text" value={organizerForm.organizerLocation} onChange={handleOrganizerChange} />
+            {!isSponsorProfileReady && (
+              <div className="mb-8 rounded-[24px] border border-yellow-500/30 bg-yellow-500/10 p-5 text-yellow-200">
+                Complete your core sponsor profile fields before creating sponsorships.
+                Focus on brand name, company name, official email, phone, industry,
+                audience, categories, and locations.
               </div>
-            </div>
+            )}
+
+            <form
+              onSubmit={handleSponsorSave}
+              className="rounded-[24px] border border-white/10 bg-white/[0.05] p-6 backdrop-blur-xl"
+            >
+              <div className="mb-8">
+                <h2 className="text-2xl font-bold text-white">Sponsor Profile</h2>
+                <p className="mt-2 text-sm text-text-muted">
+                  This is your main sponsor profile editor inside Sponexus.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-white">
+                    Brand Name
+                  </label>
+                  <input
+                    name="brandName"
+                    value={sponsorForm.brandName}
+                    onChange={handleSponsorChange}
+                    placeholder="Example: RedPulse"
+                    className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none placeholder:text-text-muted"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-white">
+                    Company Name
+                  </label>
+                  <input
+                    name="companyName"
+                    value={sponsorForm.companyName}
+                    onChange={handleSponsorChange}
+                    placeholder="Example: RedPulse Media Pvt Ltd"
+                    className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none placeholder:text-text-muted"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-white">
+                    Official Email
+                  </label>
+                  <input
+                    type="email"
+                    name="officialEmail"
+                    value={sponsorForm.officialEmail}
+                    onChange={handleSponsorChange}
+                    placeholder="brand@company.com"
+                    className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none placeholder:text-text-muted"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-white">
+                    Phone
+                  </label>
+                  <input
+                    name="phone"
+                    value={sponsorForm.phone}
+                    onChange={handleSponsorChange}
+                    placeholder="Primary phone number"
+                    className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none placeholder:text-text-muted"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-white">
+                    Website
+                  </label>
+                  <input
+                    name="website"
+                    value={sponsorForm.website}
+                    onChange={handleSponsorChange}
+                    placeholder="yourbrand.com"
+                    className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none placeholder:text-text-muted"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-white">
+                    Industry
+                  </label>
+                  <input
+                    name="industry"
+                    value={sponsorForm.industry}
+                    onChange={handleSponsorChange}
+                    placeholder="Example: FMCG / EdTech / FinTech"
+                    className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none placeholder:text-text-muted"
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-white">
+                    Company Size
+                  </label>
+                  <input
+                    name="companySize"
+                    value={sponsorForm.companySize}
+                    onChange={handleSponsorChange}
+                    placeholder="Example: 11-50 / 51-200"
+                    className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none placeholder:text-text-muted"
+                  />
+                </div>
+
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-white">
+                    Logo URL
+                  </label>
+                  <input
+                    name="logoUrl"
+                    value={sponsorForm.logoUrl}
+                    onChange={handleSponsorChange}
+                    placeholder="https://..."
+                    className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none placeholder:text-text-muted"
+                  />
+                </div>
+
+                <div className="md:col-span-2">
+                  <label className="mb-2 block text-sm font-medium text-white">
+                    About
+                  </label>
+                  <textarea
+                    name="about"
+                    value={sponsorForm.about}
+                    onChange={handleSponsorChange}
+                    rows={4}
+                    placeholder="Describe your brand and partnership intent."
+                    className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none placeholder:text-text-muted"
+                  />
+                </div>
+              </div>
+
+              <div className="my-8">
+                <h3 className="text-xl font-semibold text-white">
+                  Matching Preferences
+                </h3>
+                <p className="mt-2 text-sm text-text-muted">
+                  These fields help Sponexus recommend better event opportunities.
+                </p>
+
+                <div className="mt-5 grid grid-cols-1 gap-5 md:grid-cols-2">
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-white">
+                      Target Audience
+                    </label>
+                    <input
+                      name="targetAudience"
+                      value={sponsorForm.targetAudience}
+                      onChange={handleSponsorChange}
+                      placeholder="Example: College students, Gen Z, startup founders"
+                      className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none placeholder:text-text-muted"
+                    />
+                  </div>
+
+                  <div className="flex items-center rounded-2xl border border-white/10 bg-white/5 px-4 py-3">
+                    <input
+                      type="checkbox"
+                      name="isPublic"
+                      checked={sponsorForm.isPublic}
+                      onChange={handleSponsorChange}
+                      className="h-4 w-4"
+                    />
+                    <label className="ml-3 text-sm font-medium text-white">
+                      Make sponsor profile public
+                    </label>
+                  </div>
+
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-white">
+                      Preferred Categories
+                    </label>
+                    <input
+                      name="preferredCategories"
+                      value={sponsorForm.preferredCategories}
+                      onChange={handleSponsorChange}
+                      placeholder="Tech, Cultural, Sports"
+                      className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none placeholder:text-text-muted"
+                    />
+                    <p className="mt-2 text-xs text-text-muted">
+                      Add comma-separated values.
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-white">
+                      Preferred Locations
+                    </label>
+                    <input
+                      name="preferredLocations"
+                      value={sponsorForm.preferredLocations}
+                      onChange={handleSponsorChange}
+                      placeholder="Delhi NCR, Jaipur, Mumbai"
+                      className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none placeholder:text-text-muted"
+                    />
+                    <p className="mt-2 text-xs text-text-muted">
+                      Add comma-separated values.
+                    </p>
+                  </div>
+
+                  <div className="md:col-span-2">
+                    <label className="mb-2 block text-sm font-medium text-white">
+                      Sponsorship Interests
+                    </label>
+                    <input
+                      name="sponsorshipInterests"
+                      value={sponsorForm.sponsorshipInterests}
+                      onChange={handleSponsorChange}
+                      placeholder="Title Sponsor, Stall Activation, Social Promotion"
+                      className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none placeholder:text-text-muted"
+                    />
+                    <p className="mt-2 text-xs text-text-muted">
+                      Add comma-separated values.
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="mb-8">
+                <h3 className="text-xl font-semibold text-white">Public Presence</h3>
+                <p className="mt-2 text-sm text-text-muted">
+                  Optional links help build trust with organizers.
+                </p>
+
+                <div className="mt-5 grid grid-cols-1 gap-5 md:grid-cols-2">
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-white">
+                      Instagram URL
+                    </label>
+                    <input
+                      name="instagramUrl"
+                      value={sponsorForm.instagramUrl}
+                      onChange={handleSponsorChange}
+                      placeholder="https://instagram.com/yourbrand"
+                      className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none placeholder:text-text-muted"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-white">
+                      LinkedIn URL
+                    </label>
+                    <input
+                      name="linkedinUrl"
+                      value={sponsorForm.linkedinUrl}
+                      onChange={handleSponsorChange}
+                      placeholder="https://linkedin.com/company/yourbrand"
+                      className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none placeholder:text-text-muted"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {saveError ? (
+                <div className="mb-5 rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+                  {saveError}
+                </div>
+              ) : null}
+
+              {saveSuccess ? (
+                <div className="mb-5 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300">
+                  {saveSuccess}
+                </div>
+              ) : null}
+
+              <div className="flex flex-col gap-3 sm:flex-row">
+                <Button type="submit" variant="primary" disabled={saving}>
+                  {saving ? "Saving..." : "Save Profile"}
+                </Button>
+
+                <Link href="/dashboard/sponsor">
+                  <Button type="button" variant="secondary">
+                    Back to Dashboard
+                  </Button>
+                </Link>
+
+                <Link href="/sponsorships/create">
+                  <Button type="button" variant="secondary">
+                    Create Sponsorship
+                  </Button>
+                </Link>
+              </div>
+            </form>
+          </>
+        ) : role === "ORGANIZER" ? (
+          <div className="rounded-[24px] border border-white/10 bg-white/[0.05] p-6 backdrop-blur-xl">
+            <EmptyState
+              title="Organizer settings section"
+              description="Your organizer settings can live here, but for sponsor department work this page now correctly keeps sponsor settings as the main editable profile flow."
+              actionLabel="Back to Organizer Dashboard"
+              onAction={() => router.push("/dashboard/organizer")}
+            />
           </div>
         ) : (
-          <div className="grid gap-8 lg:grid-cols-2">
-            <div className="rounded-2xl border border-white/10 bg-white/[0.05] p-6">
-              <h2 className="mb-5 text-xl font-semibold text-white">Basic Information</h2>
-
-              <div className="space-y-4">
-                <Field label="First Name" name="firstName" type="text" value={sponsorForm.firstName} onChange={handleSponsorChange} />
-                <Field label="Last Name" name="lastName" type="text" value={sponsorForm.lastName} onChange={handleSponsorChange} />
-                <Field label="Phone" name="phone" type="tel" value={sponsorForm.phone} onChange={handleSponsorChange} />
-                <Field label="Company Name" name="companyName" type="text" value={sponsorForm.companyName} onChange={handleSponsorChange} />
-                <TextAreaField label="Bio" name="bio" value={sponsorForm.bio} onChange={handleSponsorChange} />
-              </div>
-            </div>
-
-            <div className="rounded-2xl border border-white/10 bg-white/[0.05] p-6">
-              <h2 className="mb-5 text-xl font-semibold text-white">Sponsor Profile</h2>
-
-              <div className="space-y-4">
-                <Field label="Brand Name" name="brandName" type="text" value={sponsorForm.brandName} onChange={handleSponsorChange} />
-                <Field label="Official Email" name="officialEmail" type="email" value={sponsorForm.officialEmail} onChange={handleSponsorChange} />
-                <Field label="Website" name="website" type="url" value={sponsorForm.website} onChange={handleSponsorChange} placeholder="https://example.com" />
-                <Field label="Industry" name="industry" type="text" value={sponsorForm.industry} onChange={handleSponsorChange} />
-                <Field label="Company Size" name="companySize" type="text" value={sponsorForm.companySize} onChange={handleSponsorChange} />
-                <Field label="Logo URL" name="logoUrl" type="url" value={sponsorForm.logoUrl} onChange={handleSponsorChange} placeholder="https://example.com/logo.png" />
-                <Field label="Target Audience" name="targetAudience" type="text" value={sponsorForm.targetAudience} onChange={handleSponsorChange} />
-                <Field
-                  label="Preferred Categories"
-                  name="preferredCategories"
-                  type="text"
-                  value={sponsorForm.preferredCategories}
-                  onChange={handleSponsorChange}
-                  helper="Separate multiple values with commas"
-                />
-                <Field
-                  label="Preferred Locations"
-                  name="preferredLocations"
-                  type="text"
-                  value={sponsorForm.preferredLocations}
-                  onChange={handleSponsorChange}
-                  helper="Separate multiple values with commas"
-                />
-                <Field
-                  label="Sponsorship Interests"
-                  name="sponsorshipInterests"
-                  type="text"
-                  value={sponsorForm.sponsorshipInterests}
-                  onChange={handleSponsorChange}
-                  helper="Separate multiple values with commas"
-                />
-                <Field label="Instagram URL" name="instagramUrl" type="url" value={sponsorForm.instagramUrl} onChange={handleSponsorChange} placeholder="https://instagram.com/yourbrand" />
-                <Field label="LinkedIn URL" name="linkedinUrl" type="url" value={sponsorForm.linkedinUrl} onChange={handleSponsorChange} placeholder="https://linkedin.com/company/yourbrand" />
-                <TextAreaField label="About Brand" name="about" value={sponsorForm.about} onChange={handleSponsorChange} />
-
-                <label className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-white">
-                  <input
-                    type="checkbox"
-                    name="isPublic"
-                    checked={sponsorForm.isPublic}
-                    onChange={handleSponsorCheckbox}
-                  />
-                  <span>Make sponsor profile public</span>
-                </label>
-              </div>
-            </div>
+          <div className="rounded-[24px] border border-white/10 bg-white/[0.05] p-6 backdrop-blur-xl">
+            <EmptyState
+              title="Settings not available"
+              description="We could not determine the correct role-based settings view for this account."
+              actionLabel="Go to Login"
+              onAction={() => router.push("/login")}
+            />
           </div>
         )}
       </div>
-    </div>
-  );
-}
-
-type FieldProps = {
-  label: string;
-  name: string;
-  value: string;
-  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
-  helper?: string;
-  type?: React.HTMLInputTypeAttribute;
-  placeholder?: string;
-};
-
-function Field({
-  label,
-  name,
-  value,
-  onChange,
-  helper,
-  type = "text",
-  placeholder,
-}: FieldProps) {
-  return (
-    <div>
-      <label className="mb-2 block text-sm font-medium text-text-light">{label}</label>
-      <input
-        type={type}
-        name={name}
-        value={value}
-        onChange={onChange}
-        placeholder={placeholder}
-        className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none transition focus:border-accent-orange"
-      />
-      {helper && <p className="mt-2 text-xs text-text-muted">{helper}</p>}
-    </div>
-  );
-}
-
-type TextAreaFieldProps = {
-  label: string;
-  name: string;
-  value: string;
-  onChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void;
-};
-
-function TextAreaField({ label, name, value, onChange }: TextAreaFieldProps) {
-  return (
-    <div>
-      <label className="mb-2 block text-sm font-medium text-text-light">{label}</label>
-      <textarea
-        name={name}
-        value={value}
-        onChange={onChange}
-        rows={5}
-        className="w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none transition focus:border-accent-orange"
-      />
     </div>
   );
 }

@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
 
 import { connectDB } from "@/lib/db";
-import User from "@/models/User";
-import Sponsor from "@/models/Sponsor";
-import { authOptions } from "@/lib/nextAuthOptions";
+import User from "@/lib/models/User";
+import Sponsor from "@/lib/models/Sponsor";
+import { getCurrentUser } from "@/lib/current-user";
 
 function normalizeArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
@@ -15,16 +14,16 @@ export async function POST(request: NextRequest) {
   try {
     await connectDB();
 
-    const session = await getServerSession(authOptions);
+    const currentUser = await getCurrentUser();
 
-    if (!session?.user?.email) {
+    if (!currentUser) {
       return NextResponse.json(
         { success: false, message: "Authentication required" },
         { status: 401 }
       );
     }
 
-    const user = await User.findOne({ email: session.user.email });
+    const user = await User.findById(currentUser._id);
 
     if (!user) {
       return NextResponse.json(
@@ -82,20 +81,26 @@ export async function POST(request: NextRequest) {
     user.phone = phone?.trim() || "";
     user.bio = bio?.trim() || "";
 
+    if (companyName?.trim()) {
+      user.companyName = companyName.trim();
+    }
+
+    let sponsorProfile = null;
+
     if (role === "ORGANIZER") {
       user.organizationName = organizationName?.trim() || "";
       user.eventFocus = eventFocus?.trim() || "";
       user.organizerTargetAudience = organizerTargetAudience?.trim() || "";
       user.organizerLocation = organizerLocation?.trim() || "";
+
+      user.isProfileComplete = Boolean(user.firstName) &&
+        Boolean(user.lastName) &&
+        Boolean(user.phone) &&
+        Boolean(user.organizationName) &&
+        Boolean(user.eventFocus) &&
+        Boolean(user.organizerTargetAudience) &&
+        Boolean(user.organizerLocation);
     }
-
-    if (companyName?.trim()) {
-      user.companyName = companyName.trim();
-    }
-
-    await user.save();
-
-    let sponsorProfile = null;
 
     if (role === "SPONSOR") {
       const sponsorPayload = {
@@ -118,7 +123,7 @@ export async function POST(request: NextRequest) {
         isPublic: typeof isPublic === "boolean" ? isPublic : true,
       };
 
-      const isProfileComplete =
+      const isSponsorProfileComplete =
         Boolean(sponsorPayload.brandName) &&
         Boolean(sponsorPayload.companyName) &&
         Boolean(sponsorPayload.officialEmail) &&
@@ -129,7 +134,7 @@ export async function POST(request: NextRequest) {
         { userId: user._id },
         {
           ...sponsorPayload,
-          isProfileComplete,
+          isProfileComplete: isSponsorProfileComplete,
         },
         {
           new: true,
@@ -138,7 +143,14 @@ export async function POST(request: NextRequest) {
           setDefaultsOnInsert: true,
         }
       );
+
+      user.isProfileComplete = Boolean(user.firstName) &&
+        Boolean(user.lastName) &&
+        Boolean(user.phone) &&
+        isSponsorProfileComplete;
     }
+
+    await user.save();
 
     return NextResponse.json(
       {

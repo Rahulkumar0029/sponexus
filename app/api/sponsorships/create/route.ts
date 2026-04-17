@@ -1,18 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
+import mongoose from "mongoose";
 
 import { connectDB } from "@/lib/db";
-import Sponsorship from "@/models/Sponsorship";
-import Sponsor from "@/models/Sponsor";
-import User from "@/models/User";
-import { authOptions } from "@/lib/nextAuthOptions";
+import Sponsorship from "@/lib/models/Sponsorship";
+import Sponsor from "@/lib/models/Sponsor";
+import User from "@/lib/models/User";
+import { getCurrentUser } from "@/lib/current-user";
 
 // 🧠 Helper
 function clean(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
-// ✅ CONSTANT RULES
 const MIN_AUDIENCE = 50;
 const MIN_BUDGET = 2000;
 
@@ -20,18 +19,17 @@ export async function POST(request: NextRequest) {
   try {
     await connectDB();
 
-    // 🔐 AUTH
-    const session = await getServerSession(authOptions);
+    // ✅ AUTH (FIXED)
+    const currentUser = await getCurrentUser();
 
-    if (!session?.user?.email) {
+    if (!currentUser?._id) {
       return NextResponse.json(
         { success: false, message: "Authentication required" },
         { status: 401 }
       );
     }
 
-    // 🔍 FETCH USER
-    const user = await User.findOne({ email: session.user.email });
+    const user = await User.findById(currentUser._id);
 
     if (!user) {
       return NextResponse.json(
@@ -47,7 +45,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 🔍 FETCH SPONSOR PROFILE
+    // ✅ GET SPONSOR PROFILE
     const sponsorProfile = await Sponsor.findOne({ userId: user._id });
 
     if (!sponsorProfile || !sponsorProfile.isProfileComplete) {
@@ -66,11 +64,9 @@ export async function POST(request: NextRequest) {
     const campaignGoal = clean(body.campaignGoal);
     const contactPhone = clean(body.contactPhone);
 
-    // 🔢 FIXED NUMERIC INPUTS
     const targetAudienceValue = Number(body.targetAudience);
     const budgetValue = Number(body.budget);
 
-    // 📅 DEADLINE
     const applicationDeadline = body.applicationDeadline;
 
     // 🔴 VALIDATION
@@ -117,7 +113,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // ✅ AUDIENCE VALIDATION
     if (
       Number.isNaN(targetAudienceValue) ||
       targetAudienceValue < MIN_AUDIENCE
@@ -131,7 +126,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // ✅ BUDGET VALIDATION
     if (Number.isNaN(budgetValue) || budgetValue < MIN_BUDGET) {
       return NextResponse.json(
         {
@@ -142,7 +136,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // ✅ DEADLINE VALIDATION
     if (!applicationDeadline) {
       return NextResponse.json(
         { success: false, message: "Application deadline is required" },
@@ -164,8 +157,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // ✅ CREATE SPONSORSHIP
-
+    // ✅ CREATE
     const sponsorship = await Sponsorship.create({
       sponsorOwnerId: user._id,
       sponsorProfileId: sponsorProfile._id,
@@ -173,12 +165,15 @@ export async function POST(request: NextRequest) {
       sponsorshipTitle,
       sponsorshipType,
       budget: budgetValue,
-      category,
+
+      // ⚠️ KEEP CONSISTENT TYPE
       targetAudience: String(targetAudienceValue),
 
+      category,
       city: clean(body.city),
       locationPreference,
       campaignGoal,
+
       deliverablesExpected: clean(body.deliverablesExpected),
       customMessage: clean(body.customMessage),
 
@@ -192,8 +187,6 @@ export async function POST(request: NextRequest) {
       contactPhone,
 
       status: "active",
-
-      // ✅ IMPORTANT CHANGE
       expiresAt: selectedDate,
     });
 
@@ -207,6 +200,17 @@ export async function POST(request: NextRequest) {
     );
   } catch (error) {
     console.error("Error creating sponsorship:", error);
+
+    if (error instanceof mongoose.Error.ValidationError) {
+      const firstError = Object.values(error.errors)[0];
+      return NextResponse.json(
+        {
+          success: false,
+          message: firstError?.message || "Validation failed",
+        },
+        { status: 400 }
+      );
+    }
 
     return NextResponse.json(
       {

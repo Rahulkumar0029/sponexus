@@ -1,39 +1,55 @@
 import { NextResponse } from "next/server";
-import bcrypt from "bcryptjs";
 
 import { connectDB } from "@/lib/db";
-import User from "@/models/User";
+import { hashPassword, hashToken } from "@/lib/auth";
+import User from "@/lib/models/User";
 
 export async function POST(req: Request) {
   try {
     await connectDB();
 
-    const { token, password } = await req.json();
+    const body = await req.json();
 
-    if (!token || !password) {
+    const token = typeof body.token === "string" ? body.token.trim() : "";
+    const password = typeof body.password === "string" ? body.password : "";
+    const confirmPassword = typeof body.confirmPassword === "string" ? body.confirmPassword : "";
+
+    if (!token || !password || !confirmPassword) {
       return NextResponse.json(
         {
           success: false,
-          message: "Token and password are required",
+          message: "Token, password, and confirm password are required",
         },
         { status: 400 }
       );
     }
 
-    if (password.length < 6) {
+    if (password.length < 8) {
       return NextResponse.json(
         {
           success: false,
-          message: "Password must be at least 6 characters",
+          message: "Password must be at least 8 characters",
         },
         { status: 400 }
       );
     }
+
+    if (password !== confirmPassword) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Passwords do not match",
+        },
+        { status: 400 }
+      );
+    }
+
+    const hashedToken = hashToken(token);
 
     const user = await User.findOne({
-      resetPasswordToken: token,
+      resetPasswordToken: hashedToken,
       resetPasswordExpires: { $gt: new Date() },
-    }).select("+password +resetPasswordToken");
+    }).select("+password +resetPasswordToken +resetPasswordExpires");
 
     if (!user) {
       return NextResponse.json(
@@ -45,11 +61,9 @@ export async function POST(req: Request) {
       );
     }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    user.password = hashedPassword;
-    user.resetPasswordToken = undefined;
-    user.resetPasswordExpires = undefined;
+    user.password = await hashPassword(password);
+    user.resetPasswordToken = null;
+    user.resetPasswordExpires = null;
 
     await user.save();
 

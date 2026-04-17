@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
+import mongoose from "mongoose";
 
 import { connectDB } from "@/lib/db";
-import Sponsor from "@/models/Sponsor";
-import User from "@/models/User";
-import { authOptions } from "@/lib/nextAuthOptions";
+import Sponsor from "@/lib/models/Sponsor";
+import User from "@/lib/models/User";
+import { getCurrentUser } from "@/lib/current-user";
 
-function normalizeArray(value: any): string[] {
+function normalizeArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value.map((v) => String(v).trim()).filter(Boolean);
 }
@@ -15,18 +15,16 @@ export async function POST(request: NextRequest) {
   try {
     await connectDB();
 
-    // 🔐 AUTH CHECK
-    const session = await getServerSession(authOptions);
+    const currentUser = await getCurrentUser();
 
-    if (!session?.user?.email) {
+    if (!currentUser?._id) {
       return NextResponse.json(
         { success: false, message: "Authentication required" },
         { status: 401 }
       );
     }
 
-    // 🔍 GET USER FROM DB (DO NOT TRUST SESSION ONLY)
-    const user = await User.findOne({ email: session.user.email });
+    const user = await User.findById(currentUser._id);
 
     if (!user) {
       return NextResponse.json(
@@ -37,7 +35,7 @@ export async function POST(request: NextRequest) {
 
     if (user.role !== "SPONSOR") {
       return NextResponse.json(
-        { success: false, message: "Only sponsors can create profile" },
+        { success: false, message: "Only sponsors can create or update sponsor profiles" },
         { status: 403 }
       );
     }
@@ -60,84 +58,99 @@ export async function POST(request: NextRequest) {
       sponsorshipInterests,
       instagramUrl,
       linkedinUrl,
+      isPublic,
     } = body;
 
-    // 🔴 VALIDATION
-    if (!brandName?.trim()) {
+    const normalizedBrandName = String(brandName || "").trim();
+    const normalizedCompanyName = String(companyName || "").trim();
+    const normalizedOfficialEmail = String(officialEmail || "")
+      .trim()
+      .toLowerCase();
+    const normalizedPhone = String(phone || "").trim();
+    const normalizedIndustry = String(industry || "").trim();
+
+    if (!normalizedBrandName) {
       return NextResponse.json(
         { success: false, message: "Brand name is required" },
         { status: 400 }
       );
     }
 
-    if (!companyName?.trim()) {
+    if (!normalizedCompanyName) {
       return NextResponse.json(
         { success: false, message: "Company name is required" },
         { status: 400 }
       );
     }
 
-    if (!officialEmail?.trim()) {
+    if (!normalizedOfficialEmail) {
       return NextResponse.json(
         { success: false, message: "Official email is required" },
         { status: 400 }
       );
     }
 
-    if (!phone?.trim()) {
+    if (!normalizedPhone) {
       return NextResponse.json(
         { success: false, message: "Phone number is required" },
         { status: 400 }
       );
     }
 
-    if (!industry?.trim()) {
+    if (!normalizedIndustry) {
       return NextResponse.json(
         { success: false, message: "Industry is required" },
         { status: 400 }
       );
     }
 
-    // 🧠 CHECK IF PROFILE EXISTS (UPSERT LOGIC)
-    let sponsorProfile = await Sponsor.findOne({ userId: user._id });
-
     const profileData = {
       userId: user._id,
-
-      brandName: brandName.trim(),
-      companyName: companyName.trim(),
-      website: website?.trim() || "",
-      officialEmail: officialEmail.trim().toLowerCase(),
-      phone: phone.trim(),
-      industry: industry.trim(),
-      companySize: companySize?.trim() || "",
-      about: about?.trim() || "",
-      logoUrl: logoUrl?.trim() || "",
-
-      targetAudience: targetAudience?.trim() || "",
-
+      brandName: normalizedBrandName,
+      companyName: normalizedCompanyName,
+      website: String(website || "").trim(),
+      officialEmail: normalizedOfficialEmail,
+      phone: normalizedPhone,
+      industry: normalizedIndustry,
+      companySize: String(companySize || "").trim(),
+      about: String(about || "").trim(),
+      logoUrl: String(logoUrl || "").trim(),
+      targetAudience: String(targetAudience || "").trim(),
       preferredCategories: normalizeArray(preferredCategories),
       preferredLocations: normalizeArray(preferredLocations),
       sponsorshipInterests: normalizeArray(sponsorshipInterests),
-
-      instagramUrl: instagramUrl?.trim() || "",
-      linkedinUrl: linkedinUrl?.trim() || "",
-
-      isProfileComplete: true,
-      isPublic: true,
+      instagramUrl: String(instagramUrl || "").trim(),
+      linkedinUrl: String(linkedinUrl || "").trim(),
+      isPublic: typeof isPublic === "boolean" ? isPublic : true,
     };
 
-    if (sponsorProfile) {
-      // 🔄 UPDATE
-      sponsorProfile = await Sponsor.findOneAndUpdate(
-        { userId: user._id },
-        profileData,
-        { new: true, runValidators: true }
-      );
-    } else {
-      // 🆕 CREATE
-      sponsorProfile = await Sponsor.create(profileData);
-    }
+    const isProfileComplete = Boolean(
+      profileData.brandName &&
+        profileData.companyName &&
+        profileData.officialEmail &&
+        profileData.phone &&
+        profileData.industry
+    );
+
+    const sponsorProfile = await Sponsor.findOneAndUpdate(
+      { userId: user._id },
+      {
+        ...profileData,
+        isProfileComplete,
+      },
+      {
+        new: true,
+        upsert: true,
+        runValidators: true,
+        setDefaultsOnInsert: true,
+      }
+    );
+
+    // Keep shared user-level fields aligned
+    user.companyName = profileData.companyName || user.companyName || "";
+    user.phone = profileData.phone || user.phone || "";
+    user.bio = profileData.about || user.bio || "";
+    await user.save();
 
     return NextResponse.json(
       {
@@ -148,7 +161,33 @@ export async function POST(request: NextRequest) {
       { status: 200 }
     );
   } catch (error) {
-    console.error("Error creating sponsor profile:", error);
+    console.error("Error saving sponsor profile:", error);
+
+    if (error instanceof mongoose.Error.ValidationError) {
+      const firstError = Object.values(error.errors)[0];
+      return NextResponse.json(
+        {
+          success: false,
+          message: firstError?.message || "Validation failed",
+        },
+        { status: 400 }
+      );
+    }
+
+    if (
+      typeof error === "object" &&
+      error !== null &&
+      "code" in error &&
+      error.code === 11000
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "A sponsor profile with these details already exists",
+        },
+        { status: 409 }
+      );
+    }
 
     return NextResponse.json(
       { success: false, message: "Failed to save sponsor profile" },

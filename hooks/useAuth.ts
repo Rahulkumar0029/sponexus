@@ -1,139 +1,107 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { signIn, signOut, useSession, getSession } from 'next-auth/react';
-import { User, UserRole } from '@/types/user';
+import { User } from '@/types/user';
 
-function normalizeUser(sessionUser: any): User {
-  const name = sessionUser.name || '';
-  const [firstName, ...rest] = name.split(' ');
-  const lastName = rest.join(' ');
-
-  return {
-    _id: sessionUser.id || '',
-    name,
-    email: sessionUser.email || '',
-    role: sessionUser.role as UserRole,
-    firstName: firstName || '',
-    lastName: lastName || '',
-    companyName: sessionUser.companyName || '',
-  };
-}
+type LoginResponseUser = User & {
+  isEmailVerified?: boolean;
+  isProfileComplete?: boolean;
+};
 
 export function useAuth() {
-  const { data: session, status } = useSession();
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<LoginResponseUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
-  useEffect(() => {
-    const storedUser = localStorage.getItem('user');
-    if (storedUser) {
-      try {
-        setUser(JSON.parse(storedUser));
-      } catch {
+  const fetchCurrentUser = useCallback(async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const res = await fetch('/api/auth/me', {
+        method: 'GET',
+        credentials: 'include',
+        cache: 'no-store',
+      });
+
+      if (!res.ok) {
+        setUser(null);
+        setIsAuthenticated(false);
         localStorage.removeItem('user');
+        return null;
       }
+
+      const data = await res.json();
+      const currentUser: LoginResponseUser | null = data?.user || null;
+
+      if (!currentUser) {
+        setUser(null);
+        setIsAuthenticated(false);
+        localStorage.removeItem('user');
+        return null;
+      }
+
+      setUser(currentUser);
+      setIsAuthenticated(true);
+      localStorage.setItem('user', JSON.stringify(currentUser));
+
+      return currentUser;
+    } catch (err: any) {
+      setUser(null);
+      setIsAuthenticated(false);
+      localStorage.removeItem('user');
+      setError(err?.message || 'Failed to fetch user');
+      return null;
+    } finally {
+      setLoading(false);
     }
   }, []);
 
   useEffect(() => {
-    if (status === 'loading') {
-      setLoading(true);
-      return;
-    }
-
-    if (status === 'authenticated' && session?.user) {
-      const authUser = normalizeUser(session.user);
-
-      const storedUserRaw = localStorage.getItem('user');
-      let storedUser = null;
-
-      if (storedUserRaw) {
-        try {
-          storedUser = JSON.parse(storedUserRaw);
-        } catch {
-          localStorage.removeItem('user');
-        }
-      }
-
-      const mergedUser = {
-        ...storedUser,
-        ...authUser,
-        _id: authUser._id || storedUser?._id || '',
-        email: authUser.email || storedUser?.email || '',
-        role: authUser.role || storedUser?.role || '',
-        name: authUser.name || storedUser?.name || '',
-        firstName: storedUser?.firstName || authUser.firstName || '',
-        lastName: storedUser?.lastName || authUser.lastName || '',
-        companyName: storedUser?.companyName || authUser.companyName || '',
-      };
-
-      setUser(mergedUser);
-      localStorage.setItem('user', JSON.stringify(mergedUser));
-      localStorage.setItem('token', 'next-auth-token');
-      setIsAuthenticated(true);
-    } else {
-      setIsAuthenticated(false);
-
-      if (status === 'unauthenticated') {
-        setUser(null);
-        localStorage.removeItem('user');
-        localStorage.removeItem('token');
-      }
-    }
-
-    setLoading(false);
-  }, [session, status]);
+    fetchCurrentUser();
+  }, [fetchCurrentUser]);
 
   const login = useCallback(async (email: string, password: string) => {
-    setLoading(true);
-    setError(null);
-
     try {
-      const result = await signIn('credentials', {
-        redirect: false,
-        email,
-        password,
+      setLoading(true);
+      setError(null);
+
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          email: email.trim().toLowerCase(),
+          password,
+        }),
       });
 
-      if (!result || result.error) {
-        throw new Error(result?.error || 'Login failed');
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data?.message || 'Login failed');
       }
 
-      const session = await getSession();
-      if (!session?.user) {
-        throw new Error('Failed to retrieve authenticated session');
+      const loggedInUser: LoginResponseUser | null = data?.user || null;
+
+      if (!loggedInUser) {
+        throw new Error('Login succeeded but user data was missing');
       }
 
-      const authUser = normalizeUser(session.user);
-
-      const storedUserRaw = localStorage.getItem('user');
-      let storedUser = null;
-
-      if (storedUserRaw) {
-        try {
-          storedUser = JSON.parse(storedUserRaw);
-        } catch {
-          localStorage.removeItem('user');
-        }
-      }
-
-      const mergedUser = {
-        ...storedUser,
-        ...authUser,
-      };
-
-      setUser(mergedUser);
-      localStorage.setItem('user', JSON.stringify(mergedUser));
-      localStorage.setItem('token', 'next-auth-token');
+      setUser(loggedInUser);
       setIsAuthenticated(true);
+      localStorage.setItem('user', JSON.stringify(loggedInUser));
 
-      return mergedUser;
+      return loggedInUser;
     } catch (err: any) {
       const message = err?.message || 'Login failed';
       setError(message);
+      setUser(null);
+      setIsAuthenticated(false);
+      localStorage.removeItem('user');
       throw err;
     } finally {
       setLoading(false);
@@ -141,12 +109,21 @@ export function useAuth() {
   }, []);
 
   const logout = useCallback(async () => {
-    await signOut({ redirect: false });
-    localStorage.removeItem('user');
-    localStorage.removeItem('token');
-    setUser(null);
-    setIsAuthenticated(false);
-    setError(null);
+    try {
+      setLoading(true);
+      await fetch('/api/auth/logout', {
+        method: 'POST',
+        credentials: 'include',
+      });
+    } catch {
+      // ignore logout fetch errors and still clear local UI state
+    } finally {
+      localStorage.removeItem('user');
+      setUser(null);
+      setIsAuthenticated(false);
+      setError(null);
+      setLoading(false);
+    }
   }, []);
 
   return {
@@ -156,5 +133,6 @@ export function useAuth() {
     isAuthenticated,
     login,
     logout,
+    refreshUser: fetchCurrentUser,
   };
 }

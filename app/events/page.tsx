@@ -1,113 +1,102 @@
-'use client';
+"use client";
 
-import { useEffect, useMemo, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { EventCard } from '@/components/EventCard';
-import { Button } from '@/components/Button';
-import { EmptyState } from '@/components/EmptyState';
-import Link from 'next/link';
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { EventCard } from "@/components/EventCard";
+import { Button } from "@/components/Button";
+import { useAuth } from "@/hooks/useAuth";
+import { Event } from "@/types/event";
+
+type ApiResponse = {
+  success: boolean;
+  events: Event[];
+  preview?: boolean;
+  ownerView?: boolean;
+  sponsorView?: boolean;
+  pagination?: {
+    total: number;
+    page: number;
+    limit: number;
+    pages: number;
+  };
+};
 
 export default function EventsPage() {
   const router = useRouter();
+  const { user, loading: authLoading } = useAuth();
 
-  const [user, setUser] = useState<any>(null);
-  const [page, setPage] = useState(1);
-  const [data, setData] = useState<any>(null);
+  const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
 
-  useEffect(() => {
-    const storedUser = localStorage.getItem('user');
-    if (storedUser) {
-      try {
-        setUser(JSON.parse(storedUser));
-      } catch {
-        localStorage.removeItem('user');
-      }
-    }
-  }, []);
+  const isOrganizer = user?.role === "ORGANIZER";
+  const isSponsor = user?.role === "SPONSOR";
 
   useEffect(() => {
     const fetchEvents = async () => {
-      setLoading(true);
-      setError('');
-
       try {
-        let url = `/api/events/get?page=${page}&limit=12&activeOnly=true`;
+        setLoading(true);
+        setError("");
 
-        // Organizer can see their own events first
-        if (user?.role === 'ORGANIZER' && user?._id) {
-          url += `&organizer=${user._id}`;
+        const res = await fetch("/api/events/get?activeOnly=true", {
+          method: "GET",
+          credentials: "include",
+        });
+
+        const data: ApiResponse = await res.json();
+
+        if (!res.ok) {
+          throw new Error("Failed to fetch events");
         }
 
-        const response = await fetch(url);
-        const result = await response.json();
-
-        if (!response.ok) {
-          throw new Error(result.message || 'Failed to fetch events');
-        }
-
-        setData(result);
-      } catch (err: any) {
-        setError(err.message || 'Something went wrong while fetching events');
+        setEvents(data.events || []);
+      } catch (err) {
+        setError("Failed to load events");
       } finally {
         setLoading(false);
       }
     };
 
     fetchEvents();
-  }, [page, user]);
+  }, []);
 
-  const isOrganizer = user?.role === 'ORGANIZER';
-  const isSponsor = user?.role === 'SPONSOR';
+  const getTitle = () => {
+    if (!user) return "Featured Events";
+    if (isOrganizer) return "My Events";
+    if (isSponsor) return "Explore Events";
+    return "Events";
+  };
 
-  const pageTitle = useMemo(() => {
-    if (isOrganizer) return 'My Events';
-    return 'Explore Events';
-  }, [isOrganizer]);
+  const getDescription = () => {
+    if (!user)
+      return "Explore a few featured events. Login to unlock full marketplace.";
+    if (isOrganizer)
+      return "Manage your events and create new sponsorship opportunities.";
+    if (isSponsor)
+      return "Discover events and find the right sponsorship opportunities.";
+    return "";
+  };
 
-  const pageDescription = useMemo(() => {
-    if (isOrganizer) {
-      return 'Manage your active events and keep them ready for sponsor discovery';
-    }
-    if (isSponsor) {
-      return 'Discover active events and find the right sponsorship opportunities';
-    }
-    return 'Browse active events and explore sponsorship opportunities';
-  }, [isOrganizer, isSponsor]);
-
-  const emptyTitle = useMemo(() => {
-    if (isOrganizer) return 'No Active Events Yet';
-    return 'No Active Events Found';
-  }, [isOrganizer]);
-
-  const emptyDescription = useMemo(() => {
-    if (isOrganizer) {
-      return 'You have not created any active events yet. Start by creating your first event.';
-    }
-    return 'There are no active events available right now. Check back later.';
-  }, [isOrganizer]);
+  if (loading || authLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center text-text-light">
+        Loading events...
+      </div>
+    );
+  }
 
   return (
-    <div className="relative min-h-screen px-4 py-12">
-      {/* Background */}
-      <div className="absolute inset-0 -z-20 bg-[radial-gradient(circle_at_20%_30%,rgba(251,191,36,0.08),transparent_40%),radial-gradient(circle_at_80%_70%,rgba(59,130,246,0.08),transparent_40%),linear-gradient(135deg,#020617,#07152f,#020617)]" />
-
-      {/* Glow */}
-      <div className="absolute inset-0 -z-10 pointer-events-none">
-        <div className="absolute top-20 left-10 w-72 h-72 rounded-full bg-blue-500/10 blur-3xl" />
-        <div className="absolute bottom-10 right-10 w-80 h-80 rounded-full bg-amber-500/10 blur-3xl" />
-      </div>
-
-      <div className="max-w-7xl mx-auto">
+    <div className="min-h-screen px-4 py-12">
+      <div className="mx-auto max-w-7xl">
         {/* Header */}
-        <div className="mb-12 flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
+        <div className="mb-10 flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
           <div>
-            <h1 className="mb-2 text-4xl font-bold text-white">{pageTitle}</h1>
-            <p className="text-text-muted">{pageDescription}</p>
+            <h1 className="text-4xl font-bold text-white">{getTitle()}</h1>
+            <p className="mt-2 text-text-muted">{getDescription()}</p>
           </div>
 
-          <div className="flex flex-col gap-3 sm:flex-row">
+          <div className="flex gap-3">
             {isOrganizer && (
               <Link href="/events/create">
                 <Button variant="primary">+ Create Event</Button>
@@ -119,60 +108,45 @@ export default function EventsPage() {
                 <Button variant="secondary">View Matches</Button>
               </Link>
             )}
+
+            {!user && (
+              <Link href="/login?redirect=/events">
+                <Button variant="primary">Login</Button>
+              </Link>
+            )}
           </div>
         </div>
 
         {/* Error */}
         {error && (
-          <div className="mb-6 rounded-xl border border-red-500/40 bg-red-500/10 p-4 text-center text-red-300">
-            {error}
+          <div className="mb-6 text-center text-red-400">{error}</div>
+        )}
+
+        {/* Events */}
+        {events.length > 0 ? (
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
+            {events.map((event) => (
+              <EventCard key={event._id} event={event} />
+            ))}
+          </div>
+        ) : (
+          <div className="text-center text-text-muted py-20">
+            {isOrganizer
+              ? "You haven’t created any events yet."
+              : "No events available right now."}
           </div>
         )}
 
-        {/* Content */}
-        {loading ? (
-          <div className="py-20 text-center text-text-muted animate-pulse">
-            Loading events...
+        {/* Public CTA */}
+        {!user && events.length > 0 && (
+          <div className="mt-12 text-center">
+            <p className="text-text-muted mb-4">
+              Login to explore all events and connect with sponsors.
+            </p>
+            <Link href="/login?redirect=/events">
+              <Button variant="primary">Unlock Full Access</Button>
+            </Link>
           </div>
-        ) : data?.events && data.events.length > 0 ? (
-          <>
-            <div className="grid grid-cols-1 gap-6 mb-12 md:grid-cols-2 lg:grid-cols-3">
-              {data.events.map((event: any) => (
-                <EventCard key={event._id} event={event} />
-              ))}
-            </div>
-
-            {data.pagination && data.pagination.pages > 1 && (
-              <div className="flex items-center justify-center gap-4">
-                <Button
-                  variant="secondary"
-                  disabled={page === 1}
-                  onClick={() => setPage(page - 1)}
-                >
-                  ← Previous
-                </Button>
-
-                <span className="text-text-muted">
-                  Page {page} of {data.pagination.pages}
-                </span>
-
-                <Button
-                  variant="secondary"
-                  disabled={page === data.pagination.pages}
-                  onClick={() => setPage(page + 1)}
-                >
-                  Next →
-                </Button>
-              </div>
-            )}
-          </>
-        ) : (
-          <EmptyState
-            title={emptyTitle}
-            description={emptyDescription}
-            actionLabel={isOrganizer ? 'Create First Event' : undefined}
-            onAction={isOrganizer ? () => router.push('/events/create') : undefined}
-          />
         )}
       </div>
     </div>

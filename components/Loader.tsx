@@ -14,23 +14,38 @@ export function Loader({
   className = '',
 }: LoaderProps) {
   const sizeClass = {
-    sm: 'w-6 h-6 border-2',
-    md: 'w-10 h-10 border-3',
-    lg: 'w-16 h-16 border-4',
+    sm: 'h-6 w-6 border-2',
+    md: 'h-10 w-10 border-4',
+    lg: 'h-16 w-16 border-4',
+  }[size];
+
+  const messageClass = {
+    sm: 'text-sm',
+    md: 'text-sm',
+    lg: 'text-base',
   }[size];
 
   const spinner = (
-    <div className={`flex flex-col items-center justify-center gap-4 ${className}`}>
+    <div
+      role="status"
+      aria-live="polite"
+      className={`flex flex-col items-center justify-center gap-4 ${className}`}
+    >
       <div
-        className={`${sizeClass} border-accent-orange/30 border-t-accent-orange rounded-full animate-spin`}
+        aria-hidden="true"
+        className={`${sizeClass} animate-spin rounded-full border-accent-orange/30 border-t-accent-orange`}
       />
-      {message && <p className="text-text-muted text-center">{message}</p>}
+      {message ? (
+        <p className={`text-center text-text-muted ${messageClass}`}>{message}</p>
+      ) : (
+        <span className="sr-only">Loading</span>
+      )}
     </div>
   );
 
   if (fullScreen) {
     return (
-      <div className="fixed inset-0 bg-dark-base/80 backdrop-blur-sm flex items-center justify-center z-50">
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-dark-base/80 backdrop-blur-sm">
         {spinner}
       </div>
     );

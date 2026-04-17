@@ -1,39 +1,34 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
 import mongoose from "mongoose";
 
 import { connectDB } from "@/lib/db";
-import Sponsorship from "@/models/Sponsorship";
-import Sponsor from "@/models/Sponsor";
-import User from "@/models/User";
-import { authOptions } from "@/lib/nextAuthOptions";
+import Sponsorship from "@/lib/models/Sponsorship";
+import Sponsor from "@/lib/models/Sponsor";
+import User from "@/lib/models/User";
+import { getCurrentUser } from "@/lib/current-user";
 
-function clean(value: unknown): string {
-  return typeof value === "string" ? value.trim() : "";
-}
-
+// ------------------------------------------------------------
+// GET: Fetch single sponsorship
+// ------------------------------------------------------------
 export async function GET(
-  _: NextRequest,
+  _req: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
-    await connectDB();
-
     const { id } = params;
 
-    if (!mongoose.Types.ObjectId.isValid(id)) {
+    if (!id || !mongoose.Types.ObjectId.isValid(id)) {
       return NextResponse.json(
         { success: false, message: "Invalid sponsorship ID" },
         { status: 400 }
       );
     }
 
-    const sponsorship = await Sponsorship.findById(id)
-      .populate({
-        path: "sponsorOwnerId",
-        select: "name email",
-      })
-      .lean();
+    await connectDB();
+
+    const currentUser = await getCurrentUser();
+
+    const sponsorship = await Sponsorship.findById(id).lean();
 
     if (!sponsorship) {
       return NextResponse.json(
@@ -42,21 +37,105 @@ export async function GET(
       );
     }
 
-    const sponsorProfile = await Sponsor.findOne({
-      userId: (sponsorship as any).sponsorOwnerId?._id,
-    })
-      .select("brandName companyName logoUrl website industry about")
-      .lean();
+    const sponsorProfile = await Sponsor.findById(
+      sponsorship.sponsorProfileId
+    ).lean();
 
-    return NextResponse.json({
-      success: true,
-      data: {
-        ...sponsorship,
-        sponsorProfile: sponsorProfile || null,
-      },
-    });
+    // ------------------------------------------------------------
+    // PUBLIC
+    // ------------------------------------------------------------
+    if (!currentUser?._id) {
+      if (
+        sponsorship.status !== "active" ||
+        !sponsorProfile?.isPublic ||
+        !sponsorProfile?.isProfileComplete
+      ) {
+        return NextResponse.json(
+          { success: false, message: "Sponsorship not available" },
+          { status: 404 }
+        );
+      }
+
+      return NextResponse.json(
+        {
+          success: true,
+          mode: "public_view",
+          data: {
+            ...sponsorship,
+            sponsorProfile,
+          },
+        },
+        { status: 200 }
+      );
+    }
+
+    const user = await User.findById(currentUser._id);
+
+    if (!user) {
+      return NextResponse.json(
+        { success: false, message: "User not found" },
+        { status: 404 }
+      );
+    }
+
+    // ------------------------------------------------------------
+    // SPONSOR (owner only)
+    // ------------------------------------------------------------
+    if (user.role === "SPONSOR") {
+      if (String(sponsorship.sponsorOwnerId) !== String(user._id)) {
+        return NextResponse.json(
+          { success: false, message: "Access denied" },
+          { status: 403 }
+        );
+      }
+
+      return NextResponse.json(
+        {
+          success: true,
+          mode: "owner_view",
+          data: {
+            ...sponsorship,
+            sponsorProfile,
+          },
+        },
+        { status: 200 }
+      );
+    }
+
+    // ------------------------------------------------------------
+    // ORGANIZER
+    // ------------------------------------------------------------
+    if (user.role === "ORGANIZER") {
+      if (
+        sponsorship.status !== "active" ||
+        !sponsorProfile?.isPublic ||
+        !sponsorProfile?.isProfileComplete
+      ) {
+        return NextResponse.json(
+          { success: false, message: "Sponsorship not available" },
+          { status: 404 }
+        );
+      }
+
+      return NextResponse.json(
+        {
+          success: true,
+          mode: "organizer_view",
+          data: {
+            ...sponsorship,
+            sponsorProfile,
+          },
+        },
+        { status: 200 }
+      );
+    }
+
+    return NextResponse.json(
+      { success: false, message: "Unauthorized role" },
+      { status: 403 }
+    );
   } catch (error) {
-    console.error("Get sponsorship error:", error);
+    console.error("Error fetching sponsorship:", error);
 
     return NextResponse.json(
       { success: false, message: "Failed to fetch sponsorship" },
@@ -65,37 +144,40 @@ export async function GET(
   }
 }
 
-export async function PUT(
-  req: NextRequest,
+// ------------------------------------------------------------
+// DELETE: Sponsor deletes own sponsorship
+// ------------------------------------------------------------
+export async function DELETE(
+  _req: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
-    await connectDB();
-
-    const session = await getServerSession(authOptions);
-
-    if (!session?.user?.email) {
-      return NextResponse.json(
-        { success: false, message: "Unauthorized" },
-        { status: 401 }
-      );
-    }
-
     const { id } = params;
 
-    if (!mongoose.Types.ObjectId.isValid(id)) {
+    if (!id || !mongoose.Types.ObjectId.isValid(id)) {
       return NextResponse.json(
-        { success: false, message: "Invalid sponsorship ID" },
+        { success: false, message: "Invalid ID" },
         { status: 400 }
       );
     }
 
-    const user = await User.findOne({ email: session.user.email });
+    await connectDB();
 
-    if (!user) {
+    const currentUser = await getCurrentUser();
+
+    if (!currentUser?._id) {
       return NextResponse.json(
-        { success: false, message: "User not found" },
-        { status: 404 }
+        { success: false, message: "Authentication required" },
+        { status: 401 }
+      );
+    }
+
+    const user = await User.findById(currentUser._id);
+
+    if (!user || user.role !== "SPONSOR") {
+      return NextResponse.json(
+        { success: false, message: "Unauthorized" },
+        { status: 403 }
       );
     }
 
@@ -103,171 +185,27 @@ export async function PUT(
 
     if (!sponsorship) {
       return NextResponse.json(
-        { success: false, message: "Sponsorship not found" },
+        { success: false, message: "Not found" },
         { status: 404 }
       );
     }
 
     if (String(sponsorship.sponsorOwnerId) !== String(user._id)) {
       return NextResponse.json(
-        { success: false, message: "Not allowed" },
+        { success: false, message: "Access denied" },
         { status: 403 }
       );
     }
 
-    const body = await req.json();
-
-    const updateData: Record<string, any> = {};
-
-    if (body.sponsorshipTitle !== undefined) {
-      updateData.sponsorshipTitle = clean(body.sponsorshipTitle);
-    }
-
-    if (body.sponsorshipType !== undefined) {
-      updateData.sponsorshipType = clean(body.sponsorshipType);
-    }
-
-    if (body.budget !== undefined) {
-      updateData.budget = Number(body.budget);
-    }
-
-    if (body.category !== undefined) {
-      updateData.category = clean(body.category);
-    }
-
-    if (body.targetAudience !== undefined) {
-      updateData.targetAudience = clean(body.targetAudience);
-    }
-
-    if (body.city !== undefined) {
-      updateData.city = clean(body.city);
-    }
-
-    if (body.locationPreference !== undefined) {
-      updateData.locationPreference = clean(body.locationPreference);
-    }
-
-    if (body.campaignGoal !== undefined) {
-      updateData.campaignGoal = clean(body.campaignGoal);
-    }
-
-    if (body.deliverablesExpected !== undefined) {
-      updateData.deliverablesExpected = clean(body.deliverablesExpected);
-    }
-
-    if (body.customMessage !== undefined) {
-      updateData.customMessage = clean(body.customMessage);
-    }
-
-    if (body.contactPersonName !== undefined) {
-      updateData.contactPersonName = clean(body.contactPersonName);
-    }
-
-    if (body.contactPhone !== undefined) {
-      updateData.contactPhone = clean(body.contactPhone);
-    }
-
-    if (body.bannerRequirement !== undefined) {
-      updateData.bannerRequirement = Boolean(body.bannerRequirement);
-    }
-
-    if (body.stallRequirement !== undefined) {
-      updateData.stallRequirement = Boolean(body.stallRequirement);
-    }
-
-    if (body.mikeAnnouncement !== undefined) {
-      updateData.mikeAnnouncement = Boolean(body.mikeAnnouncement);
-    }
-
-    if (body.socialMediaMention !== undefined) {
-      updateData.socialMediaMention = Boolean(body.socialMediaMention);
-    }
-
-    if (body.productDisplay !== undefined) {
-      updateData.productDisplay = Boolean(body.productDisplay);
-    }
-
-    if (body.status !== undefined) {
-      updateData.status = body.status;
-    }
-
-    const updated = await Sponsorship.findByIdAndUpdate(id, updateData, {
-      new: true,
-      runValidators: true,
-    });
-
-    return NextResponse.json({
-      success: true,
-      message: "Sponsorship updated successfully",
-      data: updated,
-    });
-  } catch (error) {
-    console.error("Update sponsorship error:", error);
+    await sponsorship.deleteOne();
 
     return NextResponse.json(
-      { success: false, message: "Failed to update sponsorship" },
-      { status: 500 }
+      {
+        success: true,
+        message: "Sponsorship deleted successfully",
+      },
+      { status: 200 }
     );
-  }
-}
-
-export async function DELETE(
-  _: NextRequest,
-  { params }: { params: { id: string } }
-) {
-  try {
-    await connectDB();
-
-    const session = await getServerSession(authOptions);
-
-    if (!session?.user?.email) {
-      return NextResponse.json(
-        { success: false, message: "Unauthorized" },
-        { status: 401 }
-      );
-    }
-
-    const { id } = params;
-
-    if (!mongoose.Types.ObjectId.isValid(id)) {
-      return NextResponse.json(
-        { success: false, message: "Invalid sponsorship ID" },
-        { status: 400 }
-      );
-    }
-
-    const user = await User.findOne({ email: session.user.email });
-
-    if (!user) {
-      return NextResponse.json(
-        { success: false, message: "User not found" },
-        { status: 404 }
-      );
-    }
-
-    const sponsorship = await Sponsorship.findById(id);
-
-    if (!sponsorship) {
-      return NextResponse.json(
-        { success: false, message: "Sponsorship not found" },
-        { status: 404 }
-      );
-    }
-
-    if (String(sponsorship.sponsorOwnerId) !== String(user._id)) {
-      return NextResponse.json(
-        { success: false, message: "Not allowed" },
-        { status: 403 }
-      );
-    }
-
-    sponsorship.status = "closed";
-    await sponsorship.save();
-
-    return NextResponse.json({
-      success: true,
-      message: "Sponsorship closed successfully",
-    });
   } catch (error) {
     console.error("Delete sponsorship error:", error);
 

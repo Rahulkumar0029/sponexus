@@ -2,8 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import mongoose from "mongoose";
 
 import { connectDB } from "@/lib/db";
-import { EventModel } from "@/models/Event";
-import Sponsor from "@/models/Sponsor";
+import { EventModel } from "@/lib/models/Event";
+import Sponsor from "@/lib/models/Sponsor";
 import { matchSponsorToEvents, matchEventToSponsors } from "@/lib/matcher";
 import { Event } from "@/types/event";
 import { Sponsor as SponsorType } from "@/types/sponsor";

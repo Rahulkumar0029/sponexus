@@ -1,17 +1,36 @@
 'use client';
 
-import React from 'react';
+import React, { useId } from 'react';
 
-interface InputProps extends Omit<React.InputHTMLAttributes<HTMLInputElement>, 'size'> {
+type BaseProps = {
   label?: string;
   error?: string;
   hint?: string;
   icon?: React.ReactNode;
   required?: boolean;
   helperText?: string;
+  className?: string;
   as?: 'input' | 'select' | 'textarea';
   children?: React.ReactNode;
-}
+  id?: string;
+};
+
+type InputAsInput = BaseProps &
+  Omit<React.InputHTMLAttributes<HTMLInputElement>, 'size'> & {
+    as?: 'input';
+  };
+
+type InputAsSelect = BaseProps &
+  React.SelectHTMLAttributes<HTMLSelectElement> & {
+    as: 'select';
+  };
+
+type InputAsTextarea = BaseProps &
+  React.TextareaHTMLAttributes<HTMLTextAreaElement> & {
+    as: 'textarea';
+  };
+
+type InputProps = InputAsInput | InputAsSelect | InputAsTextarea;
 
 export function Input({
   label,
@@ -26,22 +45,43 @@ export function Input({
   children,
   ...props
 }: InputProps) {
-  const inputId = id || `input-${Math.random()}`;
+  const generatedId = useId();
+  const inputId = id || `input-${generatedId}`;
+
+  const hintId = hint ? `${inputId}-hint` : undefined;
+  const errorId = error ? `${inputId}-error` : undefined;
+  const helperTextId = helperText && !error ? `${inputId}-helper` : undefined;
+
+  const describedBy = [hintId, errorId, helperTextId].filter(Boolean).join(' ') || undefined;
+
+  const sharedClasses = `input-base ${
+    error ? 'border-red-500/50 focus:border-red-500' : ''
+  } ${icon ? 'pl-12' : ''} ${className}`;
 
   return (
     <div className="w-full">
       {label && (
-        <label htmlFor={inputId} className="block text-sm font-medium text-text-light mb-2">
+        <label htmlFor={inputId} className="mb-2 block text-sm font-medium text-text-light">
           {label}
-          {required && <span className="text-accent-orange ml-1">*</span>}
+          {required && <span className="ml-1 text-accent-orange">*</span>}
         </label>
       )}
 
-      {hint && <p className="text-xs text-text-muted mb-2">{hint}</p>}
+      {hint && (
+        <p id={hintId} className="mb-2 text-xs text-text-muted">
+          {hint}
+        </p>
+      )}
 
       <div className="relative">
         {icon && (
-          <span className="absolute left-4 top-1/2 -translate-y-1/2 text-text-muted flex-shrink-0">
+          <span
+            className={`absolute left-4 text-text-muted flex-shrink-0 ${
+              as === 'textarea'
+                ? 'top-4'
+                : 'top-1/2 -translate-y-1/2'
+            }`}
+          >
             {icon}
           </span>
         )}
@@ -49,9 +89,9 @@ export function Input({
         {as === 'select' ? (
           <select
             id={inputId}
-            className={`input-base ${error ? 'border-red-500/50 focus:border-red-500' : ''} ${
-              icon ? 'pl-12' : ''
-            } ${className}`}
+            aria-invalid={Boolean(error)}
+            aria-describedby={describedBy}
+            className={sharedClasses}
             {...(props as React.SelectHTMLAttributes<HTMLSelectElement>)}
           >
             {children}
@@ -59,30 +99,32 @@ export function Input({
         ) : as === 'textarea' ? (
           <textarea
             id={inputId}
-            className={`input-base ${error ? 'border-red-500/50 focus:border-red-500' : ''} ${
-              icon ? 'pl-12' : ''
-            } resize-none ${className}`}
+            aria-invalid={Boolean(error)}
+            aria-describedby={describedBy}
+            className={`${sharedClasses} resize-none`}
             {...(props as React.TextareaHTMLAttributes<HTMLTextAreaElement>)}
           />
         ) : (
           <input
             id={inputId}
-            className={`input-base ${error ? 'border-red-500/50 focus:border-red-500' : ''} ${
-              icon ? 'pl-12' : ''
-            } ${className}`}
-            {...props}
+            aria-invalid={Boolean(error)}
+            aria-describedby={describedBy}
+            className={sharedClasses}
+            {...(props as React.InputHTMLAttributes<HTMLInputElement>)}
           />
         )}
       </div>
 
       {error && (
-        <p className="text-red-400 text-sm mt-2 flex items-center gap-1">
+        <p id={errorId} className="mt-2 flex items-center gap-1 text-sm text-red-400">
           <span>⚠</span> {error}
         </p>
       )}
 
       {helperText && !error && (
-        <p className="text-text-muted text-sm mt-2">{helperText}</p>
+        <p id={helperTextId} className="mt-2 text-sm text-text-muted">
+          {helperText}
+        </p>
       )}
     </div>
   );

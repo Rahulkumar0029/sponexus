@@ -1,21 +1,15 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { Event } from "@/types/event";
 
 interface EventCardProps {
   event: Event;
   matchScore?: number;
-  onAction?: () => void;
-  actionLabel?: string;
 }
 
-export function EventCard({
-  event,
-  matchScore,
-  onAction: _onAction,
-  actionLabel: _actionLabel = "View Details",
-}: EventCardProps) {
+export function EventCard({ event, matchScore }: EventCardProps) {
   const formattedDate = event.startDate
     ? new Date(event.startDate).toLocaleDateString("en-IN", {
         month: "short",
@@ -36,22 +30,38 @@ export function EventCard({
       ? event.attendeeCount.toLocaleString("en-IN")
       : "N/A";
 
+  const coverImage =
+    typeof event.coverImage === "string" && event.coverImage.trim()
+      ? event.coverImage.trim()
+      : "";
+
+  const eventTypeLabel =
+    typeof event.eventType === "string" && event.eventType.trim()
+      ? event.eventType
+      : "Event";
+
   return (
-    <Link href={`/events/${event._id}`}>
-      <div className="group relative flex h-full cursor-pointer flex-col rounded-2xl border border-white/10 bg-white/[0.05] p-5 transition-all duration-300 hover:border-accent-orange/40 hover:shadow-[0_0_25px_rgba(251,191,36,0.12)]">
+    <Link href={`/events/${event._id}`} className="block h-full">
+      <article className="group relative flex h-full cursor-pointer flex-col rounded-2xl border border-white/10 bg-white/[0.05] p-5 transition-all duration-300 hover:border-accent-orange/40 hover:shadow-[0_0_25px_rgba(251,191,36,0.12)]">
         {matchScore != null && (
           <div className="absolute right-4 top-4 z-10 rounded-full bg-accent-orange/90 px-3 py-1 text-sm font-bold text-dark-base">
             {matchScore}% Match
           </div>
         )}
 
-        {event.image && (
+        {coverImage ? (
           <div className="relative mb-4 h-40 w-full overflow-hidden rounded-xl bg-dark-layer">
-            <img
-              src={event.image}
-              alt={event.title || "Event image"}
-              className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+            <Image
+              src={coverImage}
+              alt={event.title || "Event cover image"}
+              fill
+              className="object-cover transition-transform duration-300 group-hover:scale-105"
+              sizes="(max-width: 768px) 100vw, 400px"
             />
+          </div>
+        ) : (
+          <div className="relative mb-4 flex h-40 w-full items-center justify-center overflow-hidden rounded-xl bg-dark-layer text-sm text-text-muted">
+            No cover image
           </div>
         )}
 
@@ -62,7 +72,7 @@ export function EventCard({
             </h3>
 
             <span className="whitespace-nowrap rounded-full bg-accent-orange/10 px-3 py-1 text-xs font-medium text-accent-orange">
-              {event.eventType || "Event"}
+              {eventTypeLabel}
             </span>
           </div>
 
@@ -106,12 +116,13 @@ export function EventCard({
             <div className="col-span-2">
               <p className="text-xs text-text-muted">Location • Attendees</p>
               <p className="font-medium text-text-light">
-                {event.location || "Location not specified"} • 👥 {formattedAttendees}
+                {event.location || "Location not specified"} • 👥{" "}
+                {formattedAttendees}
               </p>
             </div>
           </div>
         </div>
-      </div>
+      </article>
     </Link>
   );
 }

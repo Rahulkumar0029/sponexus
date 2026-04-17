@@ -1,27 +1,26 @@
 import { NextResponse } from "next/server";
-import { getServerSession } from "next-auth";
 
 import { connectDB } from "@/lib/db";
-import User from "@/models/User";
-import Sponsor from "@/models/Sponsor";
-import { authOptions } from "@/lib/nextAuthOptions";
+import User from "@/lib/models/User";
+import Sponsor from "@/lib/models/Sponsor";
+import { getCurrentUser } from "@/lib/current-user";
 
 export async function GET() {
   try {
     await connectDB();
 
-    const session = await getServerSession(authOptions);
+    const currentUser = await getCurrentUser();
 
-    if (!session?.user?.email) {
+    if (!currentUser) {
       return NextResponse.json(
         { success: false, message: "Authentication required" },
         { status: 401 }
       );
     }
 
-    const user = await User.findOne({
-      email: session.user.email,
-    }).lean();
+    const user = await User.findById(currentUser._id)
+      .select("-password -emailVerificationToken -resetPasswordToken")
+      .lean();
 
     if (!user) {
       return NextResponse.json(

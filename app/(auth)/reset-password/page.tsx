@@ -20,7 +20,7 @@ export default function ResetPasswordPage() {
 
   useEffect(() => {
     if (!token) {
-      setError('Invalid or missing reset token.');
+      setError('Invalid or missing reset token. Please use the latest reset link from your email.');
     }
   }, [token]);
 
@@ -29,13 +29,18 @@ export default function ResetPasswordPage() {
     setError('');
     setMessage('');
 
+    if (!token) {
+      setError('Invalid or missing reset token. Please request a new reset link.');
+      return;
+    }
+
     if (!password || !confirmPassword) {
       setError('All fields are required');
       return;
     }
 
-    if (password.length < 6) {
-      setError('Password must be at least 6 characters');
+    if (password.length < 8) {
+      setError('Password must be at least 8 characters');
       return;
     }
 
@@ -50,7 +55,11 @@ export default function ResetPasswordPage() {
       const res = await fetch('/api/auth/reset-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, password }),
+        body: JSON.stringify({
+          token,
+          password,
+          confirmPassword,
+        }),
       });
 
       const data = await res.json();
@@ -59,12 +68,12 @@ export default function ResetPasswordPage() {
         setError(data.message || 'Something went wrong');
       } else {
         setMessage('Password reset successful! Redirecting to login...');
-        
+
         setTimeout(() => {
           router.push('/login');
         }, 2000);
       }
-    } catch (err) {
+    } catch {
       setError('Server error. Try again.');
     } finally {
       setLoading(false);
@@ -73,41 +82,34 @@ export default function ResetPasswordPage() {
 
   return (
     <div className="relative min-h-screen flex items-center justify-center px-4">
-      {/* Background */}
       <div className="absolute inset-0 -z-20 bg-[linear-gradient(135deg,#020617_0%,#07152f_45%,#020617_100%)]" />
 
-      {/* Glow */}
       <div className="absolute inset-0 -z-10 pointer-events-none">
-        <div className="absolute top-20 left-10 w-72 h-72 bg-blue-500/10 rounded-full blur-3xl" />
-        <div className="absolute top-1/3 right-10 w-80 h-80 bg-amber-500/10 rounded-full blur-3xl" />
+        <div className="absolute top-20 left-10 h-72 w-72 rounded-full bg-blue-500/10 blur-3xl" />
+        <div className="absolute top-1/3 right-10 h-80 w-80 rounded-full bg-amber-500/10 blur-3xl" />
       </div>
 
       <div className="w-full max-w-md">
         <div className="rounded-[28px] border border-white/10 bg-white/[0.05] p-8 shadow-[0_0_50px_rgba(245,158,11,0.08)] backdrop-blur-xl sm:p-10">
-          
-          {/* Header */}
-          <div className="text-center mb-8">
+          <div className="mb-8 text-center">
             <h1 className="text-3xl font-bold text-white">Reset Password</h1>
             <p className="mt-2 text-sm text-text-muted">
               Enter your new password
             </p>
           </div>
 
-          {/* Error */}
           {error && (
             <div className="mb-4 rounded-xl border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-300">
               {error}
             </div>
           )}
 
-          {/* Success */}
           {message && (
             <div className="mb-4 rounded-xl border border-green-500/40 bg-green-500/10 p-3 text-sm text-green-300">
               {message}
             </div>
           )}
 
-          {/* Form */}
           {!message && (
             <form onSubmit={handleSubmit} className="space-y-5">
               <Input
@@ -141,16 +143,14 @@ export default function ResetPasswordPage() {
             </form>
           )}
 
-          {/* Back */}
           <div className="mt-6 text-center">
             <Link
               href="/login"
-              className="text-sm text-accent-orange hover:text-yellow-400 transition"
+              className="text-sm text-accent-orange transition hover:text-yellow-400"
             >
               Back to Login
             </Link>
           </div>
-
         </div>
       </div>
     </div>

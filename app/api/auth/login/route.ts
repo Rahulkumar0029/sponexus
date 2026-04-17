@@ -1,38 +1,36 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { connectDB } from "@/lib/db";
-import User from "@/models/User";
-import { comparePasswords, generateToken } from "@/lib/auth";
-import { validateLogin } from "@/lib/validations";
-import { LoginInput } from "@/types/user";
+import { comparePasswords, generateAccessToken } from "@/lib/auth";
+import User from "@/lib/models/User";
 
 export async function POST(request: NextRequest) {
   try {
     await connectDB();
 
-    const body: LoginInput = await request.json();
-    const { email, password } = body;
+    const body = await request.json();
 
-    const validation = validateLogin({ email, password });
+    const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
+    const password = typeof body.password === "string" ? body.password : "";
 
-    if (!validation.isValid) {
+    if (!email || !password) {
       return NextResponse.json(
         {
           success: false,
-          message: "Validation failed",
-          errors: validation.errors,
+          message: "Email and password are required",
         },
         { status: 400 }
       );
     }
 
-    const user = await User.findOne({
-      email: email.toLowerCase(),
-    }).select("+password");
+    const user = await User.findOne({ email }).select("+password");
 
-    if (!user) {
+    if (!user || !user.password) {
       return NextResponse.json(
-        { success: false, message: "Invalid credentials" },
+        {
+          success: false,
+          message: "Invalid credentials",
+        },
         { status: 401 }
       );
     }
@@ -41,12 +39,15 @@ export async function POST(request: NextRequest) {
 
     if (!isPasswordValid) {
       return NextResponse.json(
-        { success: false, message: "Invalid credentials" },
+        {
+          success: false,
+          message: "Invalid credentials",
+        },
         { status: 401 }
       );
     }
 
-    const token = generateToken({
+    const token = generateAccessToken({
       userId: String(user._id),
       email: user.email,
       role: user.role,
@@ -59,7 +60,7 @@ export async function POST(request: NextRequest) {
       role: user.role,
       firstName: user.firstName,
       lastName: user.lastName,
-      companyName: user.companyName,
+      companyName: user.companyName || "",
       avatar: user.avatar || "",
       bio: user.bio || "",
       phone: user.phone || "",
@@ -67,24 +68,46 @@ export async function POST(request: NextRequest) {
       eventFocus: user.eventFocus || "",
       organizerTargetAudience: user.organizerTargetAudience || "",
       organizerLocation: user.organizerLocation || "",
+      isEmailVerified: user.isEmailVerified,
+      isProfileComplete: user.isProfileComplete,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
     };
 
-    return NextResponse.json(
+    const response = NextResponse.json(
       {
         success: true,
         message: "Login successful",
         user: safeUser,
-        token,
       },
       { status: 200 }
     );
+
+    response.cookies.set("auth-token", token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/",
+      maxAge: 60 * 60 * 24 * 7,
+    });
+
+    response.cookies.set("user-role", user.role, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/",
+      maxAge: 60 * 60 * 24 * 7,
+    });
+
+    return response;
   } catch (error) {
     console.error("Login error:", error);
 
     return NextResponse.json(
-      { success: false, message: "Login failed" },
+      {
+        success: false,
+        message: "Login failed",
+      },
       { status: 500 }
     );
   }

@@ -1,173 +1,196 @@
 'use client';
 
 import { useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { signIn, getSession } from 'next-auth/react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { Input } from '@/components/Input';
 import { Button } from '@/components/Button';
-import { validateLogin } from '@/lib/validations';
+
+type FormErrors = {
+  email?: string;
+  password?: string;
+  general?: string;
+};
+
+type LoginResponseUser = {
+  _id: string;
+  name: string;
+  email: string;
+  role: 'ORGANIZER' | 'SPONSOR';
+  firstName: string;
+  lastName: string;
+  companyName?: string;
+  avatar?: string;
+  bio?: string;
+  phone?: string;
+  organizationName?: string;
+  eventFocus?: string;
+  organizerTargetAudience?: string;
+  organizerLocation?: string;
+  isEmailVerified: boolean;
+  isProfileComplete: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+};
 
 export default function LoginPage() {
   const router = useRouter();
 
-  const [loading, setLoading] = useState(false);
-  const [generalError, setGeneralError] = useState('');
-  const [fieldErrors, setFieldErrors] = useState<{ [key: string]: string }>({});
   const [formData, setFormData] = useState({
     email: '',
     password: '',
   });
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target;
+  const [errors, setErrors] = useState<FormErrors>({});
+  const [loading, setLoading] = useState(false);
 
-    setFormData((prev) => ({
-      ...prev,
-      [name]: value,
-    }));
+  const validate = () => {
+    const nextErrors: FormErrors = {};
 
-    if (fieldErrors[name]) {
-      setFieldErrors((prev) => {
-        const next = { ...prev };
-        delete next[name];
-        return next;
-      });
+    const normalizedEmail = formData.email.trim().toLowerCase();
+
+    if (!normalizedEmail) {
+      nextErrors.email = 'Email is required';
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+      nextErrors.email = 'Please enter a valid email address';
     }
 
-    if (generalError) setGeneralError('');
+    if (!formData.password) {
+      nextErrors.password = 'Password is required';
+    }
+
+    setErrors(nextErrors);
+    return Object.keys(nextErrors).length === 0;
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleChange = (field: 'email' | 'password', value: string) => {
+    setFormData((prev) => ({
+      ...prev,
+      [field]: value,
+    }));
+
+    setErrors((prev) => ({
+      ...prev,
+      [field]: undefined,
+      general: undefined,
+    }));
+  };
+
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    setGeneralError('');
-    setFieldErrors({});
 
-    const validation = validateLogin(formData);
-
-    if (!validation.isValid) {
-      const errors: { [key: string]: string } = {};
-
-      validation.errors.forEach((error) => {
-        errors[error.field] = error.message;
-      });
-
-      setFieldErrors(errors);
-      return;
-    }
+    if (!validate()) return;
 
     setLoading(true);
+    setErrors({});
 
     try {
-      const result = await signIn('credentials', {
-        redirect: false,
-        email: formData.email,
-        password: formData.password,
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email: formData.email.trim().toLowerCase(),
+          password: formData.password,
+        }),
       });
 
-      if (!result || result.error) {
-        setGeneralError(result?.error || 'Invalid email or password.');
+      const data = await res.json();
+
+      if (!res.ok) {
+        setErrors({
+          general: data.message || 'Invalid email or password.',
+        });
         return;
       }
 
-      const session = await getSession();
+      const user: LoginResponseUser | undefined = data.user;
 
-      if (!session?.user) {
-        setGeneralError('Login failed. Please try again.');
+      if (!user) {
+        setErrors({
+          general: 'Login failed. Please try again.',
+        });
         return;
       }
-
-      const user = {
-        _id: (session.user as any).id || '',
-        name: session.user.name || '',
-        email: session.user.email || '',
-        role: (session.user as any).role || '',
-        firstName: session.user.name?.split(' ')[0] || '',
-        lastName: session.user.name?.split(' ')[1] || '',
-      };
 
       localStorage.setItem('user', JSON.stringify(user));
+
+      if (!user.isEmailVerified) {
+        router.push(`/verify-email?email=${encodeURIComponent(user.email)}`);
+        return;
+      }
+
+      if (!user.isProfileComplete) {
+        router.push('/settings?completeProfile=1');
+        return;
+      }
 
       router.push(
         user.role === 'ORGANIZER'
           ? '/dashboard/organizer'
           : '/dashboard/sponsor'
       );
-    } catch (err: any) {
-      setGeneralError(err?.message || 'Something went wrong.');
+    } catch (error) {
+      setErrors({
+        general: 'Something went wrong. Please try again.',
+      });
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="relative min-h-screen flex items-center justify-center px-4 py-12 overflow-hidden">
-      {/* Background */}
-      <div className="absolute inset-0 -z-20 bg-[radial-gradient(circle_at_20%_30%,rgba(251,191,36,0.08),transparent_40%),radial-gradient(circle_at_80%_70%,rgba(59,130,246,0.08),transparent_40%),linear-gradient(135deg,#020617,#07152f,#020617)]" />
+    <div className="relative min-h-screen flex items-center justify-center px-4 py-10">
+      <div className="absolute inset-0 -z-20 bg-[linear-gradient(135deg,#020617_0%,#07152f_45%,#020617_100%)]" />
 
-      {/* Glow */}
       <div className="absolute inset-0 -z-10 pointer-events-none">
-        <div className="absolute top-20 left-10 h-72 w-72 rounded-full bg-blue-500/10 blur-3xl" />
-        <div className="absolute top-1/3 right-10 h-80 w-80 rounded-full bg-amber-500/10 blur-3xl" />
+        <div className="absolute top-24 left-12 h-72 w-72 rounded-full bg-blue-500/10 blur-3xl" />
+        <div className="absolute top-1/3 right-12 h-80 w-80 rounded-full bg-amber-500/10 blur-3xl" />
       </div>
 
       <div className="w-full max-w-md">
         <div className="rounded-[28px] border border-white/10 bg-white/[0.05] p-8 shadow-[0_0_50px_rgba(245,158,11,0.08)] backdrop-blur-xl sm:p-10">
-          {/* Header */}
           <div className="mb-8 text-center">
-            <h1 className="text-3xl font-bold text-white sm:text-4xl">
-              Welcome Back
-            </h1>
+            <h1 className="text-3xl font-bold text-white">Login</h1>
             <p className="mt-2 text-sm text-text-muted">
-              Sign in to your Sponexus account
+              Access your Sponexus account
             </p>
           </div>
 
-          {/* Error */}
-          {generalError && (
-            <div className="mb-6 rounded-xl border border-red-500/40 bg-red-500/10 p-4 text-sm text-red-300">
-              {generalError}
+          {errors.general && (
+            <div className="mb-4 rounded-xl border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-300">
+              {errors.general}
             </div>
           )}
 
-          {/* Form */}
           <form onSubmit={handleSubmit} className="space-y-5">
             <Input
               label="Email Address"
               type="email"
-              name="email"
               value={formData.email}
-              onChange={handleChange}
+              onChange={(e) => handleChange('email', e.target.value)}
               placeholder="you@example.com"
-              error={fieldErrors.email}
               required
+              error={errors.email}
             />
 
             <Input
               label="Password"
               type="password"
-              name="password"
               value={formData.password}
-              onChange={handleChange}
-              placeholder="••••••••"
-              error={fieldErrors.password}
+              onChange={(e) => handleChange('password', e.target.value)}
+              placeholder="Enter your password"
               required
+              error={errors.password}
             />
 
-            <div className="flex items-center justify-between text-sm">
-              <label className="flex cursor-pointer items-center gap-2 text-text-muted transition hover:text-text-light">
-                <input
-                  type="checkbox"
-                  className="h-4 w-4 rounded border border-white/10 bg-dark-base accent-accent-orange"
-                />
-                Remember me
-              </label>
-
+            <div className="flex justify-end">
               <Link
                 href="/forgot-password"
-                className="font-medium text-accent-orange transition hover:text-yellow-400"
+                className="text-sm text-accent-orange transition hover:text-yellow-400"
               >
-                Forgot password?
+                Forgot Password?
               </Link>
             </div>
 
@@ -178,21 +201,18 @@ export default function LoginPage() {
               fullWidth
               loading={loading}
             >
-              {loading ? 'Signing in...' : 'Sign In'}
+              {loading ? 'Logging in...' : 'Login'}
             </Button>
           </form>
 
-          {/* Footer */}
-          <div className="mt-6 text-center">
-            <p className="text-sm text-text-muted">
-              Don&apos;t have an account?{' '}
-              <Link
-                href="/register"
-                className="font-medium text-accent-orange transition hover:text-yellow-400"
-              >
-                Register
-              </Link>
-            </p>
+          <div className="mt-6 text-center text-sm text-text-muted">
+            Don&apos;t have an account?{' '}
+            <Link
+              href="/register"
+              className="text-accent-orange transition hover:text-yellow-400"
+            >
+              Create one
+            </Link>
           </div>
         </div>
       </div>

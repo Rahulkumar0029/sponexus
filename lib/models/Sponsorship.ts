@@ -33,6 +33,8 @@ export interface ISponsorship extends Document {
   updatedAt: Date;
 }
 
+const phoneRegex = /^[0-9+\-\s()]{7,20}$/;
+
 const SponsorshipSchema = new Schema<ISponsorship>(
   {
     sponsorOwnerId: {
@@ -60,6 +62,7 @@ const SponsorshipSchema = new Schema<ISponsorship>(
       type: String,
       required: true,
       trim: true,
+      maxlength: 80,
     },
 
     budget: {
@@ -76,6 +79,7 @@ const SponsorshipSchema = new Schema<ISponsorship>(
       type: String,
       required: true,
       trim: true,
+      maxlength: 80,
       index: true,
     },
 
@@ -83,18 +87,21 @@ const SponsorshipSchema = new Schema<ISponsorship>(
       type: String,
       required: true,
       trim: true,
+      maxlength: 150,
     },
 
     city: {
       type: String,
       trim: true,
       default: "",
+      maxlength: 100,
     },
 
     locationPreference: {
       type: String,
       required: true,
       trim: true,
+      maxlength: 120,
       index: true,
     },
 
@@ -102,18 +109,21 @@ const SponsorshipSchema = new Schema<ISponsorship>(
       type: String,
       required: true,
       trim: true,
+      maxlength: 1000,
     },
 
     deliverablesExpected: {
       type: String,
       default: "",
       trim: true,
+      maxlength: 1500,
     },
 
     customMessage: {
       type: String,
       default: "",
       trim: true,
+      maxlength: 1500,
     },
 
     bannerRequirement: {
@@ -145,12 +155,18 @@ const SponsorshipSchema = new Schema<ISponsorship>(
       type: String,
       default: "",
       trim: true,
+      maxlength: 120,
     },
 
     contactPhone: {
       type: String,
       required: true,
       trim: true,
+      maxlength: 30,
+      validate: {
+        validator: (value: string) => phoneRegex.test(value),
+        message: "Invalid contact phone number",
+      },
     },
 
     status: {
@@ -170,6 +186,54 @@ const SponsorshipSchema = new Schema<ISponsorship>(
     timestamps: true,
   }
 );
+
+SponsorshipSchema.pre("validate", function (next) {
+  if (typeof this.sponsorshipTitle === "string") {
+    this.sponsorshipTitle = this.sponsorshipTitle.trim();
+  }
+
+  if (typeof this.sponsorshipType === "string") {
+    this.sponsorshipType = this.sponsorshipType.trim();
+  }
+
+  if (typeof this.category === "string") {
+    this.category = this.category.trim();
+  }
+
+  if (typeof this.targetAudience === "string") {
+    this.targetAudience = this.targetAudience.trim();
+  }
+
+  if (typeof this.city === "string") {
+    this.city = this.city.trim();
+  }
+
+  if (typeof this.locationPreference === "string") {
+    this.locationPreference = this.locationPreference.trim();
+  }
+
+  if (typeof this.campaignGoal === "string") {
+    this.campaignGoal = this.campaignGoal.trim();
+  }
+
+  if (typeof this.deliverablesExpected === "string") {
+    this.deliverablesExpected = this.deliverablesExpected.trim();
+  }
+
+  if (typeof this.customMessage === "string") {
+    this.customMessage = this.customMessage.trim();
+  }
+
+  if (typeof this.contactPersonName === "string") {
+    this.contactPersonName = this.contactPersonName.trim();
+  }
+
+  if (typeof this.contactPhone === "string") {
+    this.contactPhone = this.contactPhone.trim();
+  }
+
+  next();
+});
 
 // Performance indexes
 SponsorshipSchema.index({ sponsorOwnerId: 1, createdAt: -1 });
