@@ -8,6 +8,7 @@ import { matchSponsorToEvents, matchEventToSponsors } from "@/lib/matcher";
 import { Event } from "@/types/event";
 import { Sponsor as SponsorType } from "@/types/sponsor";
 
+export const dynamic = "force-dynamic";
 export async function GET(request: NextRequest) {
   try {
     const url = request.nextUrl;

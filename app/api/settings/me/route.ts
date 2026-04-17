@@ -6,6 +6,7 @@ import User from "@/models/User";
 import Sponsor from "@/models/Sponsor";
 import { authOptions } from "@/lib/nextAuthOptions";
 
+export const dynamic = "force-dynamic";
 export async function GET() {
   try {
     await connectDB();

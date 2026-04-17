@@ -4,6 +4,7 @@ import { connectDB } from "@/lib/db";
 import Sponsorship from "@/models/Sponsorship";
 import Sponsor from "@/models/Sponsor";
 
+export const dynamic = "force-dynamic";
 export async function GET(req: NextRequest) {
   try {
     await connectDB();
