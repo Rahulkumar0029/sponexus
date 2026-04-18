@@ -1,8 +1,41 @@
-# Sponexus - Event Sponsorship Marketplace
+# Sponexus™ – Event Sponsorship Marketplace
+
+**Founder:** Rahul Kumar  
+**Created On:** 2026  
+**Ownership Claim:** This repository, concept, and implementation of Sponexus™ is originally created and owned by Rahul Kumar. All rights reserved.
+
+---
+
+⚠️ This project represents an original concept, system design, and implementation. Unauthorized copying, redistribution, or commercial use without permission is not allowed.
+
+## Intellectual Ownership
+
+Sponexus is an independently developed platform by Rahul Kumar.
+
+This repository serves as a timestamped proof of:
+- Idea origination
+- System architecture
+- Matching logic
+- Technical implementation
+
+All intellectual property rights belong to the creator unless otherwise licensed.
+
+## Vision
+
+To become the default infrastructure layer for event sponsorship discovery, enabling seamless partnerships between brands and organizers across industries.
 
 ## Overview
 
-Sponexus is a production-ready two-sided marketplace platform that intelligently connects event organizers with ideal sponsors. Using our proprietary matching engine, we find the perfect partnerships based on budget, categories, audience, and location.
+Sponexus is a production-ready two-sided marketplace designed to solve the inefficiencies in event sponsorship discovery.
+
+It connects event organizers with relevant sponsors using a structured matching system based on:
+
+- Budget compatibility
+- Category alignment
+- Target audience fit
+- Geographic relevance
+
+Unlike traditional sponsorship outreach, Sponexus enables data-driven partnership discovery, reducing time, increasing relevance, and improving deal success rates.
 
 ## 🎯 Core Features
 
@@ -24,12 +57,19 @@ Sponexus is a production-ready two-sided marketplace platform that intelligently
 - Sponsor directory listing
 - Sponsor detail pages with matching events
 
-### 4. Smart Matching Engine
-The core innovation of Sponexus. Calculates match scores (0-100) based on:
-- **Budget Alignment** (30%) - How well sponsorship budgets match
-- **Category Match** (30%) - Overlap in interested categories
-- **Audience Compatibility** (20%) - Target audience alignment
-- **Geographic Fit** (20%) - Location compatibility
+### 4. ## Smart Matching Engine (Core Innovation)
+
+Sponexus uses a weighted scoring algorithm to rank sponsor-event compatibility:
+
+Score = (Budget × 30%) + (Category × 30%) + (Audience × 20%) + (Location × 20%)
+
+Each match includes:
+- Score (0–100)
+- Match quality classification
+- Factor-wise breakdown
+- Reasoning layer (why this match exists)
+
+This system ensures intelligent discovery instead of random listings.
 
 Matches are automatically generated and ranked for better discovery.
 
@@ -44,6 +84,13 @@ Matches are automatically generated and ranked for better discovery.
 - Sponsors directory with discovery
 - Match recommendation page
 - Settings and profile management
+
+## Unique Value Proposition
+
+- Intelligent sponsor-event matching (not just listings)
+- Dual-sided marketplace optimization
+- Data-driven decision making
+- Scalable SaaS-ready architecture
 
 ## 🏗️ Tech Stack
 
