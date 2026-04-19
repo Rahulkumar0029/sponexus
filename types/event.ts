@@ -13,21 +13,37 @@ export type EventStatus =
   | "COMPLETED"
   | "CANCELLED";
 
+export type EventDeliverable =
+  | "STAGE_BRANDING"
+  | "STALL_SPACE"
+  | "SOCIAL_MEDIA_PROMOTION"
+  | "PRODUCT_DISPLAY"
+  | "ANNOUNCEMENTS"
+  | "EMAIL_PROMOTION"
+  | "TITLE_SPONSORSHIP"
+  | "CO_BRANDING";
+
 export interface IEvent {
   _id?: string;
   title: string;
   description: string;
   organizerId: string;
-  categories: string[];
+
+  categories: EventCategory[];
   targetAudience: string[];
   location: string;
   budget: number;
+
   startDate: Date | string;
   endDate: Date | string;
   attendeeCount: number;
   eventType: EventCategory;
+
   image?: string;
   status: EventStatus;
+
+  providedDeliverables?: EventDeliverable[];
+
   createdAt?: Date | string;
   updatedAt?: Date | string;
 }
@@ -37,7 +53,7 @@ export type Event = IEvent;
 export interface CreateEventInput {
   title: string;
   description: string;
-  categories: string[];
+  categories: EventCategory[];
   targetAudience: string[];
   location: string;
   budget: number;
@@ -46,6 +62,8 @@ export interface CreateEventInput {
   attendeeCount: number;
   eventType: EventCategory;
   image?: string;
+
+  providedDeliverables?: EventDeliverable[];
 }
 
 export interface EventResponse {

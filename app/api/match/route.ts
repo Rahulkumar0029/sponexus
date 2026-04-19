@@ -6,14 +6,113 @@ import { EventModel } from "@/lib/models/Event";
 import Sponsor from "@/lib/models/Sponsor";
 import { matchSponsorToEvents, matchEventToSponsors } from "@/lib/matcher";
 import { Event } from "@/types/event";
+import { MatchWeights } from "@/types/match";
 import { Sponsor as SponsorType } from "@/types/sponsor";
 
-export async function GET(request: NextRequest) {
+const DEFAULT_WEIGHTS: MatchWeights = {
+  category: 20,
+  audience: 20,
+  location: 20,
+  budget: 20,
+  deliverables: 20,
+};
+
+function normalizeWeights(input?: Partial<MatchWeights>): MatchWeights {
+  const weights: MatchWeights = {
+    category: Number(input?.category ?? DEFAULT_WEIGHTS.category),
+    audience: Number(input?.audience ?? DEFAULT_WEIGHTS.audience),
+    location: Number(input?.location ?? DEFAULT_WEIGHTS.location),
+    budget: Number(input?.budget ?? DEFAULT_WEIGHTS.budget),
+    deliverables: Number(input?.deliverables ?? DEFAULT_WEIGHTS.deliverables),
+  };
+
+  const total =
+    weights.category +
+    weights.audience +
+    weights.location +
+    weights.budget +
+    weights.deliverables;
+
+  if (total !== 100) {
+    return DEFAULT_WEIGHTS;
+  }
+
+  return weights;
+}
+
+function buildSponsorData(sponsorDoc: any): SponsorType {
+  return {
+    ...sponsorDoc.toObject(),
+    _id: String(sponsorDoc._id),
+    userId: sponsorDoc.userId ? String(sponsorDoc.userId) : "",
+    brandName: sponsorDoc.brandName || "",
+    companyName: sponsorDoc.companyName || "",
+    website: sponsorDoc.website || "",
+    officialEmail: sponsorDoc.officialEmail || "",
+    phone: sponsorDoc.phone || "",
+    industry: sponsorDoc.industry || "",
+    companySize: sponsorDoc.companySize || "",
+    about: sponsorDoc.about || "",
+    logoUrl: sponsorDoc.logoUrl || "",
+    targetAudience: sponsorDoc.targetAudience || "",
+    preferredCategories: Array.isArray(sponsorDoc.preferredCategories)
+      ? sponsorDoc.preferredCategories
+      : [],
+    preferredLocations: Array.isArray(sponsorDoc.preferredLocations)
+      ? sponsorDoc.preferredLocations
+      : [],
+    sponsorshipInterests: Array.isArray(sponsorDoc.sponsorshipInterests)
+      ? sponsorDoc.sponsorshipInterests
+      : [],
+    instagramUrl: sponsorDoc.instagramUrl || "",
+    linkedinUrl: sponsorDoc.linkedinUrl || "",
+    isProfileComplete: Boolean(sponsorDoc.isProfileComplete),
+    isPublic: Boolean(sponsorDoc.isPublic),
+    createdAt: sponsorDoc.createdAt
+      ? new Date(sponsorDoc.createdAt).toISOString()
+      : new Date().toISOString(),
+    updatedAt: sponsorDoc.updatedAt
+      ? new Date(sponsorDoc.updatedAt).toISOString()
+      : new Date().toISOString(),
+  };
+}
+
+function buildEventData(eventDoc: any): Event {
+  return {
+    ...eventDoc,
+    _id: String(eventDoc._id),
+    organizerId: eventDoc.organizerId ? String(eventDoc.organizerId) : "",
+    title: eventDoc.title || "",
+    description: eventDoc.description || "",
+    categories: Array.isArray(eventDoc.categories) ? eventDoc.categories : [],
+    targetAudience: Array.isArray(eventDoc.targetAudience)
+      ? eventDoc.targetAudience
+      : [],
+    location: eventDoc.location || "",
+    budget: typeof eventDoc.budget === "number" ? eventDoc.budget : 0,
+    startDate: eventDoc.startDate || "",
+    endDate: eventDoc.endDate || "",
+    attendeeCount:
+      typeof eventDoc.attendeeCount === "number" ? eventDoc.attendeeCount : 0,
+    eventType: eventDoc.eventType || "OTHER",
+    image: eventDoc.coverImage || eventDoc.image || "",
+    status: eventDoc.status || "DRAFT",
+    providedDeliverables: Array.isArray(eventDoc.providedDeliverables)
+      ? eventDoc.providedDeliverables
+      : [],
+    createdAt: eventDoc.createdAt || "",
+    updatedAt: eventDoc.updatedAt || "",
+  };
+}
+
+export async function POST(request: NextRequest) {
   try {
-    const url = request.nextUrl;
-    const sponsorId = url.searchParams.get("sponsorId");
-    const sponsorOwnerId = url.searchParams.get("sponsorOwnerId");
-    const eventId = url.searchParams.get("eventId");
+    const body = await request.json();
+
+    const sponsorId = body?.sponsorId;
+    const sponsorOwnerId = body?.sponsorOwnerId;
+    const eventId = body?.eventId;
+    const weights = normalizeWeights(body?.weights);
 
     if ((sponsorId || sponsorOwnerId) && eventId) {
       return NextResponse.json(
@@ -30,7 +129,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(
         {
           success: false,
-          message: "Missing matching query parameter",
+          message: "Missing matching target",
           matches: [],
         },
         { status: 400 }
@@ -39,7 +138,6 @@ export async function GET(request: NextRequest) {
 
     await connectDB();
 
-    // Sponsor profile -> matching events
     if (sponsorId || sponsorOwnerId) {
       if (sponsorId && !mongoose.Types.ObjectId.isValid(sponsorId)) {
         return NextResponse.json(
@@ -93,76 +191,24 @@ export async function GET(request: NextRequest) {
         status: { $in: ["PUBLISHED", "ONGOING"] },
       }).lean();
 
-      const sponsorData: SponsorType = {
-        ...sponsorDoc.toObject(),
-        _id: String(sponsorDoc._id),
-        userId: sponsorDoc.userId ? String(sponsorDoc.userId) : "",
-        brandName: sponsorDoc.brandName || "",
-        companyName: sponsorDoc.companyName || "",
-        website: sponsorDoc.website || "",
-        officialEmail: sponsorDoc.officialEmail || "",
-        phone: sponsorDoc.phone || "",
-        industry: sponsorDoc.industry || "",
-        companySize: sponsorDoc.companySize || "",
-        about: sponsorDoc.about || "",
-        logoUrl: sponsorDoc.logoUrl || "",
-        targetAudience: sponsorDoc.targetAudience || "",
-        preferredCategories: Array.isArray(sponsorDoc.preferredCategories)
-          ? sponsorDoc.preferredCategories
-          : [],
-        preferredLocations: Array.isArray(sponsorDoc.preferredLocations)
-          ? sponsorDoc.preferredLocations
-          : [],
-        sponsorshipInterests: Array.isArray(sponsorDoc.sponsorshipInterests)
-          ? sponsorDoc.sponsorshipInterests
-          : [],
-        instagramUrl: sponsorDoc.instagramUrl || "",
-        linkedinUrl: sponsorDoc.linkedinUrl || "",
-        isProfileComplete: Boolean(sponsorDoc.isProfileComplete),
-        isPublic: Boolean(sponsorDoc.isPublic),
-        createdAt: sponsorDoc.createdAt
-          ? new Date(sponsorDoc.createdAt).toISOString()
-          : new Date().toISOString(),
-        updatedAt: sponsorDoc.updatedAt
-          ? new Date(sponsorDoc.updatedAt).toISOString()
-          : new Date().toISOString(),
-      };
+      const sponsorData = buildSponsorData(sponsorDoc);
+      const events = (eventDocs || []).map(buildEventData);
 
-      const events: Event[] = (eventDocs || []).map((event: any) => ({
-        ...event,
-        _id: String(event._id),
-        organizerId: event.organizerId ? String(event.organizerId) : "",
-        title: event.title || "",
-        description: event.description || "",
-        categories: Array.isArray(event.categories) ? event.categories : [],
-        targetAudience: Array.isArray(event.targetAudience) ? event.targetAudience : [],
-        location: event.location || "",
-        budget: typeof event.budget === "number" ? event.budget : 0,
-        startDate: event.startDate || "",
-        endDate: event.endDate || "",
-        attendeeCount:
-          typeof event.attendeeCount === "number" ? event.attendeeCount : 0,
-        eventType: event.eventType || "OTHER",
-        image: event.image || "",
-        status: event.status || "DRAFT",
-        createdAt: event.createdAt || "",
-        updatedAt: event.updatedAt || "",
-      }));
-
-      const matches = matchSponsorToEvents(sponsorData, events);
+      const matches = matchSponsorToEvents(sponsorData, events, weights);
 
       return NextResponse.json(
         {
           success: true,
           matchType: "sponsor-to-events",
+          mode: "sponsor_to_events",
           count: matches.length,
+          weights,
           matches,
         },
         { status: 200 }
       );
     }
 
-    // Event -> matching sponsor profiles
     if (eventId) {
       if (!mongoose.Types.ObjectId.isValid(eventId)) {
         return NextResponse.json(
@@ -188,83 +234,23 @@ export async function GET(request: NextRequest) {
         );
       }
 
-      const event: Event = {
-        ...eventDoc,
-        _id: String((eventDoc as any)._id),
-        organizerId: (eventDoc as any).organizerId
-          ? String((eventDoc as any).organizerId)
-          : "",
-        title: (eventDoc as any).title || "",
-        description: (eventDoc as any).description || "",
-        categories: Array.isArray((eventDoc as any).categories)
-          ? (eventDoc as any).categories
-          : [],
-        targetAudience: Array.isArray((eventDoc as any).targetAudience)
-          ? (eventDoc as any).targetAudience
-          : [],
-        location: (eventDoc as any).location || "",
-        budget:
-          typeof (eventDoc as any).budget === "number" ? (eventDoc as any).budget : 0,
-        startDate: (eventDoc as any).startDate || "",
-        endDate: (eventDoc as any).endDate || "",
-        attendeeCount:
-          typeof (eventDoc as any).attendeeCount === "number"
-            ? (eventDoc as any).attendeeCount
-            : 0,
-        eventType: (eventDoc as any).eventType || "OTHER",
-        image: (eventDoc as any).image || "",
-        status: (eventDoc as any).status || "DRAFT",
-        createdAt: (eventDoc as any).createdAt || "",
-        updatedAt: (eventDoc as any).updatedAt || "",
-      };
-
       const sponsorDocs = await Sponsor.find({
         isPublic: true,
         isProfileComplete: true,
       });
 
-      const sponsors: SponsorType[] = sponsorDocs.map((sponsorDoc) => ({
-        ...sponsorDoc.toObject(),
-        _id: String(sponsorDoc._id),
-        userId: sponsorDoc.userId ? String(sponsorDoc.userId) : "",
-        brandName: sponsorDoc.brandName || "",
-        companyName: sponsorDoc.companyName || "",
-        website: sponsorDoc.website || "",
-        officialEmail: sponsorDoc.officialEmail || "",
-        phone: sponsorDoc.phone || "",
-        industry: sponsorDoc.industry || "",
-        companySize: sponsorDoc.companySize || "",
-        about: sponsorDoc.about || "",
-        logoUrl: sponsorDoc.logoUrl || "",
-        targetAudience: sponsorDoc.targetAudience || "",
-        preferredCategories: Array.isArray(sponsorDoc.preferredCategories)
-          ? sponsorDoc.preferredCategories
-          : [],
-        preferredLocations: Array.isArray(sponsorDoc.preferredLocations)
-          ? sponsorDoc.preferredLocations
-          : [],
-        sponsorshipInterests: Array.isArray(sponsorDoc.sponsorshipInterests)
-          ? sponsorDoc.sponsorshipInterests
-          : [],
-        instagramUrl: sponsorDoc.instagramUrl || "",
-        linkedinUrl: sponsorDoc.linkedinUrl || "",
-        isProfileComplete: Boolean(sponsorDoc.isProfileComplete),
-        isPublic: Boolean(sponsorDoc.isPublic),
-        createdAt: sponsorDoc.createdAt
-          ? new Date(sponsorDoc.createdAt).toISOString()
-          : new Date().toISOString(),
-        updatedAt: sponsorDoc.updatedAt
-          ? new Date(sponsorDoc.updatedAt).toISOString()
-          : new Date().toISOString(),
-      }));
+      const event = buildEventData(eventDoc);
+      const sponsors = sponsorDocs.map(buildSponsorData);
 
-      const matches = matchEventToSponsors(event, sponsors);
+      const matches = matchEventToSponsors(event, sponsors, weights);
 
       return NextResponse.json(
         {
           success: true,
           matchType: "event-to-sponsors",
+          mode: "event_to_sponsors",
           count: matches.length,
+          weights,
           matches,
         },
         { status: 200 }

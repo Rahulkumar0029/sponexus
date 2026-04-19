@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/Button";
 import { EmptyState } from "@/components/EmptyState";
 import { useAuth } from "@/hooks/useAuth";
+import { EventDeliverable } from "@/types/event";
 
 type CurrentUser = {
   _id?: string;
@@ -36,7 +37,7 @@ type SponsorProfile = {
   targetAudience?: string;
   preferredCategories?: string[];
   preferredLocations?: string[];
-  sponsorshipInterests?: string[];
+  sponsorshipInterests?: EventDeliverable[];
   instagramUrl?: string;
   linkedinUrl?: string;
   isProfileComplete?: boolean;
@@ -63,11 +64,22 @@ type SponsorFormState = {
   targetAudience: string;
   preferredCategories: string;
   preferredLocations: string;
-  sponsorshipInterests: string;
+  sponsorshipInterests: EventDeliverable[];
   instagramUrl: string;
   linkedinUrl: string;
   isPublic: boolean;
 };
+
+const DELIVERABLE_OPTIONS: { value: EventDeliverable; label: string }[] = [
+  { value: "STAGE_BRANDING", label: "Stage Branding" },
+  { value: "STALL_SPACE", label: "Stall Space" },
+  { value: "SOCIAL_MEDIA_PROMOTION", label: "Social Media Promotion" },
+  { value: "PRODUCT_DISPLAY", label: "Product Display" },
+  { value: "ANNOUNCEMENTS", label: "Announcements / Stage Mentions" },
+  { value: "EMAIL_PROMOTION", label: "Email Promotion" },
+  { value: "TITLE_SPONSORSHIP", label: "Title Sponsorship" },
+  { value: "CO_BRANDING", label: "Co-Branding" },
+];
 
 const initialSponsorForm: SponsorFormState = {
   brandName: "",
@@ -82,7 +94,7 @@ const initialSponsorForm: SponsorFormState = {
   targetAudience: "",
   preferredCategories: "",
   preferredLocations: "",
-  sponsorshipInterests: "",
+  sponsorshipInterests: [],
   instagramUrl: "",
   linkedinUrl: "",
   isPublic: true,
@@ -170,9 +182,11 @@ export default function SettingsPage() {
             preferredLocations: toCommaSeparated(
               loadedSponsorProfile?.preferredLocations
             ),
-            sponsorshipInterests: toCommaSeparated(
+            sponsorshipInterests: Array.isArray(
               loadedSponsorProfile?.sponsorshipInterests
-            ),
+            )
+              ? loadedSponsorProfile!.sponsorshipInterests!
+              : [],
             instagramUrl: loadedSponsorProfile?.instagramUrl || "",
             linkedinUrl: loadedSponsorProfile?.linkedinUrl || "",
             isPublic:
@@ -236,6 +250,15 @@ export default function SettingsPage() {
     }));
   };
 
+  const toggleInterest = (value: EventDeliverable) => {
+    setSponsorForm((prev) => ({
+      ...prev,
+      sponsorshipInterests: prev.sponsorshipInterests.includes(value)
+        ? prev.sponsorshipInterests.filter((item) => item !== value)
+        : [...prev.sponsorshipInterests, value],
+    }));
+  };
+
   const handleSponsorSave = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
 
@@ -262,7 +285,7 @@ export default function SettingsPage() {
         targetAudience: sponsorForm.targetAudience,
         preferredCategories: parseCommaSeparated(sponsorForm.preferredCategories),
         preferredLocations: parseCommaSeparated(sponsorForm.preferredLocations),
-        sponsorshipInterests: parseCommaSeparated(sponsorForm.sponsorshipInterests),
+        sponsorshipInterests: sponsorForm.sponsorshipInterests,
         instagramUrl: sponsorForm.instagramUrl,
         linkedinUrl: sponsorForm.linkedinUrl,
         isPublic: sponsorForm.isPublic,
@@ -603,16 +626,38 @@ export default function SettingsPage() {
                     <label className="mb-2 block text-sm font-medium text-white">
                       Sponsorship Interests
                     </label>
-                    <input
-                      name="sponsorshipInterests"
-                      value={sponsorForm.sponsorshipInterests}
-                      onChange={handleSponsorChange}
-                      placeholder="Title Sponsor, Stall Activation, Social Promotion"
-                      className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none placeholder:text-text-muted"
-                    />
-                    <p className="mt-2 text-xs text-text-muted">
-                      Add comma-separated values.
+                    <p className="mb-3 text-xs text-text-muted">
+                      Select the sponsorship deliverables your brand usually wants from events.
                     </p>
+
+                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                      {DELIVERABLE_OPTIONS.map((item) => {
+                        const checked = sponsorForm.sponsorshipInterests.includes(item.value);
+
+                        return (
+                          <label
+                            key={item.value}
+                            className={`cursor-pointer rounded-2xl border px-4 py-4 text-sm transition ${
+                              checked
+                                ? "border-accent-orange bg-accent-orange/10 text-white"
+                                : "border-white/10 bg-white/5 text-text-muted hover:border-white/20"
+                            }`}
+                          >
+                            <div className="flex items-start gap-3">
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() => toggleInterest(item.value)}
+                                className="mt-1 h-4 w-4 accent-yellow-400"
+                              />
+                              <div>
+                                <p className="font-medium text-text-light">{item.label}</p>
+                              </div>
+                            </div>
+                          </label>
+                        );
+                      })}
+                    </div>
                   </div>
                 </div>
               </div>

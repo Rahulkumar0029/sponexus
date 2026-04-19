@@ -3,10 +3,20 @@
 import { useCallback, useState } from "react";
 import { EventMatchResult, SponsorMatchResult } from "@/types/match";
 
+export interface MatchWeights {
+  category: number;
+  audience: number;
+  location: number;
+  budget: number;
+  deliverables: number;
+}
+
 interface FindMatchesParams {
   sponsorId?: string;
   sponsorOwnerId?: string;
   eventId?: string;
+  mode?: "sponsor_to_events" | "event_to_sponsors";
+  weights?: MatchWeights;
 }
 
 type MatchResult = EventMatchResult | SponsorMatchResult;
@@ -15,7 +25,16 @@ interface FindMatchesResponse {
   success: boolean;
   message?: string;
   matches: MatchResult[];
+  mode?: string;
 }
+
+const DEFAULT_WEIGHTS: MatchWeights = {
+  category: 20,
+  audience: 20,
+  location: 20,
+  budget: 20,
+  deliverables: 20,
+};
 
 export function useMatch() {
   const [matches, setMatches] = useState<MatchResult[]>([]);
@@ -32,24 +51,22 @@ export function useMatch() {
     setError(null);
 
     try {
-      const searchParams = new URLSearchParams();
+      const payload = {
+        sponsorId: params.sponsorId,
+        sponsorOwnerId: params.sponsorOwnerId,
+        eventId: params.eventId,
+        mode: params.mode,
+        weights: params.weights || DEFAULT_WEIGHTS,
+      };
 
-      if (params.sponsorId) {
-        searchParams.append("sponsorId", params.sponsorId);
-      }
-
-      if (params.sponsorOwnerId) {
-        searchParams.append("sponsorOwnerId", params.sponsorOwnerId);
-      }
-
-      if (params.eventId) {
-        searchParams.append("eventId", params.eventId);
-      }
-
-      const response = await fetch(`/api/match?${searchParams.toString()}`, {
-        method: "GET",
+      const response = await fetch("/api/match", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
         credentials: "include",
         cache: "no-store",
+        body: JSON.stringify(payload),
       });
 
       const data = await response.json();
@@ -58,11 +75,12 @@ export function useMatch() {
         const message = data?.message || "Failed to load match results";
         setError(message);
         setMatches([]);
+
         return {
           success: false,
           message,
           matches: [] as MatchResult[],
-        };
+        } satisfies FindMatchesResponse;
       }
 
       const loadedMatches: MatchResult[] = Array.isArray(data.matches)
@@ -74,7 +92,8 @@ export function useMatch() {
       return {
         success: true,
         matches: loadedMatches,
-      } as FindMatchesResponse;
+        mode: data.mode,
+      } satisfies FindMatchesResponse;
     } catch (err: any) {
       const message = err?.message || "Unexpected error loading matches";
       setError(message);
@@ -84,7 +103,7 @@ export function useMatch() {
         success: false,
         message,
         matches: [] as MatchResult[],
-      };
+      } satisfies FindMatchesResponse;
     } finally {
       setLoading(false);
     }
@@ -96,5 +115,6 @@ export function useMatch() {
     error,
     findMatches,
     resetMatches,
+    defaultWeights: DEFAULT_WEIGHTS,
   };
 }

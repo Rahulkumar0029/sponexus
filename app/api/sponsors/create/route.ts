@@ -5,10 +5,29 @@ import { connectDB } from "@/lib/db";
 import Sponsor from "@/lib/models/Sponsor";
 import User from "@/lib/models/User";
 import { getCurrentUser } from "@/lib/current-user";
+import { EventDeliverable } from "@/types/event";
+
+const ALLOWED_DELIVERABLES: EventDeliverable[] = [
+  "STAGE_BRANDING",
+  "STALL_SPACE",
+  "SOCIAL_MEDIA_PROMOTION",
+  "PRODUCT_DISPLAY",
+  "ANNOUNCEMENTS",
+  "EMAIL_PROMOTION",
+  "TITLE_SPONSORSHIP",
+  "CO_BRANDING",
+];
 
 function normalizeArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
-  return value.map((v) => String(v).trim()).filter(Boolean);
+  return [...new Set(value.map((v) => String(v).trim()).filter(Boolean))];
+}
+
+function normalizeDeliverables(value: unknown): EventDeliverable[] {
+  const items = normalizeArray(value);
+  return items.filter((item): item is EventDeliverable =>
+    ALLOWED_DELIVERABLES.includes(item as EventDeliverable)
+  );
 }
 
 export async function POST(request: NextRequest) {
@@ -63,9 +82,7 @@ export async function POST(request: NextRequest) {
 
     const normalizedBrandName = String(brandName || "").trim();
     const normalizedCompanyName = String(companyName || "").trim();
-    const normalizedOfficialEmail = String(officialEmail || "")
-      .trim()
-      .toLowerCase();
+    const normalizedOfficialEmail = String(officialEmail || "").trim().toLowerCase();
     const normalizedPhone = String(phone || "").trim();
     const normalizedIndustry = String(industry || "").trim();
 
@@ -118,7 +135,7 @@ export async function POST(request: NextRequest) {
       targetAudience: String(targetAudience || "").trim(),
       preferredCategories: normalizeArray(preferredCategories),
       preferredLocations: normalizeArray(preferredLocations),
-      sponsorshipInterests: normalizeArray(sponsorshipInterests),
+      sponsorshipInterests: normalizeDeliverables(sponsorshipInterests),
       instagramUrl: String(instagramUrl || "").trim(),
       linkedinUrl: String(linkedinUrl || "").trim(),
       isPublic: typeof isPublic === "boolean" ? isPublic : true,
@@ -146,7 +163,6 @@ export async function POST(request: NextRequest) {
       }
     );
 
-    // Keep shared user-level fields aligned
     user.companyName = profileData.companyName || user.companyName || "";
     user.phone = profileData.phone || user.phone || "";
     user.bio = profileData.about || user.bio || "";

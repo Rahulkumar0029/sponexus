@@ -1,3 +1,5 @@
+import { EventDeliverable } from "@/types/event";
+
 export interface ISponsor {
   _id: string;
   userId: string;
@@ -16,7 +18,7 @@ export interface ISponsor {
   targetAudience: string;
   preferredCategories: string[];
   preferredLocations: string[];
-  sponsorshipInterests: string[];
+  sponsorshipInterests: EventDeliverable[];
 
   instagramUrl: string;
   linkedinUrl: string;
@@ -43,7 +45,7 @@ export interface CreateSponsorInput {
   targetAudience?: string;
   preferredCategories?: string[];
   preferredLocations?: string[];
-  sponsorshipInterests?: string[];
+  sponsorshipInterests?: EventDeliverable[];
   instagramUrl?: string;
   linkedinUrl?: string;
   isPublic?: boolean;

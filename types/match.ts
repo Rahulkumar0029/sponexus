@@ -1,22 +1,35 @@
 import { Event } from "@/types/event";
 import { Sponsor } from "@/types/sponsor";
 
-export type MatchFactor = "category" | "audience" | "location";
+export type MatchFactor =
+  | "category"
+  | "audience"
+  | "location"
+  | "budget"
+  | "deliverables";
+
+export interface MatchWeights {
+  category: number;
+  audience: number;
+  location: number;
+  budget: number;
+  deliverables: number;
+}
 
 export interface MatchBreakdown {
-  // Kept for compatibility with existing matcher/result shapes
-  budgetScore: number;
   categoryScore: number;
   audienceScore: number;
   locationScore: number;
+  budgetScore: number;
+  deliverablesScore: number;
+  weights?: MatchWeights;
 }
 
 export interface BaseMatchResult {
   score: number;
-  quality: "Excellent" | "Strong" | "Good" | "Fair";
-  reason: string;
-  matchedFactors: MatchFactor[];
   breakdown: MatchBreakdown;
+  reasons: string[];
+  weakPoints: string[];
 }
 
 export interface EventMatchResult extends BaseMatchResult {
@@ -32,5 +45,7 @@ export interface MatchResponse<T = EventMatchResult | SponsorMatchResult> {
   matches: T[];
   message?: string;
   matchType?: "sponsor-to-events" | "event-to-sponsors";
+  mode?: "sponsor_to_events" | "event_to_sponsors";
   count?: number;
+  weights?: MatchWeights;
 }

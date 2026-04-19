@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { connectDB } from "@/lib/db";
 import { EventModel } from "@/lib/models/Event";
 import { getCurrentUser } from "@/lib/current-user";
-import { CreateEventInput } from "@/types/event";
+import { CreateEventInput, EventDeliverable } from "@/types/event";
 
 type UploadedMedia = {
   url: string;
@@ -21,9 +21,27 @@ const ALLOWED_EVENT_TYPES = [
   "OTHER",
 ] as const;
 
+const ALLOWED_DELIVERABLES: EventDeliverable[] = [
+  "STAGE_BRANDING",
+  "STALL_SPACE",
+  "SOCIAL_MEDIA_PROMOTION",
+  "PRODUCT_DISPLAY",
+  "ANNOUNCEMENTS",
+  "EMAIL_PROMOTION",
+  "TITLE_SPONSORSHIP",
+  "CO_BRANDING",
+];
+
 function normalizeStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
-  return value.map((item) => String(item).trim()).filter(Boolean);
+  return [...new Set(value.map((item) => String(item).trim()).filter(Boolean))];
+}
+
+function normalizeDeliverables(value: unknown): EventDeliverable[] {
+  const items = normalizeStringArray(value);
+  return items.filter((item): item is EventDeliverable =>
+    ALLOWED_DELIVERABLES.includes(item as EventDeliverable)
+  );
 }
 
 function normalizeMediaArray(value: unknown): UploadedMedia[] {
@@ -74,6 +92,7 @@ export async function POST(request: NextRequest) {
       venueImages?: UploadedMedia[];
       pastEventMedia?: UploadedMedia[];
       status?: "DRAFT" | "PUBLISHED";
+      providedDeliverables?: EventDeliverable[];
     } = await request.json();
 
     const {
@@ -91,6 +110,7 @@ export async function POST(request: NextRequest) {
       venueImages,
       pastEventMedia,
       status,
+      providedDeliverables,
     } = body;
 
     if (
@@ -109,6 +129,7 @@ export async function POST(request: NextRequest) {
 
     const safeCategories = normalizeStringArray(categories);
     const safeTargetAudience = normalizeStringArray(targetAudience);
+    const safeProvidedDeliverables = normalizeDeliverables(providedDeliverables);
     const safeVenueImages = normalizeMediaArray(venueImages);
     const safePastEventMedia = normalizeMediaArray(pastEventMedia);
 
@@ -176,6 +197,7 @@ export async function POST(request: NextRequest) {
       endDate: parsedEndDate,
       attendeeCount: parsedAttendeeCount,
       eventType: safeEventType,
+      providedDeliverables: safeProvidedDeliverables,
       coverImage:
         typeof coverImage === "string" && coverImage.trim()
           ? coverImage.trim()

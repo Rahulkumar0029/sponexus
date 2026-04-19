@@ -8,8 +8,7 @@ import { Button } from "@/components/Button";
 import { EmptyState } from "@/components/EmptyState";
 import { EventCard } from "@/components/EventCard";
 import { SponsorCard } from "@/components/SponsorCard";
-import { useMatch } from "@/hooks/useMatch";
-import { EventMatchResult, SponsorMatchResult } from "@/types/match";
+import { useMatch, MatchWeights } from "@/hooks/useMatch";
 
 type CurrentUser = {
   _id?: string;
@@ -44,6 +43,62 @@ type SettingsMeResponse = {
   message?: string;
 };
 
+type MatchBreakdown = {
+  categoryScore?: number;
+  audienceScore?: number;
+  locationScore?: number;
+  budgetScore?: number;
+  deliverablesScore?: number;
+  weights?: MatchWeights;
+};
+
+type MatchItem = {
+  score: number;
+  event?: any;
+  sponsor?: any;
+  breakdown: MatchBreakdown;
+  reasons?: string[];
+  weakPoints?: string[];
+};
+
+const BALANCED_WEIGHTS: MatchWeights = {
+  category: 20,
+  audience: 20,
+  location: 20,
+  budget: 20,
+  deliverables: 20,
+};
+
+const PRESETS: Record<string, MatchWeights> = {
+  balanced: BALANCED_WEIGHTS,
+  audience_first: {
+    category: 15,
+    audience: 35,
+    location: 15,
+    budget: 15,
+    deliverables: 20,
+  },
+  budget_first: {
+    category: 15,
+    audience: 15,
+    location: 15,
+    budget: 35,
+    deliverables: 20,
+  },
+  deliverables_first: {
+    category: 15,
+    audience: 15,
+    location: 15,
+    budget: 15,
+    deliverables: 40,
+  },
+};
+
+function clampWeight(value: number) {
+  if (Number.isNaN(value)) return 0;
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
+
 export default function MatchPage() {
   const router = useRouter();
 
@@ -53,8 +108,10 @@ export default function MatchPage() {
   const [emptyMessage, setEmptyMessage] = useState("");
   const [activeSourceLabel, setActiveSourceLabel] = useState("");
   const [pageError, setPageError] = useState("");
+  const [currentEventId, setCurrentEventId] = useState("");
+  const [weights, setWeights] = useState<MatchWeights>(BALANCED_WEIGHTS);
 
-  const { matches, loading, error, findMatches , resetMatches } = useMatch();
+  const { matches, loading, error, findMatches, resetMatches } = useMatch();
 
   const getUserId = useCallback(() => {
     return user?._id ?? user?.id ?? "";
@@ -63,6 +120,18 @@ export default function MatchPage() {
   const isSponsor = user?.role === "SPONSOR";
   const isOrganizer = user?.role === "ORGANIZER";
   const sponsorProfileComplete = Boolean(sponsorProfile?.isProfileComplete);
+
+  const totalWeight = useMemo(() => {
+    return (
+      weights.category +
+      weights.audience +
+      weights.location +
+      weights.budget +
+      weights.deliverables
+    );
+  }, [weights]);
+
+  const weightsValid = totalWeight === 100;
 
   useEffect(() => {
     const bootstrap = async () => {
@@ -98,7 +167,7 @@ export default function MatchPage() {
   }, []);
 
   const fetchOrganizerEventAndMatch = useCallback(
-    async (userId: string) => {
+    async (userId: string, nextWeights: MatchWeights) => {
       const response = await fetch(`/api/events/get?organizer=${userId}&limit=1`, {
         method: "GET",
         credentials: "include",
@@ -113,24 +182,33 @@ export default function MatchPage() {
 
       if (data.events?.length > 0) {
         const latestEvent = data.events[0];
+        setCurrentEventId(latestEvent._id || "");
         setActiveSourceLabel(latestEvent.title || "Your latest event");
         setEmptyMessage("");
-        await findMatches({ eventId: latestEvent._id });
+
+        await findMatches({
+          eventId: latestEvent._id,
+          mode: "event_to_sponsors",
+          weights: nextWeights,
+        });
         return;
       }
 
+      setCurrentEventId("");
       setActiveSourceLabel("");
       setEmptyMessage("Create your first event to receive sponsor recommendations.");
       resetMatches();
     },
-    [findMatches]
+    [findMatches, resetMatches]
   );
 
   const fetchSponsorMatches = useCallback(
-    async (userId: string) => {
+    async (userId: string, nextWeights: MatchWeights) => {
       if (!sponsorProfileComplete) {
         setActiveSourceLabel("");
-        setEmptyMessage("Complete your sponsor profile in Settings to receive event recommendations.");
+        setEmptyMessage(
+          "Complete your sponsor profile in Settings to receive event recommendations."
+        );
         resetMatches();
         return;
       }
@@ -139,13 +217,18 @@ export default function MatchPage() {
         sponsorProfile?.brandName || sponsorProfile?.companyName || "Your sponsor profile"
       );
       setEmptyMessage("");
-      await findMatches({ sponsorOwnerId: userId });
+
+      await findMatches({
+        sponsorOwnerId: userId,
+        mode: "sponsor_to_events",
+        weights: nextWeights,
+      });
     },
-    [findMatches, sponsorProfile, sponsorProfileComplete]
+    [findMatches, resetMatches, sponsorProfile, sponsorProfileComplete]
   );
 
-  useEffect(() => {
-    const loadMatches = async () => {
+  const loadMatches = useCallback(
+    async (nextWeights: MatchWeights) => {
       if (!user) return;
 
       const userId = getUserId();
@@ -160,55 +243,53 @@ export default function MatchPage() {
 
       try {
         if (isSponsor) {
-          await fetchSponsorMatches(userId);
+          await fetchSponsorMatches(userId, nextWeights);
           return;
         }
 
         if (isOrganizer) {
-          await fetchOrganizerEventAndMatch(userId);
+          await fetchOrganizerEventAndMatch(userId, nextWeights);
           return;
         }
 
         setPageError("Unsupported account role.");
       } catch (err: any) {
-        setPageError(err.message || "Failed to load matches.");
+        setPageError(err?.message || "Failed to load matches.");
       }
-    };
+    },
+    [
+      user,
+      getUserId,
+      isSponsor,
+      isOrganizer,
+      fetchOrganizerEventAndMatch,
+      fetchSponsorMatches,
+    ]
+  );
 
-    loadMatches();
-  }, [
-    user,
-    getUserId,
-    isSponsor,
-    isOrganizer,
-    fetchOrganizerEventAndMatch,
-    fetchSponsorMatches,
-  ]);
+  useEffect(() => {
+    loadMatches(weights);
+  }, [loadMatches]);
 
   const handleRefresh = async () => {
-    if (!user) return;
-
-    const userId = getUserId();
-
-    if (!userId) {
-      setPageError("User session is missing a valid ID.");
+    if (!weightsValid) {
+      setPageError("Your weight total must equal 100 before matching.");
       return;
     }
 
+    await loadMatches(weights);
+  };
+
+  const updateWeight = (key: keyof MatchWeights, value: number) => {
+    setWeights((prev) => ({
+      ...prev,
+      [key]: clampWeight(value),
+    }));
+  };
+
+  const applyPreset = (preset: MatchWeights) => {
+    setWeights(preset);
     setPageError("");
-
-    try {
-      if (isSponsor) {
-        await fetchSponsorMatches(userId);
-        return;
-      }
-
-      if (isOrganizer) {
-        await fetchOrganizerEventAndMatch(userId);
-      }
-    } catch (err: any) {
-      setPageError(err.message || "Failed to refresh matches.");
-    }
   };
 
   const stepOneTitle = useMemo(() => {
@@ -279,12 +360,12 @@ export default function MatchPage() {
         <div className="absolute bottom-10 right-10 h-80 w-80 rounded-full bg-amber-500/10 blur-3xl" />
       </div>
 
-      <div className="container-custom max-w-5xl">
+      <div className="container-custom max-w-6xl">
         <div className="mb-12 text-center">
           <h1 className="mb-4 text-5xl font-bold gradient-text">Smart Matching Engine</h1>
-          <p className="mx-auto max-w-2xl text-lg text-text-muted">
-            Sponexus connects organizers and sponsors using category, audience, and
-            location fit built on real profile and event data.
+          <p className="mx-auto max-w-3xl text-lg text-text-muted">
+            Adjust what matters most to you, keep the total at 100, and let Sponexus
+            rank the best-fit opportunities based on real marketplace data.
           </p>
         </div>
 
@@ -303,13 +384,18 @@ export default function MatchPage() {
           <div className="rounded-2xl border border-white/10 bg-white/[0.05] p-6 backdrop-blur-xl">
             <div className="mb-4 text-4xl">🎯</div>
             <h3 className="mb-3 text-xl font-semibold text-text-light">
-              Step 2: Discover Matches
+              Step 2: Run Weighted Matching
             </h3>
             <p className="mb-6 text-text-muted">
-              Refresh recommendations anytime. Match scores show how closely each result
-              aligns with your needs.
+              Adjust your weight mix, keep the total at 100, and refresh recommendations
+              anytime to see what matters most to you.
             </p>
-            <Button variant="secondary" className="w-full" onClick={handleRefresh}>
+            <Button
+              variant="secondary"
+              className="w-full"
+              onClick={handleRefresh}
+              disabled={!weightsValid || loading}
+            >
               {loading
                 ? "Refreshing Matches..."
                 : isOrganizer
@@ -320,31 +406,93 @@ export default function MatchPage() {
         </div>
 
         <div className="mb-12 rounded-2xl border border-white/10 bg-white/[0.05] p-8 backdrop-blur-xl">
-          <h2 className="mb-6 text-2xl font-bold">How We Match</h2>
-          <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
-            <div className="text-center">
-              <div className="mb-2 text-3xl font-bold text-accent-orange">40%</div>
-              <p className="font-medium text-text-light">Category Fit</p>
-              <p className="text-sm text-text-muted">
-                Shared themes, industries, and event relevance.
+          <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+            <div>
+              <h2 className="text-2xl font-bold text-white">Live Match Weights</h2>
+              <p className="mt-2 text-sm text-text-muted">
+                Control how much each factor influences your results.
               </p>
             </div>
 
-            <div className="text-center">
-              <div className="mb-2 text-3xl font-bold text-accent-orange">30%</div>
-              <p className="font-medium text-text-light">Audience Fit</p>
-              <p className="text-sm text-text-muted">
-                How well sponsor and event audiences overlap.
+            <div className="flex flex-wrap gap-3">
+              <Button size="sm" variant="secondary" onClick={() => applyPreset(PRESETS.balanced)}>
+                Balanced
+              </Button>
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => applyPreset(PRESETS.audience_first)}
+              >
+                Audience First
+              </Button>
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => applyPreset(PRESETS.budget_first)}
+              >
+                Budget First
+              </Button>
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => applyPreset(PRESETS.deliverables_first)}
+              >
+                Deliverables First
+              </Button>
+            </div>
+          </div>
+
+          <div className="mb-6 rounded-2xl border border-white/10 bg-white/[0.04] px-5 py-4">
+            <div className="flex items-center justify-between gap-4">
+              <p className="text-sm text-text-muted">Current total</p>
+              <p
+                className={`text-2xl font-bold ${
+                  weightsValid ? "text-accent-orange" : "text-red-400"
+                }`}
+              >
+                {totalWeight}/100
               </p>
             </div>
 
-            <div className="text-center">
-              <div className="mb-2 text-3xl font-bold text-accent-orange">30%</div>
-              <p className="font-medium text-text-light">Location Fit</p>
-              <p className="text-sm text-text-muted">
-                Matching preferred regions and event locations.
+            {!weightsValid && (
+              <p className="mt-2 text-sm text-red-300">
+                Adjust your weights so the total becomes exactly 100.
               </p>
-            </div>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-5">
+            {(
+              [
+                ["category", "Category"],
+                ["audience", "Audience"],
+                ["location", "Location"],
+                ["budget", "Budget"],
+                ["deliverables", "Deliverables"],
+              ] as [keyof MatchWeights, string][]
+            ).map(([key, label]) => (
+              <div
+                key={key}
+                className="rounded-2xl border border-white/10 bg-white/[0.04] p-4"
+              >
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <p className="text-sm font-medium text-white">{label}</p>
+                  <p className="text-sm font-semibold text-accent-orange">
+                    {weights[key]}%
+                  </p>
+                </div>
+
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  step={5}
+                  value={weights[key]}
+                  onChange={(e) => updateWeight(key, Number(e.target.value))}
+                  className="w-full accent-yellow-400"
+                />
+              </div>
+            ))}
           </div>
         </div>
 
@@ -352,6 +500,7 @@ export default function MatchPage() {
           <div className="mb-6 rounded-2xl border border-white/10 bg-white/[0.04] px-5 py-4 text-sm text-text-muted">
             Matching based on:{" "}
             <span className="font-semibold text-text-light">{activeSourceLabel}</span>
+            {isOrganizer && currentEventId ? " (latest event)" : ""}
           </div>
         )}
 
@@ -363,13 +512,13 @@ export default function MatchPage() {
 
         {loading && (
           <div className="py-12 text-center text-text-muted">
-            Finding your best matches...
+            Finding your best weighted matches...
           </div>
         )}
 
         {!loading && matches.length > 0 && (
           <div className="grid gap-6 lg:grid-cols-2">
-            {matches.map((match, index) => (
+            {(matches as MatchItem[]).map((match, index) => (
               <div
                 key={`${index}-${match.score}`}
                 className={`relative overflow-hidden rounded-2xl border bg-white/[0.05] backdrop-blur-xl ${
@@ -387,7 +536,7 @@ export default function MatchPage() {
                 <div className="flex items-center justify-between gap-4 border-b border-white/10 bg-dark-base px-6 py-4">
                   <div>
                     <p className="text-sm uppercase tracking-[0.24em] text-text-muted">
-                      {match.quality} Match
+                      Weighted Match
                     </p>
                     <p className="text-4xl font-bold text-accent-orange">
                       {match.score}%
@@ -395,53 +544,83 @@ export default function MatchPage() {
                   </div>
 
                   <p className="text-right text-xs uppercase tracking-[0.24em] text-text-muted">
-                    {match.matchedFactors.length > 0
-                      ? match.matchedFactors
-                          .map((factor) => factor.charAt(0).toUpperCase() + factor.slice(1))
-                          .join(" • ")
-                      : "No strong factors yet"}
+                    {match.reasons?.length
+                      ? match.reasons.slice(0, 2).join(" • ")
+                      : "Needs review"}
                   </p>
                 </div>
 
                 <div className="space-y-4 p-6">
                   {isOrganizer ? (
-                    <SponsorCard
-                      sponsor={(match as SponsorMatchResult).sponsor}
-                      matchScore={match.score}
-                    />
+                    <SponsorCard sponsor={match.sponsor} matchScore={match.score} />
                   ) : (
-                    <EventCard
-                      event={(match as EventMatchResult).event}
-                      matchScore={match.score}
-                    />
+                    <EventCard event={match.event} matchScore={match.score} />
                   )}
 
                   <div className="rounded-2xl bg-white/5 p-4">
                     <p className="mb-2 text-sm font-semibold text-text-light">
                       Why this match?
                     </p>
-                    <p className="text-sm text-text-muted">{match.reason}</p>
+
+                    {match.reasons?.length ? (
+                      <ul className="space-y-2 text-sm text-text-muted">
+                        {match.reasons.map((reason, idx) => (
+                          <li key={idx}>• {reason}</li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="text-sm text-text-muted">
+                        This result is based on your current weight distribution.
+                      </p>
+                    )}
+
+                    {match.weakPoints?.length ? (
+                      <div className="mt-4 rounded-xl border border-white/10 bg-white/[0.03] p-3">
+                        <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-text-light">
+                          Weaker Areas
+                        </p>
+                        <ul className="space-y-1 text-sm text-text-muted">
+                          {match.weakPoints.map((point, idx) => (
+                            <li key={idx}>• {point}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null}
                   </div>
 
-                  <div className="grid grid-cols-3 gap-3 text-sm text-text-muted">
+                  <div className="grid grid-cols-2 gap-3 text-sm text-text-muted md:grid-cols-5">
                     <div className="rounded-2xl bg-white/5 p-3">
                       <p className="mb-1 text-xs uppercase">Category</p>
                       <p className="font-semibold text-text-light">
-                        {match.breakdown.categoryScore}%
+                        {match.breakdown.categoryScore ?? 0}%
                       </p>
                     </div>
 
                     <div className="rounded-2xl bg-white/5 p-3">
                       <p className="mb-1 text-xs uppercase">Audience</p>
                       <p className="font-semibold text-text-light">
-                        {match.breakdown.audienceScore}%
+                        {match.breakdown.audienceScore ?? 0}%
                       </p>
                     </div>
 
                     <div className="rounded-2xl bg-white/5 p-3">
                       <p className="mb-1 text-xs uppercase">Location</p>
                       <p className="font-semibold text-text-light">
-                        {match.breakdown.locationScore}%
+                        {match.breakdown.locationScore ?? 0}%
+                      </p>
+                    </div>
+
+                    <div className="rounded-2xl bg-white/5 p-3">
+                      <p className="mb-1 text-xs uppercase">Budget</p>
+                      <p className="font-semibold text-text-light">
+                        {match.breakdown.budgetScore ?? 0}%
+                      </p>
+                    </div>
+
+                    <div className="rounded-2xl bg-white/5 p-3">
+                      <p className="mb-1 text-xs uppercase">Deliverables</p>
+                      <p className="font-semibold text-text-light">
+                        {match.breakdown.deliverablesScore ?? 0}%
                       </p>
                     </div>
                   </div>
@@ -465,8 +644,8 @@ export default function MatchPage() {
             title="No matches found"
             description={
               isOrganizer
-                ? "Create an event with clear category, audience, and location details so we can recommend relevant sponsors."
-                : "Complete your sponsor profile to receive top event recommendations."
+                ? "Try improving your event details or adjusting your weight mix to discover more relevant sponsors."
+                : "Try adjusting your weight mix or improving your sponsor profile to discover stronger event matches."
             }
             actionLabel={isOrganizer ? "Create Event" : "Complete Profile"}
             onAction={() => router.push(isOrganizer ? "/events/create" : "/settings")}

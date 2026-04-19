@@ -4,6 +4,7 @@ import mongoose from "mongoose";
 import { connectDB } from "@/lib/db";
 import { EventModel } from "@/lib/models/Event";
 import { getCurrentUser } from "@/lib/current-user";
+import { EventDeliverable } from "@/types/event";
 
 type UploadedMedia = {
   url: string;
@@ -13,9 +14,27 @@ type UploadedMedia = {
   uploadedAt?: string | Date;
 };
 
+const ALLOWED_DELIVERABLES: EventDeliverable[] = [
+  "STAGE_BRANDING",
+  "STALL_SPACE",
+  "SOCIAL_MEDIA_PROMOTION",
+  "PRODUCT_DISPLAY",
+  "ANNOUNCEMENTS",
+  "EMAIL_PROMOTION",
+  "TITLE_SPONSORSHIP",
+  "CO_BRANDING",
+];
+
 function normalizeStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
-  return value.map((item) => String(item).trim()).filter(Boolean);
+  return [...new Set(value.map((item) => String(item).trim()).filter(Boolean))];
+}
+
+function normalizeDeliverables(value: unknown): EventDeliverable[] {
+  const items = normalizeStringArray(value);
+  return items.filter((item): item is EventDeliverable =>
+    ALLOWED_DELIVERABLES.includes(item as EventDeliverable)
+  );
 }
 
 function normalizeMediaArray(value: unknown): UploadedMedia[] {
@@ -90,8 +109,7 @@ export async function GET(
     }
 
     const isPast = event.endDate ? new Date(event.endDate) < today : false;
-    const isActive =
-      event.status === "PUBLISHED" || event.status === "ONGOING";
+    const isActive = event.status === "PUBLISHED" || event.status === "ONGOING";
 
     return NextResponse.json(
       {
@@ -167,50 +185,68 @@ export async function PATCH(
 
     const title =
       typeof body.title === "string" ? body.title.trim() : existingEvent.title;
+
     const description =
       typeof body.description === "string"
         ? body.description.trim()
         : existingEvent.description;
+
     const categories =
       body.categories !== undefined
         ? normalizeStringArray(body.categories)
         : existingEvent.categories;
+
     const targetAudience =
       body.targetAudience !== undefined
         ? normalizeStringArray(body.targetAudience)
         : existingEvent.targetAudience;
+
+    const providedDeliverables =
+      body.providedDeliverables !== undefined
+        ? normalizeDeliverables(body.providedDeliverables)
+        : existingEvent.providedDeliverables || [];
+
     const location =
       typeof body.location === "string"
         ? body.location.trim()
         : existingEvent.location;
+
     const budget =
       body.budget !== undefined ? Number(body.budget) : existingEvent.budget;
+
     const attendeeCount =
       body.attendeeCount !== undefined
         ? Number(body.attendeeCount)
         : existingEvent.attendeeCount;
+
     const eventType =
       typeof body.eventType === "string" && body.eventType.trim()
         ? body.eventType.trim()
         : existingEvent.eventType;
+
     const startDate =
       body.startDate !== undefined
         ? new Date(body.startDate)
         : existingEvent.startDate;
+
     const endDate =
       body.endDate !== undefined ? new Date(body.endDate) : existingEvent.endDate;
+
     const coverImage =
       typeof body.coverImage === "string"
         ? body.coverImage.trim()
         : existingEvent.coverImage;
+
     const venueImages =
       body.venueImages !== undefined
         ? normalizeMediaArray(body.venueImages)
         : existingEvent.venueImages;
+
     const pastEventMedia =
       body.pastEventMedia !== undefined
         ? normalizeMediaArray(body.pastEventMedia)
         : existingEvent.pastEventMedia;
+
     const status =
       body.status === "DRAFT" ||
       body.status === "PUBLISHED" ||
@@ -285,6 +321,7 @@ export async function PATCH(
     existingEvent.description = description;
     existingEvent.categories = categories;
     existingEvent.targetAudience = targetAudience;
+    existingEvent.providedDeliverables = providedDeliverables;
     existingEvent.location = location;
     existingEvent.budget = Number(budget);
     existingEvent.attendeeCount = Number(attendeeCount);

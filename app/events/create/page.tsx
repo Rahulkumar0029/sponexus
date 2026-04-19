@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/Button";
 import { useAuth } from "@/hooks/useAuth";
+import { EventDeliverable } from "@/types/event";
 
 type MediaType = "image" | "video";
 
@@ -23,6 +24,17 @@ const EVENT_TYPES = [
   "MEETUP",
   "OTHER",
 ] as const;
+
+const DELIVERABLE_OPTIONS: { value: EventDeliverable; label: string }[] = [
+  { value: "STAGE_BRANDING", label: "Stage Branding" },
+  { value: "STALL_SPACE", label: "Stall Space" },
+  { value: "SOCIAL_MEDIA_PROMOTION", label: "Social Media Promotion" },
+  { value: "PRODUCT_DISPLAY", label: "Product Display" },
+  { value: "ANNOUNCEMENTS", label: "Announcements / Stage Mentions" },
+  { value: "EMAIL_PROMOTION", label: "Email Promotion" },
+  { value: "TITLE_SPONSORSHIP", label: "Title Sponsorship" },
+  { value: "CO_BRANDING", label: "Co-Branding" },
+];
 
 function splitCommaValues(value: string): string[] {
   return value
@@ -80,6 +92,8 @@ export default function CreateEventPage() {
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
 
+  const [providedDeliverables, setProvidedDeliverables] = useState<EventDeliverable[]>([]);
+
   const [coverImage, setCoverImage] = useState("");
   const [venueImagesInput, setVenueImagesInput] = useState("");
   const [pastEventMediaInput, setPastEventMediaInput] = useState("");
@@ -110,6 +124,14 @@ export default function CreateEventPage() {
     const dd = String(now.getDate()).padStart(2, "0");
     return `${yyyy}-${mm}-${dd}`;
   }, []);
+
+  const toggleDeliverable = (value: EventDeliverable) => {
+    setProvidedDeliverables((prev) =>
+      prev.includes(value)
+        ? prev.filter((item) => item !== value)
+        : [...prev, value]
+    );
+  };
 
   const validateForm = () => {
     if (!user) {
@@ -184,6 +206,7 @@ export default function CreateEventPage() {
         endDate,
         attendeeCount: Number(attendeeCount),
         eventType,
+        providedDeliverables,
         coverImage: coverImage.trim(),
         venueImages,
         pastEventMedia,
@@ -218,7 +241,7 @@ export default function CreateEventPage() {
       }
 
       router.push("/dashboard/organizer");
-    } catch (err) {
+    } catch {
       setError("Something went wrong while creating the event.");
     } finally {
       setSubmitting(false);
@@ -279,7 +302,8 @@ export default function CreateEventPage() {
           <h1 className="mt-2 text-3xl font-bold sm:text-4xl">Create Event</h1>
           <p className="mt-3 max-w-2xl text-text-muted">
             Build a sponsor-ready event listing with clear details, audience,
-            budget, and trust media so the right sponsors can evaluate fit fast.
+            budget, trust media, and clear sponsor deliverables so the right brands
+            can evaluate fit fast.
           </p>
         </div>
 
@@ -444,6 +468,43 @@ export default function CreateEventPage() {
                   className="w-full rounded-2xl border border-white/10 bg-dark-layer px-4 py-3 text-text-light outline-none transition focus:border-accent-orange"
                 />
               </div>
+            </div>
+          </section>
+
+          <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-6 sm:p-8">
+            <h2 className="text-xl font-semibold">Sponsor Deliverables</h2>
+            <p className="mt-3 max-w-2xl text-sm text-text-muted">
+              Select what this event can realistically offer to sponsors. These
+              deliverables will directly improve sponsor matching quality.
+            </p>
+
+            <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+              {DELIVERABLE_OPTIONS.map((item) => {
+                const checked = providedDeliverables.includes(item.value);
+
+                return (
+                  <label
+                    key={item.value}
+                    className={`cursor-pointer rounded-2xl border px-4 py-4 text-sm transition ${
+                      checked
+                        ? "border-accent-orange bg-accent-orange/10 text-white"
+                        : "border-white/10 bg-dark-layer text-text-muted hover:border-white/20"
+                    }`}
+                  >
+                    <div className="flex items-start gap-3">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggleDeliverable(item.value)}
+                        className="mt-1 h-4 w-4 accent-yellow-400"
+                      />
+                      <div>
+                        <p className="font-medium text-text-light">{item.label}</p>
+                      </div>
+                    </div>
+                  </label>
+                );
+              })}
             </div>
           </section>
 
