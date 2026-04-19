@@ -40,6 +40,7 @@ export interface IEvent {
   eventType: EventCategory;
 
   image?: string;
+  coverImage?: string;
   status: EventStatus;
 
   providedDeliverables?: EventDeliverable[];
@@ -62,6 +63,7 @@ export interface CreateEventInput {
   attendeeCount: number;
   eventType: EventCategory;
   image?: string;
+  coverImage?: string;
 
   providedDeliverables?: EventDeliverable[];
 }

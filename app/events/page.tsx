@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { EventCard } from "@/components/EventCard";
 import { Button } from "@/components/Button";
 import { useAuth } from "@/hooks/useAuth";
@@ -23,7 +22,6 @@ type ApiResponse = {
 };
 
 export default function EventsPage() {
-  const router = useRouter();
   const { user, loading: authLoading } = useAuth();
 
   const [events, setEvents] = useState<Event[]>([]);
@@ -51,7 +49,7 @@ export default function EventsPage() {
         }
 
         setEvents(data.events || []);
-      } catch (err) {
+      } catch {
         setError("Failed to load events");
       } finally {
         setLoading(false);
@@ -89,7 +87,6 @@ export default function EventsPage() {
   return (
     <div className="min-h-screen px-4 py-12">
       <div className="mx-auto max-w-7xl">
-        {/* Header */}
         <div className="mb-10 flex flex-col gap-6 md:flex-row md:items-center md:justify-between">
           <div>
             <h1 className="text-4xl font-bold text-white">{getTitle()}</h1>
@@ -117,12 +114,8 @@ export default function EventsPage() {
           </div>
         </div>
 
-        {/* Error */}
-        {error && (
-          <div className="mb-6 text-center text-red-400">{error}</div>
-        )}
+        {error && <div className="mb-6 text-center text-red-400">{error}</div>}
 
-        {/* Events */}
         {events.length > 0 ? (
           <div className="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
             {events.map((event) => (
@@ -130,17 +123,16 @@ export default function EventsPage() {
             ))}
           </div>
         ) : (
-          <div className="text-center text-text-muted py-20">
+          <div className="py-20 text-center text-text-muted">
             {isOrganizer
               ? "You haven’t created any events yet."
               : "No events available right now."}
           </div>
         )}
 
-        {/* Public CTA */}
         {!user && events.length > 0 && (
           <div className="mt-12 text-center">
-            <p className="text-text-muted mb-4">
+            <p className="mb-4 text-text-muted">
               Login to explore all events and connect with sponsors.
             </p>
             <Link href="/login?redirect=/events">

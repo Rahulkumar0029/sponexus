@@ -1,15 +1,11 @@
 "use client";
 
 import { useCallback, useState } from "react";
-import { EventMatchResult, SponsorMatchResult } from "@/types/match";
-
-export interface MatchWeights {
-  category: number;
-  audience: number;
-  location: number;
-  budget: number;
-  deliverables: number;
-}
+import {
+  EventMatchResult,
+  SponsorMatchResult,
+  MatchWeights,
+} from "@/types/match";
 
 interface FindMatchesParams {
   sponsorId?: string;

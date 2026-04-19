@@ -6,12 +6,6 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Button } from "@/components/Button";
 import { useAuth } from "@/hooks/useAuth";
-import { Event } from "@/types/event";
-
-type EventDetailResponse = Event & {
-  isPast?: boolean;
-  isActive?: boolean;
-};
 
 type MediaItem = {
   url: string;
@@ -21,13 +15,45 @@ type MediaItem = {
   uploadedAt?: string;
 };
 
+type OrganizerInfo =
+  | string
+  | {
+      _id?: string;
+      firstName?: string;
+      lastName?: string;
+      companyName?: string;
+    };
+
+type EventDetail = {
+  _id?: string;
+  title?: string;
+  description?: string;
+  organizerId?: OrganizerInfo;
+  categories?: string[];
+  targetAudience?: string[];
+  location?: string;
+  budget?: number;
+  startDate?: string;
+  endDate?: string;
+  attendeeCount?: number;
+  eventType?: string;
+  image?: string;
+  coverImage?: string;
+  status?: string;
+  venueImages?: MediaItem[];
+  pastEventMedia?: MediaItem[];
+  providedDeliverables?: string[];
+  isPast?: boolean;
+  isActive?: boolean;
+};
+
 export default function EventDetailPage() {
   const params = useParams();
   const router = useRouter();
   const { user, loading: authLoading, isAuthenticated } = useAuth();
 
   const eventId = typeof params?.id === "string" ? params.id : "";
-  const [event, setEvent] = useState<EventDetailResponse | null>(null);
+  const [event, setEvent] = useState<EventDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
   const [error, setError] = useState("");
@@ -75,7 +101,7 @@ export default function EventDetailPage() {
     const organizer =
       typeof event.organizerId === "string"
         ? event.organizerId
-        : (event.organizerId as any)?._id;
+        : event.organizerId?._id;
 
     return organizer === user._id;
   }, [user, event]);
@@ -85,7 +111,7 @@ export default function EventDetailPage() {
 
     if (typeof event.organizerId === "string") return "Organizer";
 
-    const organizer = event.organizerId as any;
+    const organizer = event.organizerId;
     const firstName = organizer?.firstName || "";
     const lastName = organizer?.lastName || "";
     const companyName = organizer?.companyName || "";
@@ -131,17 +157,18 @@ export default function EventDetailPage() {
     return event.attendeeCount.toLocaleString("en-IN");
   }, [event]);
 
-  const categories = Array.isArray(event?.categories) ? event!.categories : [];
-  const targetAudience = Array.isArray(event?.targetAudience)
-    ? event!.targetAudience
+  const categories = Array.isArray(event?.categories) ? event.categories : [];
+  const targetAudience = Array.isArray(event?.targetAudience) ? event.targetAudience : [];
+  const providedDeliverables = Array.isArray(event?.providedDeliverables)
+    ? event.providedDeliverables
     : [];
 
   const venueImages: MediaItem[] = Array.isArray(event?.venueImages)
-    ? (event!.venueImages as MediaItem[])
+    ? event.venueImages
     : [];
 
   const pastEventMedia: MediaItem[] = Array.isArray(event?.pastEventMedia)
-    ? (event!.pastEventMedia as MediaItem[])
+    ? event.pastEventMedia
     : [];
 
   const handleSponsorInterest = async () => {
@@ -157,7 +184,6 @@ export default function EventDetailPage() {
     try {
       setActionLoading(true);
 
-      // Temporary CTA flow until direct deal initiation / sponsor-now flow is finalized
       router.push("/match");
     } finally {
       setActionLoading(false);
@@ -335,6 +361,26 @@ export default function EventDetailPage() {
                 )}
               </div>
             </section>
+
+            {providedDeliverables.length > 0 && (
+              <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-6 sm:p-8">
+                <h2 className="text-xl font-semibold">Sponsor Deliverables</h2>
+                <p className="mt-2 text-sm text-text-muted">
+                  These are the sponsorship benefits or deliverables available for brand partners.
+                </p>
+
+                <div className="mt-5 flex flex-wrap gap-3">
+                  {providedDeliverables.map((deliverable) => (
+                    <span
+                      key={deliverable}
+                      className="rounded-full bg-white/5 px-4 py-2 text-sm text-text-light"
+                    >
+                      {deliverable.split("_").join(" ")}
+                    </span>
+                  ))}
+                </div>
+              </section>
+            )}
 
             {venueImages.length > 0 && (
               <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-6 sm:p-8">

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
+export const dynamic = "force-dynamic";
 import { connectDB } from "@/lib/db";
 import Sponsorship from "@/lib/models/Sponsorship";
 import Sponsor from "@/lib/models/Sponsor";

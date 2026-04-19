@@ -8,7 +8,8 @@ import { Button } from "@/components/Button";
 import { EmptyState } from "@/components/EmptyState";
 import { EventCard } from "@/components/EventCard";
 import { SponsorCard } from "@/components/SponsorCard";
-import { useMatch, MatchWeights } from "@/hooks/useMatch";
+import { MatchWeights } from "@/types/match";
+import { useMatch } from "@/hooks/useMatch";
 
 type CurrentUser = {
   _id?: string;
@@ -281,7 +282,7 @@ export default function MatchPage() {
   };
 
   const updateWeight = (key: keyof MatchWeights, value: number) => {
-    setWeights((prev) => ({
+    setWeights((prev: MatchWeights) => ({
       ...prev,
       [key]: clampWeight(value),
     }));
@@ -472,7 +473,7 @@ export default function MatchPage() {
               ] as [keyof MatchWeights, string][]
             ).map(([key, label]) => (
               <div
-                key={key}
+              key={String(key)}
                 className="rounded-2xl border border-white/10 bg-white/[0.04] p-4"
               >
                 <div className="mb-3 flex items-center justify-between gap-3">

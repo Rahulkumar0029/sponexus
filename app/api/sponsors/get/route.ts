@@ -3,6 +3,7 @@ import { connectDB } from "@/lib/db";
 import Sponsor from "@/lib/models/Sponsor";
 import User from "@/lib/models/User";
 import { getCurrentUser } from "@/lib/current-user";
+export const dynamic = "force-dynamic";
 
 export async function GET(request: NextRequest) {
   try {

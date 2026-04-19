@@ -97,7 +97,7 @@ function getStatusClasses(status?: SponsorshipStatus) {
 
 export default function SponsorshipsPage() {
   const router = useRouter();
-  const { user, loading: authLoading } = useAuth();
+  const { user } = useAuth();
 
   const [items, setItems] = useState<SponsorshipItem[]>([]);
   const [mode, setMode] = useState<
@@ -175,7 +175,7 @@ export default function SponsorshipsPage() {
 
   const isSponsorView = mode === "own_sponsorships";
   const isOrganizerView = mode === "organizer_browse";
-  const isPublicView = mode === "public_preview";
+  
 
   const pageTitle = useMemo(() => {
     if (isSponsorView) return "My Sponsorships";

@@ -47,7 +47,7 @@ type SponsorsResponse = {
 
 export default function SponsorsPage() {
   const router = useRouter();
-  const { user, loading: authLoading } = useAuth();
+  const { loading: authLoading } = useAuth();
 
   const [items, setItems] = useState<SponsorItem[]>([]);
   const [mode, setMode] = useState<
@@ -121,7 +121,7 @@ export default function SponsorsPage() {
     fetchSponsors();
   }, [fetchSponsors]);
 
-  const isPublicView = mode === "public_preview";
+ 
   const isOrganizerView = mode === "organizer_browse";
   const isOwnProfileView = mode === "own_profile";
 

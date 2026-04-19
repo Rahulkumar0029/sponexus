@@ -1,60 +1,62 @@
-'use client';
+"use client";
 
-import { useState, useEffect } from 'react';
-import { useSearchParams, useRouter } from 'next/navigation';
-import Link from 'next/link';
-import { Input } from '@/components/Input';
-import { Button } from '@/components/Button';
+import { Suspense, useEffect, useState } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
+import Link from "next/link";
+import { Input } from "@/components/Input";
+import { Button } from "@/components/Button";
 
-export default function ResetPasswordPage() {
+function ResetPasswordContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
 
-  const token = searchParams.get('token');
+  const token = searchParams.get("token");
 
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [loading, setLoading] = useState(false);
-  const [message, setMessage] = useState('');
-  const [error, setError] = useState('');
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
 
   useEffect(() => {
     if (!token) {
-      setError('Invalid or missing reset token. Please use the latest reset link from your email.');
+      setError(
+        "Invalid or missing reset token. Please use the latest reset link from your email."
+      );
     }
   }, [token]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
-    setMessage('');
+    setError("");
+    setMessage("");
 
     if (!token) {
-      setError('Invalid or missing reset token. Please request a new reset link.');
+      setError("Invalid or missing reset token. Please request a new reset link.");
       return;
     }
 
     if (!password || !confirmPassword) {
-      setError('All fields are required');
+      setError("All fields are required");
       return;
     }
 
     if (password.length < 8) {
-      setError('Password must be at least 8 characters');
+      setError("Password must be at least 8 characters");
       return;
     }
 
     if (password !== confirmPassword) {
-      setError('Passwords do not match');
+      setError("Passwords do not match");
       return;
     }
 
     setLoading(true);
 
     try {
-      const res = await fetch('/api/auth/reset-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+      const res = await fetch("/api/auth/reset-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           token,
           password,
@@ -65,37 +67,35 @@ export default function ResetPasswordPage() {
       const data = await res.json();
 
       if (!res.ok) {
-        setError(data.message || 'Something went wrong');
+        setError(data.message || "Something went wrong");
       } else {
-        setMessage('Password reset successful! Redirecting to login...');
+        setMessage("Password reset successful! Redirecting to login...");
 
         setTimeout(() => {
-          router.push('/login');
+          router.push("/login");
         }, 2000);
       }
     } catch {
-      setError('Server error. Try again.');
+      setError("Server error. Try again.");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="relative min-h-screen flex items-center justify-center px-4">
+    <div className="relative flex min-h-screen items-center justify-center px-4">
       <div className="absolute inset-0 -z-20 bg-[linear-gradient(135deg,#020617_0%,#07152f_45%,#020617_100%)]" />
 
-      <div className="absolute inset-0 -z-10 pointer-events-none">
-        <div className="absolute top-20 left-10 h-72 w-72 rounded-full bg-blue-500/10 blur-3xl" />
-        <div className="absolute top-1/3 right-10 h-80 w-80 rounded-full bg-amber-500/10 blur-3xl" />
+      <div className="pointer-events-none absolute inset-0 -z-10">
+        <div className="absolute left-10 top-20 h-72 w-72 rounded-full bg-blue-500/10 blur-3xl" />
+        <div className="absolute right-10 top-1/3 h-80 w-80 rounded-full bg-amber-500/10 blur-3xl" />
       </div>
 
       <div className="w-full max-w-md">
         <div className="rounded-[28px] border border-white/10 bg-white/[0.05] p-8 shadow-[0_0_50px_rgba(245,158,11,0.08)] backdrop-blur-xl sm:p-10">
           <div className="mb-8 text-center">
             <h1 className="text-3xl font-bold text-white">Reset Password</h1>
-            <p className="mt-2 text-sm text-text-muted">
-              Enter your new password
-            </p>
+            <p className="mt-2 text-sm text-text-muted">Enter your new password</p>
           </div>
 
           {error && (
@@ -138,7 +138,7 @@ export default function ResetPasswordPage() {
                 loading={loading}
                 disabled={!token}
               >
-                {loading ? 'Resetting...' : 'Reset Password'}
+                {loading ? "Resetting..." : "Reset Password"}
               </Button>
             </form>
           )}
@@ -154,5 +154,19 @@ export default function ResetPasswordPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function ResetPasswordPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center bg-dark-base px-4 text-text-light">
+          Loading reset password page...
+        </div>
+      }
+    >
+      <ResetPasswordContent />
+    </Suspense>
   );
 }

@@ -7,6 +7,7 @@ import Link from "next/link";
 import { Button } from "@/components/Button";
 import { EventCard } from "@/components/EventCard";
 import { EmptyState } from "@/components/EmptyState";
+import { SponsorshipCard } from "@/components/SponsorshipCard";
 import { useAuth } from "@/hooks/useAuth";
 import { useMatch } from "@/hooks/useMatch";
 
@@ -90,23 +91,6 @@ type SponsorshipListResponse = {
   };
   message?: string;
 };
-
-function formatCurrency(value?: number) {
-  if (typeof value !== "number" || Number.isNaN(value)) return "Not specified";
-  return `₹${value.toLocaleString("en-IN")}`;
-}
-
-function formatDate(value?: string | null) {
-  if (!value) return "No expiry";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "No expiry";
-
-  return date.toLocaleDateString("en-IN", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
-}
 
 export default function SponsorDashboardPage() {
   const router = useRouter();
@@ -236,7 +220,7 @@ export default function SponsorDashboardPage() {
       if (!user || user.role !== "SPONSOR") return;
       if (!isProfileComplete) return;
 
-      const userId = user._id || user.id;
+      const userId = user._id;
       if (!userId) return;
 
       try {
@@ -344,7 +328,7 @@ export default function SponsorDashboardPage() {
           </div>
         </div>
 
-        <div className="mb-12 grid grid-cols-1 gap-6 md:grid-cols-3">
+        <div className="mb-12 grid grid-cols-1 gap-6 md:grid-cols-4">
           <div className="rounded-[24px] border border-white/10 bg-white/[0.05] p-6 backdrop-blur-xl">
             <p className="text-sm text-text-muted">Profile Completion</p>
             <h3 className="mt-2 text-2xl font-semibold text-white">
@@ -362,6 +346,16 @@ export default function SponsorDashboardPage() {
             </h3>
             <p className="mt-3 text-sm text-text-muted">
               Your published and managed sponsorship opportunities inside Sponexus.
+            </p>
+          </div>
+
+          <div className="rounded-[24px] border border-white/10 bg-white/[0.05] p-6 backdrop-blur-xl">
+            <p className="text-sm text-text-muted">Active Sponsorships</p>
+            <h3 className="mt-2 text-2xl font-semibold text-white">
+              {postsLoading ? "..." : activePostCount}
+            </h3>
+            <p className="mt-3 text-sm text-text-muted">
+              Currently live sponsorship opportunities visible to organizers.
             </p>
           </div>
 
@@ -572,63 +566,14 @@ export default function SponsorDashboardPage() {
             </div>
           ) : sponsorshipPosts.length > 0 ? (
             <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
-              {sponsorshipPosts.map((post) => (
-                <div
-                  key={post._id}
-                  className="rounded-2xl border border-white/10 bg-white/5 p-5"
-                >
-                  <div className="flex items-start justify-between gap-4">
-                    <div>
-                      <h3 className="text-lg font-semibold text-white">
-                        {post.sponsorshipTitle || "Untitled Sponsorship"}
-                      </h3>
-                      <p className="mt-2 text-sm text-text-muted">
-                        {post.category || "No category"} •{" "}
-                        {post.locationPreference || "No location"} •{" "}
-                        {formatCurrency(post.budget)}
-                      </p>
-                    </div>
-
-                    <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium uppercase tracking-wide text-text-light">
-                      {post.status || "active"}
-                    </span>
-                  </div>
-
-                  <p className="mt-4 text-sm leading-relaxed text-text-muted">
-                    {post.campaignGoal || "No campaign goal added yet."}
-                  </p>
-
-                  <div className="mt-5 grid grid-cols-2 gap-3 text-sm">
-                    <div className="rounded-xl bg-white/5 p-3">
-                      <p className="text-text-muted">Audience</p>
-                      <p className="mt-1 font-semibold text-white">
-                        {post.targetAudience || "Not added"}
-                      </p>
-                    </div>
-
-                    <div className="rounded-xl bg-white/5 p-3">
-                      <p className="text-text-muted">Expires</p>
-                      <p className="mt-1 font-semibold text-white">
-                        {formatDate(post.expiresAt)}
-                      </p>
-                    </div>
-                  </div>
-
-                  <div className="mt-5 flex flex-col gap-3 sm:flex-row">
-                    <Link href={`/sponsorships/${post._id}`} className="flex-1">
-                      <Button variant="secondary" fullWidth>
-                        View Details
-                      </Button>
-                    </Link>
-
-                    <Link href="/sponsorships/create" className="flex-1">
-                      <Button variant="primary" fullWidth>
-                        New Post
-                      </Button>
-                    </Link>
-                  </div>
-                </div>
-              ))}
+              {sponsorshipPosts.map((post) =>
+                post._id ? (
+                  <SponsorshipCard
+                    key={post._id}
+                    sponsorship={post as Required<SponsorshipItem>}
+                  />
+                ) : null
+              )}
             </div>
           ) : (
             <EmptyState
