@@ -1,76 +1,182 @@
-import mongoose from 'mongoose';
+import mongoose, { Schema, Types, model, models } from "mongoose";
 
-const dealSchema = new mongoose.Schema(
+export type DealStatus =
+  | "pending"
+  | "negotiating"
+  | "accepted"
+  | "rejected"
+  | "completed"
+  | "cancelled"
+  | "disputed";
+
+export type DealPaymentStatus = "unpaid" | "pending" | "paid";
+
+export interface IDeal extends mongoose.Document {
+  organizerId: Types.ObjectId;
+  sponsorId: Types.ObjectId;
+  eventId: Types.ObjectId;
+
+  title: string;
+  description: string;
+
+  proposedAmount: number;
+  finalAmount: number | null;
+
+  status: DealStatus;
+  paymentStatus: DealPaymentStatus;
+
+  message: string;
+  deliverables: string[];
+  notes: string;
+
+  createdBy: Types.ObjectId | null;
+  lastActionBy: Types.ObjectId | null;
+
+  disputeReason: string;
+  expiresAt: Date | null;
+
+  acceptedAt: Date | null;
+  rejectedAt: Date | null;
+  cancelledAt: Date | null;
+  completedAt: Date | null;
+
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+const dealSchema = new Schema<IDeal>(
   {
     organizerId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'User',
-      required: [true, 'Organizer is required'],
+      type: Schema.Types.ObjectId,
+      ref: "User",
+      required: [true, "Organizer is required"],
+      index: true,
     },
     sponsorId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'User',
-      required: [true, 'Sponsor is required'],
+      type: Schema.Types.ObjectId,
+      ref: "User",
+      required: [true, "Sponsor is required"],
+      index: true,
     },
     eventId: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: 'Event',
-      required: [true, 'Event is required'],
+      type: Schema.Types.ObjectId,
+      ref: "Event",
+      required: [true, "Event is required"],
+      index: true,
     },
 
-    // 🔥 Deal Info
     title: {
       type: String,
       trim: true,
-      default: '',
+      default: "",
+      maxlength: [200, "Title cannot exceed 200 characters"],
     },
     description: {
       type: String,
       trim: true,
-      default: '',
+      default: "",
+      maxlength: [5000, "Description cannot exceed 5000 characters"],
     },
 
-    // 💰 Financials
     proposedAmount: {
       type: Number,
-      required: [true, 'Proposed amount is required'],
-      min: [0, 'Amount must be >= 0'],
+      required: [true, "Proposed amount is required"],
+      min: [0, "Amount must be >= 0"],
     },
     finalAmount: {
       type: Number,
       default: null,
+      min: [0, "Final amount must be >= 0"],
     },
 
-    // 🔄 Deal Status
     status: {
       type: String,
       enum: [
-        'pending',
-        'negotiating',
-        'accepted',
-        'rejected',
-        'completed',
-        'cancelled',
+        "pending",
+        "negotiating",
+        "accepted",
+        "rejected",
+        "completed",
+        "cancelled",
+        "disputed",
       ],
-      default: 'pending',
+      default: "pending",
+      index: true,
     },
 
-    // 💳 Payment Status
     paymentStatus: {
       type: String,
-      enum: ['unpaid', 'pending', 'paid'],
-      default: 'unpaid',
+      enum: ["unpaid", "pending", "paid"],
+      default: "unpaid",
+      index: true,
     },
 
-    // 💬 Communication
     message: {
       type: String,
       trim: true,
-      default: '',
+      default: "",
+      maxlength: [3000, "Message cannot exceed 3000 characters"],
     },
 
-    // ⏳ Optional Expiry
+    deliverables: {
+      type: [String],
+      default: [],
+      validate: {
+        validator: function (value: string[]) {
+          return Array.isArray(value);
+        },
+        message: "Deliverables must be an array of strings",
+      },
+    },
+
+    notes: {
+      type: String,
+      trim: true,
+      default: "",
+      maxlength: [5000, "Notes cannot exceed 5000 characters"],
+    },
+
+    createdBy: {
+      type: Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+
+    lastActionBy: {
+      type: Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+
+    disputeReason: {
+      type: String,
+      trim: true,
+      default: "",
+      maxlength: [3000, "Dispute reason cannot exceed 3000 characters"],
+    },
+
     expiresAt: {
+      type: Date,
+      default: null,
+      index: true,
+    },
+
+    acceptedAt: {
+      type: Date,
+      default: null,
+    },
+
+    rejectedAt: {
+      type: Date,
+      default: null,
+    },
+
+    cancelledAt: {
+      type: Date,
+      default: null,
+    },
+
+    completedAt: {
       type: Date,
       default: null,
     },
@@ -80,11 +186,25 @@ const dealSchema = new mongoose.Schema(
   }
 );
 
-// 🔥 Indexing for performance
-dealSchema.index({ organizerId: 1 });
-dealSchema.index({ sponsorId: 1 });
-dealSchema.index({ eventId: 1 });
-dealSchema.index({ status: 1 });
+// Performance indexes
+dealSchema.index({ organizerId: 1, status: 1, updatedAt: -1 });
+dealSchema.index({ sponsorId: 1, status: 1, updatedAt: -1 });
+dealSchema.index({ eventId: 1, status: 1 });
+dealSchema.index({ createdAt: -1 });
+dealSchema.index({ updatedAt: -1 });
+
+// Prevent impossible final amount
+dealSchema.pre("save", function (next) {
+  if (this.finalAmount !== null && this.finalAmount < 0) {
+    return next(new Error("Final amount must be >= 0"));
+  }
+
+  if (this.status !== "disputed" && this.disputeReason) {
+    this.disputeReason = "";
+  }
+
+  next();
+});
 
 export const DealModel =
-  mongoose.models.Deal || mongoose.model('Deal', dealSchema);
+  (models.Deal as mongoose.Model<IDeal>) || model<IDeal>("Deal", dealSchema);

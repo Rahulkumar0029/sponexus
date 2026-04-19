@@ -56,7 +56,10 @@ export default function EventDetailPage() {
   const [event, setEvent] = useState<EventDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState(false);
+  const [dealAmount, setDealAmount] = useState("");
+  const [dealMessage, setDealMessage] = useState("");
   const [error, setError] = useState("");
+  const [dealError, setDealError] = useState("");
 
   useEffect(() => {
     const fetchEvent = async () => {
@@ -150,7 +153,11 @@ export default function EventDetailPage() {
   }, [event]);
 
   const formattedAttendees = useMemo(() => {
-    if (!event || typeof event.attendeeCount !== "number" || event.attendeeCount <= 0) {
+    if (
+      !event ||
+      typeof event.attendeeCount !== "number" ||
+      event.attendeeCount <= 0
+    ) {
       return "N/A";
     }
 
@@ -158,7 +165,9 @@ export default function EventDetailPage() {
   }, [event]);
 
   const categories = Array.isArray(event?.categories) ? event.categories : [];
-  const targetAudience = Array.isArray(event?.targetAudience) ? event.targetAudience : [];
+  const targetAudience = Array.isArray(event?.targetAudience)
+    ? event.targetAudience
+    : [];
   const providedDeliverables = Array.isArray(event?.providedDeliverables)
     ? event.providedDeliverables
     : [];
@@ -171,7 +180,7 @@ export default function EventDetailPage() {
     ? event.pastEventMedia
     : [];
 
-  const handleSponsorInterest = async () => {
+  const handleCreateDeal = async () => {
     if (!isAuthenticated) {
       router.push(`/login?redirect=/events/${eventId}`);
       return;
@@ -181,10 +190,63 @@ export default function EventDetailPage() {
       return;
     }
 
+    if (!event?._id || !user?._id) {
+      setDealError("Missing event or user details.");
+      return;
+    }
+
+    const organizerId =
+      typeof event.organizerId === "string"
+        ? event.organizerId
+        : event.organizerId?._id;
+
+    if (!organizerId) {
+      setDealError("Organizer information is missing.");
+      return;
+    }
+
+    const parsedAmount = Number(dealAmount);
+
+    if (Number.isNaN(parsedAmount) || parsedAmount <= 0) {
+      setDealError("Please enter a valid proposed amount.");
+      return;
+    }
+
+    if (!dealMessage.trim()) {
+      setDealError("Please write a proposal message.");
+      return;
+    }
+
     try {
       setActionLoading(true);
+      setDealError("");
 
-      router.push("/match");
+      const res = await fetch("/api/deals", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          organizerId,
+          sponsorId: user._id,
+          eventId: event._id,
+          title: `Sponsorship for ${event.title || "Event"}`,
+          description: event.description || "",
+          proposedAmount: parsedAmount,
+          message: dealMessage.trim(),
+          deliverables: [],
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || "Failed to create deal");
+      }
+
+      router.push(`/deals/${data.deal._id}`);
+    } catch (err: any) {
+      setDealError(err?.message || "Failed to create deal");
     } finally {
       setActionLoading(false);
     }
@@ -250,16 +312,41 @@ export default function EventDetailPage() {
                 </Button>
               </>
             ) : user?.role === "SPONSOR" ? (
-              <Button
-                variant="primary"
-                loading={actionLoading}
-                onClick={handleSponsorInterest}
-              >
-                {actionLoading ? "Opening..." : "Interested in This Event"}
-              </Button>
+              <div className="w-full max-w-md space-y-3 rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+                <input
+                  type="number"
+                  placeholder="Enter your proposed amount"
+                  value={dealAmount}
+                  onChange={(e) => setDealAmount(e.target.value)}
+                  className="w-full rounded-xl border border-white/10 bg-[#07152F]/80 px-4 py-3 text-white outline-none placeholder:text-[#94A3B8]"
+                />
+
+                <textarea
+                  placeholder="Write your proposal message"
+                  value={dealMessage}
+                  onChange={(e) => setDealMessage(e.target.value)}
+                  rows={4}
+                  className="w-full rounded-xl border border-white/10 bg-[#07152F]/80 px-4 py-3 text-white outline-none placeholder:text-[#94A3B8]"
+                />
+
+                {dealError ? (
+                  <p className="text-sm text-red-300">{dealError}</p>
+                ) : null}
+
+                <Button
+                  variant="primary"
+                  loading={actionLoading}
+                  onClick={handleCreateDeal}
+                  className="w-full"
+                >
+                  {actionLoading ? "Creating..." : "Start Deal"}
+                </Button>
+              </div>
             ) : (
               <Button asChild variant="primary">
-                <Link href={`/login?redirect=/events/${eventId}`}>Login to Continue</Link>
+                <Link href={`/login?redirect=/events/${eventId}`}>
+                  Login to Continue
+                </Link>
               </Button>
             )}
           </div>
@@ -498,16 +585,16 @@ export default function EventDetailPage() {
               <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-6">
                 <h2 className="text-lg font-semibold">Sponsor Action</h2>
                 <p className="mt-2 text-sm text-text-muted">
-                  Interested in this event? Continue to matching and next-step sponsor flow.
+                  Start a direct sponsorship discussion for this event from here.
                 </p>
                 <div className="mt-4">
                   <Button
                     variant="primary"
                     className="w-full"
                     loading={actionLoading}
-                    onClick={handleSponsorInterest}
+                    onClick={handleCreateDeal}
                   >
-                    {actionLoading ? "Opening..." : "Continue"}
+                    {actionLoading ? "Creating..." : "Start Deal"}
                   </Button>
                 </div>
               </section>
@@ -519,7 +606,9 @@ export default function EventDetailPage() {
                 </p>
                 <div className="mt-4">
                   <Button asChild variant="primary" className="w-full">
-                    <Link href={`/login?redirect=/events/${eventId}`}>Login as Sponsor</Link>
+                    <Link href={`/login?redirect=/events/${eventId}`}>
+                      Login as Sponsor
+                    </Link>
                   </Button>
                 </div>
               </section>

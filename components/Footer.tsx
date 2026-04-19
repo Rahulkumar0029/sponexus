@@ -1,24 +1,22 @@
-'use client';
+"use client";
 
-import Link from 'next/link';
+import Link from "next/link";
 
 export function Footer() {
   const currentYear = new Date().getFullYear();
 
   return (
-    <footer className="bg-dark-layer border-t border-white/10">
-      <div className="container-custom px-4 py-10">
-        {/* Main Footer */}
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-8 mb-8 items-start">
-          {/* Brand */}
+    <footer className="border-t border-white/10 bg-[#020617]">
+      <div className="container-custom px-4 py-14">
+        <div className="mb-10 grid grid-cols-1 gap-10 md:grid-cols-2 xl:grid-cols-5">
           <div className="md:col-span-2">
-            <h3 className="text-2xl font-bold gradient-text mb-3">Sponexus</h3>
-            <p className="text-text-muted text-sm mb-5 leading-relaxed max-w-sm">
-              The intelligent marketplace connecting event organizers with ideal sponsors.
-              Find perfect partnerships based on data, not guesswork.
+            <h3 className="mb-3 text-2xl font-bold gradient-text">Sponexus</h3>
+            <p className="max-w-md text-sm leading-relaxed text-text-muted">
+              Where sponsors and events find the right fit. Sponexus helps event
+              organizers and sponsors discover better partnership opportunities
+              through stronger visibility, smarter matching, and clearer intent.
             </p>
-
-            <div className="flex items-center gap-4 mt-2">
+<div className="flex items-center gap-4 mt-2">
               {/* Instagram */}
               <a
                 href="https://www.instagram.com/_sponexus/"
@@ -75,98 +73,135 @@ export function Footer() {
             </div>
           </div>
 
-          {/* Product */}
           <div>
-            <h4 className="text-text-light font-semibold mb-4">Product</h4>
+            <h4 className="mb-4 text-sm font-semibold uppercase tracking-[0.18em] text-white">
+              Platform
+            </h4>
             <ul className="space-y-3 text-sm">
               <li>
-                <Link href="/events" className="text-text-muted hover:text-accent-orange transition">
-                  Events
+                <Link
+                  href="/events"
+                  className="text-text-muted transition hover:text-[#FFB347]"
+                >
+                  Explore Events
                 </Link>
               </li>
               <li>
-                <Link href="/sponsors" className="text-text-muted hover:text-accent-orange transition">
-                  Sponsors
+                <Link
+                  href="/sponsors"
+                  className="text-text-muted transition hover:text-[#FFB347]"
+                >
+                  Explore Sponsors
                 </Link>
               </li>
               <li>
-                <Link href="/match" className="text-text-muted hover:text-accent-orange transition">
-                  Matching Engine
+                <Link
+                  href="/sponsorships"
+                  className="text-text-muted transition hover:text-[#FFB347]"
+                >
+                  Sponsorship Opportunities
                 </Link>
               </li>
               <li>
-                <Link href="/dashboard" className="text-text-muted hover:text-accent-orange transition">
-                  Dashboard
+                <Link
+                  href="/match"
+                  className="text-text-muted transition hover:text-[#FFB347]"
+                >
+                  Smart Matching
                 </Link>
               </li>
             </ul>
           </div>
 
-          {/* Company */}
           <div>
-            <h4 className="text-text-light font-semibold mb-4">Company</h4>
+            <h4 className="mb-4 text-sm font-semibold uppercase tracking-[0.18em] text-white">
+              Get Started
+            </h4>
             <ul className="space-y-3 text-sm">
               <li>
-                <Link href="/about" className="text-text-muted hover:text-accent-orange transition">
-                  About Us
+                <Link
+                  href="/register"
+                  className="text-text-muted transition hover:text-[#FFB347]"
+                >
+                  Join Sponexus
                 </Link>
               </li>
               <li>
-                <Link href="/blog" className="text-text-muted hover:text-accent-orange transition">
-                  Blog
+                <Link
+                  href="/login"
+                  className="text-text-muted transition hover:text-[#FFB347]"
+                >
+                  Login
                 </Link>
               </li>
               <li>
-                <Link href="/careers" className="text-text-muted hover:text-accent-orange transition">
-                  Careers
+                <Link
+                  href="/events/create"
+                  className="text-text-muted transition hover:text-[#FFB347]"
+                >
+                  Create Event
                 </Link>
               </li>
               <li>
-                <Link href="/legal" className="text-text-muted hover:text-accent-orange transition">
-                  Legal & Policies
+                <Link
+                  href="/sponsorships/create"
+                  className="text-text-muted transition hover:text-[#FFB347]"
+                >
+                  Create Sponsorship
                 </Link>
               </li>
             </ul>
           </div>
 
-          {/* Contact */}
           <div>
-            <h4 className="text-text-light font-semibold mb-4">Contact</h4>
-            <div className="space-y-3 text-sm">
-              <a
-                href="mailto:sponexus.team@gmail.com"
-                className="block text-text-muted hover:text-accent-orange transition"
-              >
-                📧 sponexus.team@gmail.com
-              </a>
-
-              <a
-                href="tel:+919876543210"
-                className="block text-text-muted hover:text-accent-orange transition"
-              >
-                📱 +91 98765 43210
-              </a>
-
-              <a
-                href="https://wa.me/919876543210"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-block mt-1 px-4 py-2 bg-green-500/10 border border-green-500/30 rounded-xl text-green-400 hover:bg-green-500/20 transition"
-              >
-                💬 WhatsApp Chat
-              </a>
-            </div>
+            <h4 className="mb-4 text-sm font-semibold uppercase tracking-[0.18em] text-white">
+              Company
+            </h4>
+            <ul className="space-y-3 text-sm">
+              <li>
+                <Link
+                  href="/about"
+                  className="text-text-muted transition hover:text-[#FFB347]"
+                >
+                  About Sponexus
+                </Link>
+              </li>
+              <li>
+                <a
+                  href="mailto:sponexus.team@gmail.com"
+                  className="text-text-muted transition hover:text-[#FFB347]"
+                >
+                  Contact Support
+                </a>
+              </li>
+              <li>
+                <Link
+                  href="/privacy"
+                  className="text-text-muted transition hover:text-[#FFB347]"
+                >
+                  Privacy Policy
+                </Link>
+              </li>
+              <li>
+                <Link
+                  href="/terms"
+                  className="text-text-muted transition hover:text-[#FFB347]"
+                >
+                  Terms of Use
+                </Link>
+              </li>
+            </ul>
           </div>
         </div>
 
-        {/* Bottom */}
+         {/* Bottom */}
         <div className="border-t border-white/10 pt-5 flex flex-col items-center gap-1 text-center">
           <p className="text-text-muted text-xs">
             © {currentYear} Sponexus. All rights reserved.
           </p>
 
           <p className="text-text-muted text-xs">
-            Connecting Sponsors &amp; Events with Smart Matching
+            Built for smarter sponsor–organizer partnerships.
           </p>
         </div>
       </div>

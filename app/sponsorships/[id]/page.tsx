@@ -65,6 +65,13 @@ type SponsorshipDetailResponse = {
   message?: string;
 };
 
+type OrganizerEvent = {
+  _id: string;
+  title: string;
+  location?: string;
+  startDate?: string;
+};
+
 function formatCurrency(value?: number) {
   if (typeof value !== "number" || Number.isNaN(value)) return "Not specified";
   return `₹${value.toLocaleString("en-IN")}`;
@@ -97,7 +104,7 @@ function getStatusClasses(status?: string) {
 export default function SponsorshipDetailPage() {
   const params = useParams();
   const router = useRouter();
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, isAuthenticated } = useAuth();
 
   const sponsorshipId = Array.isArray(params?.id) ? params.id[0] : params?.id;
 
@@ -107,6 +114,13 @@ export default function SponsorshipDetailPage() {
     "public_view"
   );
   const [item, setItem] = useState<SponsorshipDetail | null>(null);
+
+  const [events, setEvents] = useState<OrganizerEvent[]>([]);
+  const [selectedEvent, setSelectedEvent] = useState("");
+  const [dealAmount, setDealAmount] = useState("");
+  const [dealMessage, setDealMessage] = useState("");
+  const [dealLoading, setDealLoading] = useState(false);
+  const [dealError, setDealError] = useState("");
 
   useEffect(() => {
     const loadSponsorship = async () => {
@@ -145,6 +159,28 @@ export default function SponsorshipDetailPage() {
     loadSponsorship();
   }, [sponsorshipId]);
 
+  useEffect(() => {
+    const loadEvents = async () => {
+      if (!user || user.role !== "ORGANIZER") return;
+
+      try {
+        const res = await fetch("/api/events/my", {
+          cache: "no-store",
+        });
+
+        const data = await res.json();
+
+        if (res.ok && data.success) {
+          setEvents(Array.isArray(data.events) ? data.events : []);
+        }
+      } catch {
+        setEvents([]);
+      }
+    };
+
+    loadEvents();
+  }, [user]);
+
   const sponsorProfile = item?.sponsorProfile || null;
 
   const pageTitle = useMemo(() => {
@@ -174,6 +210,73 @@ export default function SponsorshipDetailPage() {
   ];
 
   const visibleActivationItems = activationItems.filter((entry) => entry.value);
+
+  const handleCreateDeal = async () => {
+    if (!isAuthenticated) {
+      router.push(`/login?redirect=/sponsorships/${sponsorshipId}`);
+      return;
+    }
+
+    if (user?.role !== "ORGANIZER") {
+      return;
+    }
+
+    if (!item?._id || !user?._id || !item.sponsorOwnerId) {
+      setDealError("Missing sponsorship or user details.");
+      return;
+    }
+
+    if (!selectedEvent) {
+      setDealError("Please select your event.");
+      return;
+    }
+
+    const parsedAmount = Number(dealAmount);
+
+    if (Number.isNaN(parsedAmount) || parsedAmount <= 0) {
+      setDealError("Please enter a valid proposed amount.");
+      return;
+    }
+
+    if (!dealMessage.trim()) {
+      setDealError("Please write a proposal message.");
+      return;
+    }
+
+    try {
+      setDealLoading(true);
+      setDealError("");
+
+      const res = await fetch("/api/deals", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          organizerId: user._id,
+          sponsorId: item.sponsorOwnerId,
+          eventId: selectedEvent,
+          title: item.sponsorshipTitle || "Sponsorship Deal",
+          description: item.campaignGoal || item.customMessage || "",
+          proposedAmount: parsedAmount,
+          message: dealMessage.trim(),
+          deliverables: [],
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || "Failed to create deal");
+      }
+
+      router.push(`/deals/${data.deal._id}`);
+    } catch (err: any) {
+      setDealError(err?.message || "Failed to create deal");
+    } finally {
+      setDealLoading(false);
+    }
+  };
 
   if (loading || authLoading) {
     return (
@@ -244,14 +347,49 @@ export default function SponsorshipDetailPage() {
                     </Link>
                   </>
                 ) : mode === "organizer_view" ? (
-                  <>
-                    <Link href="/sponsorships">
-                      <Button variant="secondary">Browse More</Button>
-                    </Link>
-                    <Link href="/match">
-                      <Button variant="primary">View Matches</Button>
-                    </Link>
-                  </>
+                  <div className="w-full max-w-md space-y-3 rounded-2xl border border-white/10 bg-white/[0.04] p-4">
+                    <select
+                      value={selectedEvent}
+                      onChange={(e) => setSelectedEvent(e.target.value)}
+                      className="w-full rounded-xl border border-white/10 bg-[#07152F]/80 px-4 py-3 text-white outline-none"
+                    >
+                      <option value="">Select your event</option>
+                      {events.map((ev) => (
+                        <option key={ev._id} value={ev._id}>
+                          {ev.title}
+                        </option>
+                      ))}
+                    </select>
+
+                    <input
+                      type="number"
+                      placeholder="Enter your offer amount"
+                      value={dealAmount}
+                      onChange={(e) => setDealAmount(e.target.value)}
+                      className="w-full rounded-xl border border-white/10 bg-[#07152F]/80 px-4 py-3 text-white outline-none placeholder:text-[#94A3B8]"
+                    />
+
+                    <textarea
+                      placeholder="Write your proposal"
+                      value={dealMessage}
+                      onChange={(e) => setDealMessage(e.target.value)}
+                      rows={4}
+                      className="w-full rounded-xl border border-white/10 bg-[#07152F]/80 px-4 py-3 text-white outline-none placeholder:text-[#94A3B8]"
+                    />
+
+                    {dealError ? (
+                      <p className="text-sm text-red-300">{dealError}</p>
+                    ) : null}
+
+                    <Button
+                      variant="primary"
+                      loading={dealLoading}
+                      onClick={handleCreateDeal}
+                      className="w-full"
+                    >
+                      {dealLoading ? "Creating..." : "Start Deal"}
+                    </Button>
+                  </div>
                 ) : (
                   <Link href="/login">
                     <Button variant="primary">Login to Continue</Button>

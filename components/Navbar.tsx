@@ -75,7 +75,7 @@ export function Navbar() {
       <Link
         key={item.href}
         href={item.href}
-        className={`smooth-transition ${
+        className={`smooth-transition relative text-sm font-medium ${
           isActive
             ? 'text-accent-orange'
             : 'text-text-light hover:text-accent-orange'
@@ -89,9 +89,8 @@ export function Navbar() {
   return (
     <nav className="sticky top-0 z-50 border-b border-white/10 bg-dark-layer/80 backdrop-blur-md">
       <div className="container-custom flex items-center justify-between px-4 py-4">
-        {/* Brand */}
         <Link href="/" className="group flex items-center gap-3">
-          <div className="relative h-10 w-10 overflow-hidden rounded-xl border border-white/10 bg-white/5 shadow-[0_0_18px_rgba(245,158,11,0.10)]">
+          <div className="relative h-10 w-10 overflow-hidden rounded-xl border border-white/10 bg-white/5 shadow-[0_0_18px_rgba(255,122,24,0.14)]">
             <Image
               src="/logo-circle.jpeg"
               alt="Sponexus Logo"
@@ -109,54 +108,80 @@ export function Navbar() {
           </div>
         </Link>
 
-        {/* Desktop Nav */}
         <div className="hidden items-center gap-8 md:flex">
           {!loading && !isAuthenticated && publicNav.map(renderNavLink)}
 
           {!loading && isAuthenticated && user && appNav.map(renderNavLink)}
 
           {loading ? (
-            <div className="text-text-muted">Loading...</div>
+            <div className="text-sm text-text-muted">Loading...</div>
           ) : isAuthenticated && user ? (
-            <div className="relative ml-2 border-l border-white/10 pl-4">
+            <div className="relative ml-3 border-l border-white/10 pl-4">
               <button
                 onClick={() => setProfileOpen((prev) => !prev)}
-                className="flex items-center gap-3 rounded-full border border-white/10 bg-white/5 px-3 py-2 text-sm text-text-light transition hover:border-white/20 hover:bg-white/10"
+                className="group flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2.5 text-left text-sm text-text-light shadow-[0_8px_30px_rgba(0,0,0,0.22)] transition-all duration-200 hover:border-white/20 hover:bg-white/[0.07]"
               >
-                <span className="flex h-9 w-9 items-center justify-center rounded-full bg-accent-orange/15 font-semibold text-accent-orange">
+                <span className="flex h-10 w-10 items-center justify-center rounded-full border border-[#FF7A18]/20 bg-gradient-to-br from-[#FF7A18]/20 to-[#FFB347]/10 font-semibold text-[#FFB347]">
                   {(user.firstName || user.name || 'U').charAt(0).toUpperCase()}
                 </span>
-                <div className="hidden text-left lg:block">
-                  <p className="max-w-[140px] truncate text-sm font-medium text-white">
+
+                <div className="hidden min-w-0 text-left lg:block">
+                  <p className="max-w-[150px] truncate text-sm font-semibold text-white">
                     {user.firstName || user.name}
                   </p>
-                  <p className="text-xs uppercase tracking-wide text-text-muted">
+                  <p className="text-[11px] uppercase tracking-[0.16em] text-text-muted">
                     {user.role === 'ORGANIZER' ? 'Organizer' : 'Sponsor'}
                   </p>
                 </div>
+
+                <svg
+                  className={`hidden h-4 w-4 text-text-muted transition-transform duration-200 lg:block ${
+                    profileOpen ? 'rotate-180' : ''
+                  }`}
+                  viewBox="0 0 20 20"
+                  fill="currentColor"
+                  aria-hidden="true"
+                >
+                  <path
+                    fillRule="evenodd"
+                    d="M5.23 7.21a.75.75 0 011.06.02L10 11.168l3.71-3.938a.75.75 0 111.08 1.04l-4.25 4.5a.75.75 0 01-1.08 0l-4.25-4.5a.75.75 0 01.02-1.06z"
+                    clipRule="evenodd"
+                  />
+                </svg>
               </button>
 
               {profileOpen && (
-                <div className="absolute right-0 mt-3 w-56 overflow-hidden rounded-2xl border border-white/10 bg-dark-base shadow-2xl">
-                  <div className="border-b border-white/10 px-4 py-3">
-                    <p className="truncate text-sm font-medium text-white">
-                      {user.name}
-                    </p>
-                    <p className="truncate text-xs text-text-muted">{user.email}</p>
+                <div className="absolute right-0 mt-3 w-[280px] overflow-hidden rounded-3xl border border-white/10 bg-[#07152F]/95 shadow-[0_20px_60px_rgba(0,0,0,0.45)] backdrop-blur-xl">
+                  <div className="border-b border-white/10 bg-white/[0.03] px-5 py-4">
+                    <div className="flex items-center gap-3">
+                      <span className="flex h-11 w-11 items-center justify-center rounded-full border border-[#FF7A18]/20 bg-gradient-to-br from-[#FF7A18]/20 to-[#FFB347]/10 font-semibold text-[#FFB347]">
+                        {(user.firstName || user.name || 'U').charAt(0).toUpperCase()}
+                      </span>
+
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-white">
+                          {user.name}
+                        </p>
+                        <p className="truncate text-xs text-text-muted">{user.email}</p>
+                        <p className="mt-1 text-[11px] uppercase tracking-[0.16em] text-[#FFB347]">
+                          {user.role === 'ORGANIZER' ? 'Organizer' : 'Sponsor'}
+                        </p>
+                      </div>
+                    </div>
                   </div>
 
-                  <div className="py-2">
+                  <div className="p-2">
                     <Link
                       href="/settings"
-                      className="block px-4 py-3 text-sm text-text-light transition hover:bg-white/5 hover:text-accent-orange"
+                      className="flex items-center rounded-2xl px-4 py-3 text-sm font-medium text-text-light transition hover:bg-white/[0.05] hover:text-white"
                       onClick={() => setProfileOpen(false)}
                     >
-                      Settings
+                      Profile Settings
                     </Link>
 
                     <button
                       onClick={handleLogout}
-                      className="block w-full px-4 py-3 text-left text-sm text-text-light transition hover:bg-white/5 hover:text-accent-orange"
+                      className="flex w-full items-center rounded-2xl px-4 py-3 text-left text-sm font-medium text-text-light transition hover:bg-white/[0.05] hover:text-white"
                     >
                       Logout
                     </button>
@@ -175,27 +200,25 @@ export function Navbar() {
           )}
         </div>
 
-        {/* Mobile Toggle */}
         <button
           onClick={() => setIsOpen(!isOpen)}
-          className="text-2xl text-accent-orange smooth-transition hover:text-yellow-400 md:hidden"
+          className="text-2xl text-accent-orange smooth-transition hover:text-[#FFB347] md:hidden"
           aria-label="Toggle menu"
         >
           {isOpen ? '✕' : '☰'}
         </button>
       </div>
 
-      {/* Mobile Menu */}
       {isOpen && (
-        <div className="border-t border-white/10 bg-dark-base pb-4 pt-4 md:hidden">
-          <div className="space-y-1 px-4">
+        <div className="border-t border-white/10 bg-[#020617]/95 pb-4 pt-4 backdrop-blur-xl md:hidden">
+          <div className="space-y-2 px-4">
             {!loading &&
               !isAuthenticated &&
               publicNav.map((item) => (
                 <Link
                   key={item.href}
                   href={item.href}
-                  className="block rounded-xl px-4 py-3 text-text-light transition hover:bg-white/5 hover:text-accent-orange"
+                  className="block rounded-2xl px-4 py-3 text-sm font-medium text-text-light transition hover:bg-white/[0.05] hover:text-accent-orange"
                   onClick={() => setIsOpen(false)}
                 >
                   {item.label}
@@ -204,58 +227,72 @@ export function Navbar() {
 
             {!loading && isAuthenticated && user && (
               <>
-                <div className="mb-3 rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-4">
-                  <p className="text-sm font-medium text-white">{user.name}</p>
-                  <p className="text-xs text-text-muted">{user.email}</p>
-                  <p className="mt-1 text-[11px] uppercase tracking-wide text-accent-orange">
-                    {user.role === 'ORGANIZER' ? 'Organizer' : 'Sponsor'}
-                  </p>
+                <div className="mb-4 overflow-hidden rounded-3xl border border-white/10 bg-white/[0.04] shadow-[0_12px_40px_rgba(0,0,0,0.28)]">
+                  <div className="border-b border-white/10 bg-white/[0.03] px-4 py-4">
+                    <div className="flex items-center gap-3">
+                      <span className="flex h-12 w-12 items-center justify-center rounded-full border border-[#FF7A18]/20 bg-gradient-to-br from-[#FF7A18]/20 to-[#FFB347]/10 font-semibold text-[#FFB347]">
+                        {(user.firstName || user.name || 'U').charAt(0).toUpperCase()}
+                      </span>
+
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-white">
+                          {user.firstName || user.name}
+                        </p>
+                        <p className="truncate text-xs text-text-muted">{user.email}</p>
+                        <p className="mt-1 text-[11px] uppercase tracking-[0.16em] text-[#FFB347]">
+                          {user.role === 'ORGANIZER' ? 'Organizer' : 'Sponsor'}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="p-2">
+                    <Link
+                      href="/settings"
+                      className="flex items-center rounded-2xl px-4 py-3 text-sm font-medium text-text-light transition hover:bg-white/[0.05] hover:text-white"
+                      onClick={() => setIsOpen(false)}
+                    >
+                      Profile Settings
+                    </Link>
+
+                    <button
+                      onClick={handleLogout}
+                      className="flex w-full items-center rounded-2xl px-4 py-3 text-left text-sm font-medium text-text-light transition hover:bg-white/[0.05] hover:text-white"
+                    >
+                      Logout
+                    </button>
+                  </div>
                 </div>
 
-                {appNav.map((item) =>
-                  item.cta ? (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      onClick={() => setIsOpen(false)}
-                    >
-                      <Button variant="primary" className="mt-2 w-full">
+                <div className="space-y-1">
+                  {appNav.map((item) =>
+                    item.cta ? (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        onClick={() => setIsOpen(false)}
+                      >
+                        <Button variant="primary" className="mt-2 w-full">
+                          {item.label}
+                        </Button>
+                      </Link>
+                    ) : (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        className="block rounded-2xl px-4 py-3 text-sm font-medium text-text-light transition hover:bg-white/[0.05] hover:text-accent-orange"
+                        onClick={() => setIsOpen(false)}
+                      >
                         {item.label}
-                      </Button>
-                    </Link>
-                  ) : (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      className="block rounded-xl px-4 py-3 text-text-light transition hover:bg-white/5 hover:text-accent-orange"
-                      onClick={() => setIsOpen(false)}
-                    >
-                      {item.label}
-                    </Link>
-                  )
-                )}
-
-                <div className="mt-4 border-t border-white/10 pt-4">
-                  <Link
-                    href="/settings"
-                    className="block rounded-xl px-4 py-3 text-text-light transition hover:bg-white/5 hover:text-accent-orange"
-                    onClick={() => setIsOpen(false)}
-                  >
-                    Settings
-                  </Link>
-
-                  <button
-                    onClick={handleLogout}
-                    className="block w-full rounded-xl px-4 py-3 text-left text-text-light transition hover:bg-white/5 hover:text-accent-orange"
-                  >
-                    Logout
-                  </button>
+                      </Link>
+                    )
+                  )}
                 </div>
               </>
             )}
 
             {!loading && !isAuthenticated && (
-              <div className="mt-4 border-t border-white/10 pt-4 space-y-3">
+              <div className="mt-4 space-y-3 border-t border-white/10 pt-4">
                 <Link href="/login" onClick={() => setIsOpen(false)}>
                   <Button variant="primary" className="w-full">
                     Login
