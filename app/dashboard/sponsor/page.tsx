@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 
@@ -10,15 +10,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { SponsorshipCard } from "@/components/SponsorshipCard";
 import { useAuth } from "@/hooks/useAuth";
 import { useMatch } from "@/hooks/useMatch";
-
-type CurrentUser = {
-  _id?: string;
-  id?: string;
-  role?: "ORGANIZER" | "SPONSOR";
-  name?: string;
-  firstName?: string;
-  email?: string;
-};
+import type { Deal, DealStatus } from "@/types/deal";
 
 type SponsorProfile = {
   _id?: string;
@@ -40,11 +32,14 @@ type SponsorProfile = {
   isPublic?: boolean;
 };
 
-type SettingsMeResponse = {
-  success: boolean;
-  user?: CurrentUser;
-  sponsorProfile?: SponsorProfile | null;
-  message?: string;
+type DashboardUser = {
+  _id?: string;
+  role?: "ORGANIZER" | "SPONSOR";
+  name?: string;
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+  companyName?: string;
 };
 
 type MatchItem = {
@@ -80,17 +75,79 @@ type SponsorshipItem = {
   expiresAt?: string | null;
 };
 
-type SponsorshipListResponse = {
+type SponsorDashboardResponse = {
   success: boolean;
-  data?: SponsorshipItem[];
-  pagination?: {
-    total?: number;
-    page?: number;
-    limit?: number;
-    pages?: number;
+  summary?: {
+    totalSponsorshipPosts: number;
+    activeSponsorshipPosts: number;
+    pausedSponsorshipPosts: number;
+    closedSponsorshipPosts: number;
+    totalDeals: number;
+    pendingDeals: number;
+    negotiatingDeals: number;
+    acceptedDeals: number;
+    completedDeals: number;
   };
+  sponsorProfile?: SponsorProfile | null;
+  recentSponsorships?: SponsorshipItem[];
+  recentDeals?: Deal[];
+  user?: DashboardUser;
   message?: string;
 };
+
+type DealActionConfig = {
+  label: string;
+  value: DealStatus;
+  primary?: boolean;
+};
+
+function getDealStatusClasses(status?: string) {
+  switch (status) {
+    case "accepted":
+      return "border border-[#FFB347]/40 bg-[#FF7A18]/10 text-[#FFB347]";
+    case "negotiating":
+      return "border border-[#FF7A18]/30 bg-[#FF7A18]/10 text-[#FFB347]";
+    case "rejected":
+      return "border border-red-500/30 bg-red-500/10 text-red-300";
+    case "completed":
+      return "border border-white/20 bg-white/10 text-white";
+    case "cancelled":
+      return "border border-white/10 bg-white/5 text-[#94A3B8]";
+    case "disputed":
+      return "border border-red-400/30 bg-red-500/10 text-red-200";
+    case "pending":
+    default:
+      return "border border-white/10 bg-white/5 text-white";
+  }
+}
+
+function getSponsorDealActions(status?: DealStatus): DealActionConfig[] {
+  if (status === "pending") {
+    return [
+      { label: "Mark Negotiating", value: "negotiating" },
+      { label: "Accept Deal", value: "accepted", primary: true },
+      { label: "Reject Deal", value: "rejected" },
+      { label: "Cancel Deal", value: "cancelled" },
+    ];
+  }
+
+  if (status === "negotiating") {
+    return [
+      { label: "Accept Deal", value: "accepted", primary: true },
+      { label: "Reject Deal", value: "rejected" },
+      { label: "Cancel Deal", value: "cancelled" },
+    ];
+  }
+
+  if (status === "disputed") {
+    return [
+      { label: "Mark Negotiating", value: "negotiating" },
+      { label: "Cancel Deal", value: "cancelled" },
+    ];
+  }
+
+  return [];
+}
 
 export default function SponsorDashboardPage() {
   const router = useRouter();
@@ -102,14 +159,76 @@ export default function SponsorDashboardPage() {
     findMatches,
   } = useMatch();
 
-  const [profileLoading, setProfileLoading] = useState(true);
-  const [profileError, setProfileError] = useState("");
+  const [dashboardLoading, setDashboardLoading] = useState(true);
+  const [dashboardError, setDashboardError] = useState("");
+  const [dashboardUser, setDashboardUser] = useState<DashboardUser | null>(null);
   const [sponsorProfile, setSponsorProfile] = useState<SponsorProfile | null>(null);
-
-  const [postsLoading, setPostsLoading] = useState(true);
-  const [postsError, setPostsError] = useState("");
   const [sponsorshipPosts, setSponsorshipPosts] = useState<SponsorshipItem[]>([]);
-  const [postTotal, setPostTotal] = useState(0);
+  const [recentDeals, setRecentDeals] = useState<Deal[]>([]);
+  const [summary, setSummary] = useState({
+    totalSponsorshipPosts: 0,
+    activeSponsorshipPosts: 0,
+    pausedSponsorshipPosts: 0,
+    closedSponsorshipPosts: 0,
+    totalDeals: 0,
+    pendingDeals: 0,
+    negotiatingDeals: 0,
+    acceptedDeals: 0,
+    completedDeals: 0,
+  });
+
+  const [dealActionLoadingId, setDealActionLoadingId] = useState("");
+  const [dealActionError, setDealActionError] = useState("");
+  const [dealActionSuccess, setDealActionSuccess] = useState("");
+
+  const loadDashboard = useCallback(async () => {
+    if (!user || user.role !== "SPONSOR") return;
+
+    try {
+      setDashboardLoading(true);
+      setDashboardError("");
+
+      const res = await fetch("/api/dashboard/sponsor", {
+        method: "GET",
+        credentials: "include",
+        cache: "no-store",
+      });
+
+      const data: SponsorDashboardResponse = await res.json();
+
+      if (!res.ok || !data.success) {
+        throw new Error(data.message || "Unable to load sponsor dashboard");
+      }
+
+      setDashboardUser(data.user || null);
+      setSponsorProfile(data.sponsorProfile || null);
+      setSponsorshipPosts(
+        Array.isArray(data.recentSponsorships) ? data.recentSponsorships : []
+      );
+      setRecentDeals(Array.isArray(data.recentDeals) ? data.recentDeals : []);
+      setSummary(
+        data.summary || {
+          totalSponsorshipPosts: 0,
+          activeSponsorshipPosts: 0,
+          pausedSponsorshipPosts: 0,
+          closedSponsorshipPosts: 0,
+          totalDeals: 0,
+          pendingDeals: 0,
+          negotiatingDeals: 0,
+          acceptedDeals: 0,
+          completedDeals: 0,
+        }
+      );
+    } catch (err: any) {
+      setDashboardError(err?.message || "Unable to load sponsor dashboard");
+      setDashboardUser(null);
+      setSponsorProfile(null);
+      setSponsorshipPosts([]);
+      setRecentDeals([]);
+    } finally {
+      setDashboardLoading(false);
+    }
+  }, [user]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -130,70 +249,8 @@ export default function SponsorDashboardPage() {
   }, [authLoading, user, router]);
 
   useEffect(() => {
-    const loadProfile = async () => {
-      if (!user || user.role !== "SPONSOR") return;
-
-      try {
-        setProfileLoading(true);
-        setProfileError("");
-
-        const res = await fetch("/api/settings/me", {
-          method: "GET",
-          credentials: "include",
-          cache: "no-store",
-        });
-
-        const data: SettingsMeResponse = await res.json();
-
-        if (!res.ok || !data.success) {
-          throw new Error(data.message || "Unable to load sponsor profile");
-        }
-
-        setSponsorProfile(data.sponsorProfile || null);
-      } catch (err: any) {
-        setProfileError(err?.message || "Unable to load sponsor profile");
-        setSponsorProfile(null);
-      } finally {
-        setProfileLoading(false);
-      }
-    };
-
-    loadProfile();
-  }, [user]);
-
-  useEffect(() => {
-    const loadSponsorshipPosts = async () => {
-      if (!user || user.role !== "SPONSOR") return;
-
-      try {
-        setPostsLoading(true);
-        setPostsError("");
-
-        const res = await fetch("/api/sponsorships/get?page=1&limit=6", {
-          method: "GET",
-          credentials: "include",
-          cache: "no-store",
-        });
-
-        const data: SponsorshipListResponse = await res.json();
-
-        if (!res.ok || !data.success) {
-          throw new Error(data.message || "Unable to load sponsorship posts");
-        }
-
-        setSponsorshipPosts(Array.isArray(data.data) ? data.data : []);
-        setPostTotal(data.pagination?.total || 0);
-      } catch (err: any) {
-        setPostsError(err?.message || "Unable to load sponsorship posts");
-        setSponsorshipPosts([]);
-        setPostTotal(0);
-      } finally {
-        setPostsLoading(false);
-      }
-    };
-
-    loadSponsorshipPosts();
-  }, [user]);
+    loadDashboard();
+  }, [loadDashboard]);
 
   const profileCompletion = useMemo(() => {
     if (!sponsorProfile) return 20;
@@ -226,7 +283,7 @@ export default function SponsorDashboardPage() {
       try {
         await findMatches({ sponsorOwnerId: userId });
       } catch {
-        // keep hook-managed error state
+        // hook keeps its own error state
       }
     };
 
@@ -257,10 +314,6 @@ export default function SponsorDashboardPage() {
     });
   }, [matches]);
 
-  const activePostCount = useMemo(() => {
-    return sponsorshipPosts.filter((post) => post.status === "active").length;
-  }, [sponsorshipPosts]);
-
   const primaryActionLabel = isProfileComplete
     ? "Create Sponsorship"
     : "Complete Profile";
@@ -277,7 +330,38 @@ export default function SponsorDashboardPage() {
     }
   };
 
-  if (authLoading) {
+  const handleDealAction = async (dealId: string, status: DealStatus) => {
+    try {
+      setDealActionLoadingId(`${dealId}-${status}`);
+      setDealActionError("");
+      setDealActionSuccess("");
+
+      const response = await fetch(`/api/deals/${dealId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ status }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || "Failed to update deal");
+      }
+
+      setDealActionSuccess(data.message || `Deal marked as ${status}`);
+      await loadDashboard();
+    } catch (error) {
+      setDealActionError(
+        error instanceof Error ? error.message : "Failed to update deal"
+      );
+    } finally {
+      setDealActionLoadingId("");
+    }
+  };
+
+  if (authLoading || dashboardLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center text-text-muted">
         Loading sponsor dashboard...
@@ -307,13 +391,13 @@ export default function SponsorDashboardPage() {
             <h1 className="text-4xl font-bold text-white md:text-5xl">
               Welcome back,{" "}
               <span className="gradient-text">
-                {user.firstName || user.name || "Sponsor"}
+                {dashboardUser?.firstName || user.firstName || user.name || "Sponsor"}
               </span>
             </h1>
 
             <p className="mt-3 max-w-2xl text-text-muted">
-              Manage your sponsor profile, publish sponsorship opportunities, and
-              discover event partnerships that fit your brand goals.
+              Manage your sponsor profile, publish sponsorship opportunities, track
+              deals, and discover event partnerships that fit your brand goals.
             </p>
           </div>
 
@@ -328,7 +412,25 @@ export default function SponsorDashboardPage() {
           </div>
         </div>
 
-        <div className="mb-12 grid grid-cols-1 gap-6 md:grid-cols-4">
+        {dashboardError ? (
+          <div className="mb-8 rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-red-300">
+            {dashboardError}
+          </div>
+        ) : null}
+
+        {dealActionError ? (
+          <div className="mb-8 rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-red-300">
+            {dealActionError}
+          </div>
+        ) : null}
+
+        {dealActionSuccess ? (
+          <div className="mb-8 rounded-xl border border-[#FF7A18]/30 bg-[#FF7A18]/10 p-4 text-[#FFB347]">
+            {dealActionSuccess}
+          </div>
+        ) : null}
+
+        <div className="mb-12 grid grid-cols-1 gap-6 md:grid-cols-4 xl:grid-cols-5">
           <div className="rounded-[24px] border border-white/10 bg-white/[0.05] p-6 backdrop-blur-xl">
             <p className="text-sm text-text-muted">Profile Completion</p>
             <h3 className="mt-2 text-2xl font-semibold text-white">
@@ -342,20 +444,30 @@ export default function SponsorDashboardPage() {
           <div className="rounded-[24px] border border-white/10 bg-white/[0.05] p-6 backdrop-blur-xl">
             <p className="text-sm text-text-muted">Total Sponsorship Posts</p>
             <h3 className="mt-2 text-2xl font-semibold text-white">
-              {postsLoading ? "..." : postTotal}
+              {summary.totalSponsorshipPosts}
             </h3>
             <p className="mt-3 text-sm text-text-muted">
-              Your published and managed sponsorship opportunities inside Sponexus.
+              Your total sponsorship opportunities on Sponexus.
             </p>
           </div>
 
           <div className="rounded-[24px] border border-white/10 bg-white/[0.05] p-6 backdrop-blur-xl">
             <p className="text-sm text-text-muted">Active Sponsorships</p>
             <h3 className="mt-2 text-2xl font-semibold text-white">
-              {postsLoading ? "..." : activePostCount}
+              {summary.activeSponsorshipPosts}
             </h3>
             <p className="mt-3 text-sm text-text-muted">
               Currently live sponsorship opportunities visible to organizers.
+            </p>
+          </div>
+
+          <div className="rounded-[24px] border border-white/10 bg-white/[0.05] p-6 backdrop-blur-xl">
+            <p className="text-sm text-text-muted">Open Deals</p>
+            <h3 className="mt-2 text-2xl font-semibold text-white">
+              {summary.pendingDeals + summary.negotiatingDeals + summary.acceptedDeals}
+            </h3>
+            <p className="mt-3 text-sm text-text-muted">
+              Deals currently moving through discussion and closure stages.
             </p>
           </div>
 
@@ -378,7 +490,7 @@ export default function SponsorDashboardPage() {
             </p>
           </div>
 
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-6 lg:grid-cols-4">
             <div className="rounded-[24px] border border-white/10 bg-white/[0.05] p-6 backdrop-blur-xl">
               <h3 className="text-xl font-semibold text-white">{primaryActionLabel}</h3>
               <p className="mt-3 text-sm leading-relaxed text-text-muted">
@@ -420,6 +532,21 @@ export default function SponsorDashboardPage() {
                 </Link>
               </div>
             </div>
+
+            <div className="rounded-[24px] border border-white/10 bg-white/[0.05] p-6 backdrop-blur-xl">
+              <h3 className="text-xl font-semibold text-white">Manage Deals</h3>
+              <p className="mt-3 text-sm leading-relaxed text-text-muted">
+                Track incoming organizer conversations, accepted deals, and closure
+                progress in one place.
+              </p>
+              <div className="mt-6">
+                <Link href="/deals">
+                  <Button variant="secondary" fullWidth>
+                    Open Deals
+                  </Button>
+                </Link>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -439,13 +566,7 @@ export default function SponsorDashboardPage() {
             </Link>
           </div>
 
-          {profileLoading ? (
-            <div className="text-text-muted">Loading profile details...</div>
-          ) : profileError ? (
-            <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-red-300">
-              {profileError}
-            </div>
-          ) : sponsorProfile ? (
+          {sponsorProfile ? (
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
               <div className="rounded-2xl bg-white/5 p-4">
                 <p className="text-sm text-text-muted">Brand</p>
@@ -558,13 +679,7 @@ export default function SponsorDashboardPage() {
             </Link>
           </div>
 
-          {postsLoading ? (
-            <div className="text-text-muted">Loading sponsorship posts...</div>
-          ) : postsError ? (
-            <div className="rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-red-300">
-              {postsError}
-            </div>
-          ) : sponsorshipPosts.length > 0 ? (
+          {sponsorshipPosts.length > 0 ? (
             <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
               {sponsorshipPosts.map((post) =>
                 post._id ? (
@@ -583,6 +698,121 @@ export default function SponsorDashboardPage() {
               onAction={() =>
                 router.push(isProfileComplete ? "/sponsorships/create" : "/settings")
               }
+            />
+          )}
+        </div>
+
+        <div className="mb-12 rounded-[24px] border border-white/10 bg-white/[0.05] p-6 backdrop-blur-xl">
+          <div className="mb-6 flex items-center justify-between gap-4">
+            <div>
+              <h2 className="text-2xl font-bold text-white">Recent Deals</h2>
+              <p className="mt-2 text-sm text-text-muted">
+                Your latest deal conversations and partnership progress.
+              </p>
+            </div>
+
+            <Link href="/deals">
+              <Button size="sm" variant="secondary">
+                View All Deals
+              </Button>
+            </Link>
+          </div>
+
+          {recentDeals.length > 0 ? (
+            <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+              {recentDeals.map((deal) => {
+                const availableActions = getSponsorDealActions(deal.status);
+
+                return (
+                  <div
+                    key={deal._id}
+                    className="rounded-2xl border border-white/10 bg-white/5 p-5"
+                  >
+                    <Link
+                      href={`/deals/${deal._id}`}
+                      className="block transition hover:opacity-95"
+                    >
+                      <div className="flex items-start justify-between gap-4">
+                        <div className="min-w-0">
+                          <h3 className="truncate text-lg font-semibold text-white">
+                            {deal.title || "Untitled deal"}
+                          </h3>
+                          <p className="mt-2 text-sm text-text-muted">
+                            Event: {deal.event?.title || "Linked event unavailable"}
+                          </p>
+                          <p className="mt-1 text-sm text-text-muted">
+                            Organizer:{" "}
+                            {deal.organizer?.companyName ||
+                              deal.organizer?.name ||
+                              "Organizer"}
+                          </p>
+                        </div>
+
+                        <span
+                          className={`rounded-full px-3 py-1 text-xs capitalize ${getDealStatusClasses(
+                            deal.status
+                          )}`}
+                        >
+                          {deal.status}
+                        </span>
+                      </div>
+
+                      <div className="mt-4 grid grid-cols-2 gap-3">
+                        <div className="rounded-xl bg-[#07152F]/80 p-3">
+                          <p className="text-xs text-text-muted">Proposed</p>
+                          <p className="mt-1 text-sm font-semibold text-white">
+                            ₹{Number(deal.proposedAmount || 0).toLocaleString("en-IN")}
+                          </p>
+                        </div>
+                        <div className="rounded-xl bg-[#07152F]/80 p-3">
+                          <p className="text-xs text-text-muted">Payment</p>
+                          <p className="mt-1 text-sm font-semibold capitalize text-white">
+                            {deal.paymentStatus || "unpaid"}
+                          </p>
+                        </div>
+                      </div>
+                    </Link>
+
+                    <div className="mt-4 flex flex-wrap gap-2 border-t border-white/10 pt-4">
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        onClick={() => router.push(`/deals/${deal._id}`)}
+                      >
+                        View Deal
+                      </Button>
+
+                      {availableActions.map((action) => {
+                        const actionKey = `${deal._id}-${action.value}`;
+                        const isLoading = dealActionLoadingId === actionKey;
+
+                        return (
+                          <button
+                            key={action.value}
+                            type="button"
+                            onClick={() => handleDealAction(deal._id, action.value)}
+                            disabled={Boolean(dealActionLoadingId)}
+                            className={`rounded-full px-4 py-2 text-sm font-semibold transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                              action.primary
+                                ? "bg-gradient-to-r from-[#FF7A18] to-[#FFB347] text-[#020617]"
+                                : "border border-white/10 bg-[#07152F]/80 text-white hover:border-[#FF7A18]/30"
+                            }`}
+                          >
+                            {isLoading ? "Updating..." : action.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <EmptyState
+              title="No deals yet"
+              description="Once organizers start discussions on your sponsorship opportunities, your latest deals will appear here."
+              actionLabel="Open Sponsorships"
+              onAction={() => router.push("/sponsorships")}
             />
           )}
         </div>

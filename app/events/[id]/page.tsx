@@ -60,6 +60,7 @@ export default function EventDetailPage() {
   const [dealMessage, setDealMessage] = useState("");
   const [error, setError] = useState("");
   const [dealError, setDealError] = useState("");
+  const [dealSuccess, setDealSuccess] = useState("");
 
   useEffect(() => {
     const fetchEvent = async () => {
@@ -192,6 +193,7 @@ export default function EventDetailPage() {
 
     if (!event?._id || !user?._id) {
       setDealError("Missing event or user details.");
+      setDealSuccess("");
       return;
     }
 
@@ -202,6 +204,7 @@ export default function EventDetailPage() {
 
     if (!organizerId) {
       setDealError("Organizer information is missing.");
+      setDealSuccess("");
       return;
     }
 
@@ -209,17 +212,20 @@ export default function EventDetailPage() {
 
     if (Number.isNaN(parsedAmount) || parsedAmount <= 0) {
       setDealError("Please enter a valid proposed amount.");
+      setDealSuccess("");
       return;
     }
 
     if (!dealMessage.trim()) {
       setDealError("Please write a proposal message.");
+      setDealSuccess("");
       return;
     }
 
     try {
       setActionLoading(true);
       setDealError("");
+      setDealSuccess("");
 
       const res = await fetch("/api/deals", {
         method: "POST",
@@ -244,9 +250,23 @@ export default function EventDetailPage() {
         throw new Error(data.message || "Failed to create deal");
       }
 
+      setDealSuccess("Deal created successfully. Redirecting...");
       router.push(`/deals/${data.deal._id}`);
     } catch (err: any) {
-      setDealError(err?.message || "Failed to create deal");
+      const message =
+        err?.message ||
+        "Failed to create deal";
+
+      if (
+        typeof message === "string" &&
+        message.toLowerCase().includes("active deal already exists")
+      ) {
+        setDealError("You already have an active deal for this event.");
+      } else {
+        setDealError(message);
+      }
+
+      setDealSuccess("");
     } finally {
       setActionLoading(false);
     }
@@ -331,6 +351,10 @@ export default function EventDetailPage() {
 
                 {dealError ? (
                   <p className="text-sm text-red-300">{dealError}</p>
+                ) : null}
+
+                {dealSuccess ? (
+                  <p className="text-sm text-[#FFB347]">{dealSuccess}</p>
                 ) : null}
 
                 <Button
@@ -585,17 +609,10 @@ export default function EventDetailPage() {
               <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-6">
                 <h2 className="text-lg font-semibold">Sponsor Action</h2>
                 <p className="mt-2 text-sm text-text-muted">
-                  Start a direct sponsorship discussion for this event from here.
+                  Use the proposal form above to start a direct sponsorship discussion for this event.
                 </p>
-                <div className="mt-4">
-                  <Button
-                    variant="primary"
-                    className="w-full"
-                    loading={actionLoading}
-                    onClick={handleCreateDeal}
-                  >
-                    {actionLoading ? "Creating..." : "Start Deal"}
-                  </Button>
+                <div className="mt-4 rounded-2xl border border-white/10 bg-[#07152F]/60 px-4 py-3 text-sm text-[#94A3B8]">
+                  Submit your amount and proposal message from the deal box above.
                 </div>
               </section>
             ) : (

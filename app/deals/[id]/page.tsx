@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 
 import type { Deal, DealStatus } from "@/types/deal";
+import { useAuth } from "@/hooks/useAuth";
 
 type DealApiResponse = {
   success: boolean;
@@ -86,12 +87,20 @@ function normalizeDeal(raw: any): Deal {
     rejectedAt: raw?.rejectedAt || null,
     cancelledAt: raw?.cancelledAt || null,
     completedAt: raw?.completedAt || null,
+    contactReveal: {
+      organizerRevealed: Boolean(raw?.contactReveal?.organizerRevealed),
+      sponsorRevealed: Boolean(raw?.contactReveal?.sponsorRevealed),
+      organizerRevealedAt: raw?.contactReveal?.organizerRevealedAt || null,
+      sponsorRevealedAt: raw?.contactReveal?.sponsorRevealedAt || null,
+      fullyRevealed: Boolean(raw?.contactReveal?.fullyRevealed),
+    },
     createdAt: raw?.createdAt || "",
     updatedAt: raw?.updatedAt || "",
     organizer: {
       _id: String(raw?.organizerId?._id || raw?.organizer?._id || ""),
       name: raw?.organizerId?.name || raw?.organizer?.name || "",
       email: raw?.organizerId?.email || raw?.organizer?.email || "",
+      phone: raw?.organizerId?.phone || raw?.organizer?.phone || "",
       companyName:
         raw?.organizerId?.companyName || raw?.organizer?.companyName || "",
     },
@@ -99,15 +108,16 @@ function normalizeDeal(raw: any): Deal {
       _id: String(raw?.sponsorId?._id || raw?.sponsor?._id || ""),
       name: raw?.sponsorId?.name || raw?.sponsor?.name || "",
       email: raw?.sponsorId?.email || raw?.sponsor?.email || "",
+      phone: raw?.sponsorId?.phone || raw?.sponsor?.phone || "",
       companyName:
         raw?.sponsorId?.companyName || raw?.sponsor?.companyName || "",
     },
-   event: {
-  _id: String(raw?.eventId?._id || raw?.event?._id || ""),
-  title: raw?.eventId?.title || raw?.event?.title || "",
-  location: raw?.eventId?.location || raw?.event?.location || "",
-  startDate: raw?.eventId?.startDate || raw?.event?.startDate || "",
-},
+    event: {
+      _id: String(raw?.eventId?._id || raw?.event?._id || ""),
+      title: raw?.eventId?.title || raw?.event?.title || "",
+      location: raw?.eventId?.location || raw?.event?.location || "",
+      startDate: raw?.eventId?.startDate || raw?.event?.startDate || "",
+    },
   };
 }
 
@@ -118,21 +128,50 @@ function parseDeliverablesInput(value: string): string[] {
     .filter(Boolean);
 }
 
-function getVisibleActions(status: DealStatus): DealStatus[] {
-  if (status === "pending") {
-    return ["negotiating", "accepted", "rejected", "cancelled"];
+function isFinalDealState(status: DealStatus) {
+  return ["rejected", "completed", "cancelled"].includes(status);
+}
+
+function getVisibleActions(
+  status: DealStatus,
+  roleInDeal: "ORGANIZER" | "SPONSOR" | null
+): DealStatus[] {
+  if (!roleInDeal) return [];
+
+  if (roleInDeal === "SPONSOR") {
+    if (status === "pending") {
+      return ["negotiating", "accepted", "rejected", "cancelled"];
+    }
+
+    if (status === "negotiating") {
+      return ["accepted", "rejected", "cancelled"];
+    }
+
+    if (status === "disputed") {
+      return ["negotiating", "cancelled"];
+    }
+
+    return [];
   }
 
-  if (status === "negotiating") {
-    return ["accepted", "rejected", "cancelled"];
-  }
+  if (roleInDeal === "ORGANIZER") {
+    if (status === "pending") {
+      return ["cancelled"];
+    }
 
-  if (status === "accepted") {
-    return ["completed", "cancelled"];
-  }
+    if (status === "negotiating") {
+      return ["cancelled"];
+    }
 
-  if (status === "disputed") {
-    return ["negotiating", "cancelled"];
+    if (status === "accepted") {
+      return ["completed"];
+    }
+
+    if (status === "disputed") {
+      return ["cancelled"];
+    }
+
+    return [];
   }
 
   return [];
@@ -141,6 +180,8 @@ function getVisibleActions(status: DealStatus): DealStatus[] {
 export default function DealDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
+  const { user } = useAuth();
+
   const dealId = Array.isArray(params?.id) ? params.id[0] : params?.id;
 
   const [deal, setDeal] = useState<Deal | null>(null);
@@ -149,6 +190,7 @@ export default function DealDetailPage() {
   const [actionError, setActionError] = useState("");
   const [actionSuccess, setActionSuccess] = useState("");
   const [saving, setSaving] = useState(false);
+  const [revealLoading, setRevealLoading] = useState(false);
 
   const [finalAmountInput, setFinalAmountInput] = useState("");
   const [messageInput, setMessageInput] = useState("");
@@ -214,7 +256,51 @@ export default function DealDetailPage() {
     };
   }, [dealId]);
 
-  const visibleActions = deal ? getVisibleActions(deal.status) : [];
+  const roleInDeal = useMemo<"ORGANIZER" | "SPONSOR" | null>(() => {
+    if (!user || !deal) return null;
+    if (user._id === deal.organizer._id) return "ORGANIZER";
+    if (user._id === deal.sponsor._id) return "SPONSOR";
+    return null;
+  }, [user, deal]);
+
+  const canEditCommercialFields = useMemo(() => {
+    if (!deal || roleInDeal !== "ORGANIZER") return false;
+    if (isFinalDealState(deal.status)) return false;
+    return true;
+  }, [deal, roleInDeal]);
+
+  const canEditPaymentStatus = useMemo(() => {
+    if (!deal || roleInDeal !== "ORGANIZER") return false;
+    return true;
+  }, [deal, roleInDeal]);
+
+  const canRaiseDispute = useMemo(() => {
+    if (!deal || !roleInDeal) return false;
+    return !["completed", "cancelled", "rejected"].includes(deal.status);
+  }, [deal, roleInDeal]);
+
+  const canRevealContact = useMemo(() => {
+    if (!deal || !roleInDeal) return false;
+    return deal.status === "accepted" && !deal.contactReveal.fullyRevealed;
+  }, [deal, roleInDeal]);
+
+  const hasCurrentUserRevealed = useMemo(() => {
+    if (!deal || !roleInDeal) return false;
+    if (roleInDeal === "ORGANIZER") return deal.contactReveal.organizerRevealed;
+    if (roleInDeal === "SPONSOR") return deal.contactReveal.sponsorRevealed;
+    return false;
+  }, [deal, roleInDeal]);
+
+  const waitingForOtherParty = useMemo(() => {
+    if (!deal || !roleInDeal || deal.contactReveal.fullyRevealed) return false;
+    return hasCurrentUserRevealed;
+  }, [deal, roleInDeal, hasCurrentUserRevealed]);
+
+  const visibleActions = useMemo(
+    () => (deal ? getVisibleActions(deal.status, roleInDeal) : []),
+    [deal, roleInDeal]
+  );
+
   const timelineItems = useMemo(() => {
     if (!deal) return [];
 
@@ -305,13 +391,51 @@ export default function DealDetailPage() {
     }
   }
 
+  async function handleRevealContact() {
+    if (!dealId) return;
+
+    try {
+      setRevealLoading(true);
+      setActionError("");
+      setActionSuccess("");
+
+      const response = await fetch(`/api/deals/${dealId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ revealContact: true }),
+      });
+
+      const data: DealApiResponse = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || "Failed to reveal contact");
+      }
+
+      await refreshDeal();
+      setActionSuccess(
+        data.message || "Contact reveal request updated successfully"
+      );
+    } catch (error) {
+      setActionError(
+        error instanceof Error ? error.message : "Failed to reveal contact"
+      );
+    } finally {
+      setRevealLoading(false);
+    }
+  }
+
   async function handleSaveDetails() {
     const payload: Record<string, unknown> = {
-  message: messageInput,
-  notes: notesInput,
-  paymentStatus: paymentStatusInput,
-  deliverables: parseDeliverablesInput(deliverablesInput),
-};
+      message: messageInput,
+      notes: notesInput,
+      deliverables: parseDeliverablesInput(deliverablesInput),
+    };
+
+    if (canEditPaymentStatus) {
+      payload.paymentStatus = paymentStatusInput;
+    }
 
     if (finalAmountInput.trim() === "") {
       payload.finalAmount = null;
@@ -531,97 +655,116 @@ export default function DealDetailPage() {
               </div>
             </section>
 
-            <section className="rounded-3xl border border-white/10 bg-white/[0.03] p-6">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <h2 className="text-xl font-semibold">Agreement Details</h2>
-                  <p className="mt-1 text-sm text-[#94A3B8]">
-                    Update final amount, notes, message, and deliverables.
-                  </p>
-                </div>
-              </div>
-
-              <div className="mt-6 grid gap-5">
-                <div>
-                  <label className="mb-2 block text-sm font-medium text-white">
-                    Final Amount
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    value={finalAmountInput}
-                    onChange={(e) => setFinalAmountInput(e.target.value)}
-                    placeholder="Enter final agreed amount"
-                    className="w-full rounded-2xl border border-white/10 bg-[#07152F]/80 px-4 py-3 text-white outline-none transition placeholder:text-[#94A3B8] focus:border-[#FF7A18]/40"
-                  />
+            {canEditCommercialFields || canEditPaymentStatus ? (
+              <section className="rounded-3xl border border-white/10 bg-white/[0.03] p-6">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <h2 className="text-xl font-semibold">Agreement Details</h2>
+                    <p className="mt-1 text-sm text-[#94A3B8]">
+                      {roleInDeal === "ORGANIZER"
+                        ? "Update deal details and keep the agreement moving."
+                        : "Review agreement details."}
+                    </p>
+                  </div>
                 </div>
 
-                <div>
-                  <label className="mb-2 block text-sm font-medium text-white">
-                    Message
-                  </label>
-                  <textarea
-                    value={messageInput}
-                    onChange={(e) => setMessageInput(e.target.value)}
-                    rows={4}
-                    placeholder="Add important communication summary"
-                    className="w-full rounded-2xl border border-white/10 bg-[#07152F]/80 px-4 py-3 text-white outline-none transition placeholder:text-[#94A3B8] focus:border-[#FF7A18]/40"
-                  />
-                </div>
+                <div className="mt-6 grid gap-5">
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-white">
+                      Final Amount
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={finalAmountInput}
+                      onChange={(e) => setFinalAmountInput(e.target.value)}
+                      placeholder="Enter final agreed amount"
+                      disabled={!canEditCommercialFields}
+                      className="w-full rounded-2xl border border-white/10 bg-[#07152F]/80 px-4 py-3 text-white outline-none transition placeholder:text-[#94A3B8] disabled:cursor-not-allowed disabled:opacity-60 focus:border-[#FF7A18]/40"
+                    />
+                  </div>
 
-                <div>
-                  <label className="mb-2 block text-sm font-medium text-white">
-                    Notes
-                  </label>
-                  <textarea
-                    value={notesInput}
-                    onChange={(e) => setNotesInput(e.target.value)}
-                    rows={5}
-                    placeholder="Add internal agreement notes"
-                    className="w-full rounded-2xl border border-white/10 bg-[#07152F]/80 px-4 py-3 text-white outline-none transition placeholder:text-[#94A3B8] focus:border-[#FF7A18]/40"
-                  />
-                </div>
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-white">
+                      Message
+                    </label>
+                    <textarea
+                      value={messageInput}
+                      onChange={(e) => setMessageInput(e.target.value)}
+                      rows={4}
+                      placeholder="Add important communication summary"
+                      disabled={!canEditCommercialFields}
+                      className="w-full rounded-2xl border border-white/10 bg-[#07152F]/80 px-4 py-3 text-white outline-none transition placeholder:text-[#94A3B8] disabled:cursor-not-allowed disabled:opacity-60 focus:border-[#FF7A18]/40"
+                    />
+                  </div>
 
-                <div>
-  <label className="mb-2 block text-sm font-medium text-white">
-    Payment Status
-  </label>
-  <select
-    value={paymentStatusInput}
-    onChange={(e) => setPaymentStatusInput(e.target.value)}
-    className="w-full rounded-2xl border border-white/10 bg-[#07152F]/80 px-4 py-3 text-white outline-none transition focus:border-[#FF7A18]/40"
-  >
-    <option value="unpaid">Unpaid</option>
-    <option value="pending">Pending</option>
-    <option value="paid">Paid</option>
-  </select>
-</div>
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-white">
+                      Notes
+                    </label>
+                    <textarea
+                      value={notesInput}
+                      onChange={(e) => setNotesInput(e.target.value)}
+                      rows={5}
+                      placeholder="Add internal agreement notes"
+                      disabled={!canEditCommercialFields}
+                      className="w-full rounded-2xl border border-white/10 bg-[#07152F]/80 px-4 py-3 text-white outline-none transition placeholder:text-[#94A3B8] disabled:cursor-not-allowed disabled:opacity-60 focus:border-[#FF7A18]/40"
+                    />
+                  </div>
 
-                <div>
-                  <label className="mb-2 block text-sm font-medium text-white">
-                    Deliverables
-                  </label>
-                  <textarea
-                    value={deliverablesInput}
-                    onChange={(e) => setDeliverablesInput(e.target.value)}
-                    rows={6}
-                    placeholder={`One deliverable per line\nLogo on stage backdrop\nInstagram story mention\nStall branding`}
-                    className="w-full rounded-2xl border border-white/10 bg-[#07152F]/80 px-4 py-3 text-white outline-none transition placeholder:text-[#94A3B8] focus:border-[#FF7A18]/40"
-                  />
-                </div>
+                  {canEditPaymentStatus ? (
+                    <div>
+                      <label className="mb-2 block text-sm font-medium text-white">
+                        Payment Status
+                      </label>
+                      <select
+                        value={paymentStatusInput}
+                        onChange={(e) => setPaymentStatusInput(e.target.value)}
+                        className="w-full rounded-2xl border border-white/10 bg-[#07152F]/80 px-4 py-3 text-white outline-none transition focus:border-[#FF7A18]/40"
+                      >
+                        <option value="unpaid">Unpaid</option>
+                        <option value="pending">Pending</option>
+                        <option value="paid">Paid</option>
+                      </select>
+                    </div>
+                  ) : null}
 
-                <div className="flex justify-end">
-                  <button
-                    type="button"
-                    onClick={handleSaveDetails}
-                    disabled={saving}
-                    className="rounded-full bg-gradient-to-r from-[#FF7A18] to-[#FFB347] px-6 py-3 text-sm font-semibold text-[#020617] transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {saving ? "Saving..." : "Save Details"}
-                  </button>
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-white">
+                      Deliverables
+                    </label>
+                    <textarea
+                      value={deliverablesInput}
+                      onChange={(e) => setDeliverablesInput(e.target.value)}
+                      rows={6}
+                      placeholder={`One deliverable per line\nLogo on stage backdrop\nInstagram story mention\nStall branding`}
+                      disabled={!canEditCommercialFields}
+                      className="w-full rounded-2xl border border-white/10 bg-[#07152F]/80 px-4 py-3 text-white outline-none transition placeholder:text-[#94A3B8] disabled:cursor-not-allowed disabled:opacity-60 focus:border-[#FF7A18]/40"
+                    />
+                  </div>
+
+                  {(canEditCommercialFields || canEditPaymentStatus) && (
+                    <div className="flex justify-end">
+                      <button
+                        type="button"
+                        onClick={handleSaveDetails}
+                        disabled={saving}
+                        className="rounded-full bg-gradient-to-r from-[#FF7A18] to-[#FFB347] px-6 py-3 text-sm font-semibold text-[#020617] transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {saving ? "Saving..." : "Save Details"}
+                      </button>
+                    </div>
+                  )}
                 </div>
-              </div>
-            </section>
+              </section>
+            ) : (
+              <section className="rounded-3xl border border-white/10 bg-white/[0.03] p-6">
+                <h2 className="text-xl font-semibold">Agreement Details</h2>
+                <p className="mt-3 text-sm text-[#94A3B8]">
+                  This deal is currently read-only for your role in its current state.
+                </p>
+              </section>
+            )}
 
             <section className="rounded-3xl border border-white/10 bg-white/[0.03] p-6">
               <h2 className="text-xl font-semibold">Deliverables Preview</h2>
@@ -664,58 +807,129 @@ export default function DealDetailPage() {
               </p>
 
               <div className="mt-5 grid gap-3">
-  {STATUS_ACTIONS.filter((action) => visibleActions.includes(action.value)).map(
-    (action) => (
-      <button
-        key={action.value}
-        type="button"
-        onClick={() => handleStatusChange(action.value)}
-        disabled={saving || deal.status === action.value}
-        className={`rounded-2xl px-4 py-3 text-left text-sm font-medium transition ${
-          action.value === "accepted" || action.value === "completed"
-            ? "bg-gradient-to-r from-[#FF7A18] to-[#FFB347] text-[#020617] disabled:opacity-40"
-            : "border border-white/10 bg-[#07152F]/80 text-white hover:border-[#FF7A18]/30 disabled:opacity-40"
-        } disabled:cursor-not-allowed`}
-      >
-        {action.label}
-      </button>
-    )
-  )}
+                {STATUS_ACTIONS.filter((action) =>
+                  visibleActions.includes(action.value)
+                ).map((action) => (
+                  <button
+                    key={action.value}
+                    type="button"
+                    onClick={() => handleStatusChange(action.value)}
+                    disabled={saving || deal.status === action.value}
+                    className={`rounded-2xl px-4 py-3 text-left text-sm font-medium transition ${
+                      action.value === "accepted" || action.value === "completed"
+                        ? "bg-gradient-to-r from-[#FF7A18] to-[#FFB347] text-[#020617] disabled:opacity-40"
+                        : "border border-white/10 bg-[#07152F]/80 text-white hover:border-[#FF7A18]/30 disabled:opacity-40"
+                    } disabled:cursor-not-allowed`}
+                  >
+                    {action.label}
+                  </button>
+                ))}
 
-  {visibleActions.length === 0 && (
-    <div className="rounded-2xl border border-white/10 bg-[#07152F]/60 px-4 py-3 text-sm text-[#94A3B8]">
-      No further actions available for this deal state.
-    </div>
-  )}
-</div>
-            </section>
-
-            <section className="rounded-3xl border border-red-500/20 bg-red-500/5 p-6">
-              <h2 className="text-xl font-semibold text-red-200">Raise Dispute</h2>
-              <p className="mt-2 text-sm text-red-100/80">
-                Use only when there is a real issue in execution, agreement, or
-                payment understanding.
-              </p>
-
-              <div className="mt-4">
-                <textarea
-                  value={disputeReasonInput}
-                  onChange={(e) => setDisputeReasonInput(e.target.value)}
-                  rows={5}
-                  placeholder="Enter dispute reason"
-                  className="w-full rounded-2xl border border-red-500/20 bg-[#07152F]/80 px-4 py-3 text-white outline-none placeholder:text-[#94A3B8] focus:border-red-400/40"
-                />
+                {visibleActions.length === 0 && (
+                  <div className="rounded-2xl border border-white/10 bg-[#07152F]/60 px-4 py-3 text-sm text-[#94A3B8]">
+                    No further actions available for this deal state.
+                  </div>
+                )}
               </div>
-
-              <button
-  type="button"
-  onClick={handleRaiseDispute}
-  disabled={saving || deal.status === "completed" || deal.status === "cancelled" || deal.status === "rejected"}
-                className="mt-4 w-full rounded-full border border-red-400/30 bg-red-500/10 px-5 py-3 text-sm font-semibold text-red-200 transition hover:bg-red-500/15 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {saving ? "Submitting..." : "Raise Dispute"}
-              </button>
             </section>
+
+            <section className="rounded-3xl border border-white/10 bg-white/[0.03] p-6">
+              <h2 className="text-xl font-semibold">Contact Exchange</h2>
+
+              {deal.status !== "accepted" ? (
+                <p className="mt-3 text-sm text-[#94A3B8]">
+                  Contact details will be available after deal acceptance.
+                </p>
+              ) : deal.contactReveal.fullyRevealed ? (
+                <div className="mt-4 space-y-4">
+                  <div className="rounded-2xl border border-white/10 bg-[#07152F]/70 p-4">
+                    <p className="text-sm text-[#94A3B8]">Organizer Contact</p>
+                    <p className="mt-2 text-sm font-semibold text-white">
+                      {deal.organizer.companyName || deal.organizer.name || "Organizer"}
+                    </p>
+                    <p className="mt-1 text-sm text-white">
+                      {deal.organizer.email || "No email shared"}
+                    </p>
+                    <p className="mt-1 text-sm text-white">
+                      {deal.organizer.phone || "No phone shared"}
+                    </p>
+                  </div>
+
+                  <div className="rounded-2xl border border-white/10 bg-[#07152F]/70 p-4">
+                    <p className="text-sm text-[#94A3B8]">Sponsor Contact</p>
+                    <p className="mt-2 text-sm font-semibold text-white">
+                      {deal.sponsor.companyName || deal.sponsor.name || "Sponsor"}
+                    </p>
+                    <p className="mt-1 text-sm text-white">
+                      {deal.sponsor.email || "No email shared"}
+                    </p>
+                    <p className="mt-1 text-sm text-white">
+                      {deal.sponsor.phone || "No phone shared"}
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-4 space-y-3">
+                  <p className="text-sm text-[#94A3B8]">
+                    Both parties must reveal contact details to unlock access.
+                  </p>
+
+                  {waitingForOtherParty ? (
+  <div className="rounded-2xl border border-white/10 bg-[#07152F]/60 px-4 py-3 text-sm text-[#94A3B8]">
+    You have revealed your contact details. Waiting for the other party.
+  </div>
+) : canRevealContact ? (
+  <button
+    type="button"
+    onClick={handleRevealContact}
+    disabled={revealLoading}
+    className="rounded-full bg-gradient-to-r from-[#FF7A18] to-[#FFB347] px-5 py-3 text-sm font-semibold text-[#020617] disabled:cursor-not-allowed disabled:opacity-50"
+  >
+    {revealLoading ? "Processing..." : "Reveal My Contact Details"}
+  </button>
+) : (
+  <div className="rounded-2xl border border-white/10 bg-[#07152F]/60 px-4 py-3 text-sm text-[#94A3B8]">
+    Contact reveal is not available right now.
+  </div>
+)}
+
+                  <p className="text-xs text-[#94A3B8]">
+                    Once both parties agree, contact details will be unlocked.
+                  </p>
+                </div>
+              )}
+            </section>
+
+            {canRaiseDispute ? (
+              <section className="rounded-3xl border border-red-500/20 bg-red-500/5 p-6">
+                <h2 className="text-xl font-semibold text-red-200">
+                  Raise Dispute
+                </h2>
+                <p className="mt-2 text-sm text-red-100/80">
+                  Use only when there is a real issue in execution, agreement, or
+                  payment understanding.
+                </p>
+
+                <div className="mt-4">
+                  <textarea
+                    value={disputeReasonInput}
+                    onChange={(e) => setDisputeReasonInput(e.target.value)}
+                    rows={5}
+                    placeholder="Enter dispute reason"
+                    className="w-full rounded-2xl border border-red-500/20 bg-[#07152F]/80 px-4 py-3 text-white outline-none placeholder:text-[#94A3B8] focus:border-red-400/40"
+                  />
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleRaiseDispute}
+                  disabled={saving}
+                  className="mt-4 w-full rounded-full border border-red-400/30 bg-red-500/10 px-5 py-3 text-sm font-semibold text-red-200 transition hover:bg-red-500/15 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {saving ? "Submitting..." : "Raise Dispute"}
+                </button>
+              </section>
+            ) : null}
 
             <section className="rounded-3xl border border-white/10 bg-white/[0.03] p-6">
               <h2 className="text-xl font-semibold">Timeline</h2>
@@ -773,6 +987,12 @@ export default function DealDetailPage() {
                   <span>Expires At</span>
                   <span className="text-white">
                     {formatDateTime(deal.expiresAt)}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between gap-3 text-[#94A3B8]">
+                  <span>Your Role</span>
+                  <span className="capitalize text-white">
+                    {roleInDeal ? roleInDeal.toLowerCase() : "viewer"}
                   </span>
                 </div>
               </div>

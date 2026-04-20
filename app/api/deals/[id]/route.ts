@@ -61,45 +61,32 @@ function isAllowedStatusTransition(
   nextStatus: string,
   role: "ORGANIZER" | "SPONSOR"
 ) {
-  const sharedTransitions: Record<string, string[]> = {
-    pending: ["negotiating", "accepted", "rejected", "cancelled", "disputed"],
-    negotiating: ["accepted", "rejected", "cancelled", "disputed"],
-    accepted: ["completed", "cancelled", "disputed"],
-    rejected: [],
-    completed: [],
-    cancelled: [],
-    disputed: ["negotiating", "cancelled"],
+  const roleTransitions: Record<
+    "ORGANIZER" | "SPONSOR",
+    Record<string, string[]>
+  > = {
+    ORGANIZER: {
+      pending: ["cancelled", "disputed"],
+      negotiating: ["cancelled", "disputed"],
+      accepted: ["completed", "disputed"],
+      rejected: [],
+      completed: [],
+      cancelled: [],
+      disputed: ["cancelled"],
+    },
+    SPONSOR: {
+      pending: ["negotiating", "accepted", "rejected", "cancelled", "disputed"],
+      negotiating: ["accepted", "rejected", "cancelled", "disputed"],
+      accepted: ["disputed"],
+      rejected: [],
+      completed: [],
+      cancelled: [],
+      disputed: ["negotiating", "cancelled"],
+    },
   };
 
-  const allowedNextStatuses = sharedTransitions[currentStatus] || [];
-
-  if (!allowedNextStatuses.includes(nextStatus)) {
-    return false;
-  }
-
-  if (role === "ORGANIZER") {
-    return [
-      "negotiating",
-      "accepted",
-      "rejected",
-      "cancelled",
-      "completed",
-      "disputed",
-    ].includes(nextStatus);
-  }
-
-  if (role === "SPONSOR") {
-    return [
-      "negotiating",
-      "accepted",
-      "rejected",
-      "cancelled",
-      "completed",
-      "disputed",
-    ].includes(nextStatus);
-  }
-
-  return false;
+  const allowedNextStatuses = roleTransitions[role]?.[currentStatus] || [];
+  return allowedNextStatuses.includes(nextStatus);
 }
 
 function applyLifecycleTimestamps(deal: any, nextStatus: string) {
@@ -126,9 +113,59 @@ function applyLifecycleTimestamps(deal: any, nextStatus: string) {
   }
 }
 
+function isFinalDealState(status: string) {
+  return ["rejected", "completed", "cancelled"].includes(status);
+}
+
+function canEditCommercialFields(
+  currentStatus: string,
+  role: "ORGANIZER" | "SPONSOR"
+) {
+  if (isFinalDealState(currentStatus)) return false;
+
+  if (currentStatus === "accepted") {
+    return role === "ORGANIZER";
+  }
+
+  return role === "ORGANIZER";
+}
+
+function canEditPaymentStatus(
+  currentStatus: string,
+  role: "ORGANIZER" | "SPONSOR"
+) {
+  if (isFinalDealState(currentStatus)) {
+    return role === "ORGANIZER";
+  }
+
+  return role === "ORGANIZER";
+}
+
+function sanitizeDealContactsForResponse(deal: any) {
+  const plainDeal =
+    typeof deal.toObject === "function" ? deal.toObject() : { ...deal };
+
+  const fullyRevealed = Boolean(plainDeal?.contactReveal?.fullyRevealed);
+
+  if (!fullyRevealed) {
+    if (plainDeal?.organizerId) {
+      plainDeal.organizerId.email = undefined;
+      plainDeal.organizerId.phone = undefined;
+    }
+
+    if (plainDeal?.sponsorId) {
+      plainDeal.sponsorId.email = undefined;
+      plainDeal.sponsorId.phone = undefined;
+    }
+  }
+
+  return plainDeal;
+}
+
 async function getAuthenticatedUser() {
   const cookieStore = await cookies();
   const token = cookieStore.get("auth-token")?.value;
+
   if (!token) {
     return { user: null, error: "Authentication required", status: 401 };
   }
@@ -175,8 +212,8 @@ export async function GET(
     }
 
     const deal = await DealModel.findById(dealId)
-      .populate("organizerId", "_id name email companyName")
-      .populate("sponsorId", "_id name email companyName")
+      .populate("organizerId", "_id name email phone companyName")
+      .populate("sponsorId", "_id name email phone companyName")
       .populate("eventId", "_id title location startDate");
 
     if (!deal) {
@@ -193,10 +230,12 @@ export async function GET(
       );
     }
 
+    const safeDeal = sanitizeDealContactsForResponse(deal);
+
     return NextResponse.json(
       {
         success: true,
-        deal,
+        deal: safeDeal,
       },
       { status: 200 }
     );
@@ -209,7 +248,6 @@ export async function GET(
     );
   }
 }
-
 
 export async function PATCH(
   request: NextRequest,
@@ -265,7 +303,9 @@ export async function PATCH(
     }
 
     const body = await request.json();
-const paymentStatus = normalizeString(body.paymentStatus);
+
+    const revealContact = body.revealContact === true;
+    const paymentStatus = normalizeString(body.paymentStatus);
     const nextStatus = normalizeString(body.status);
     const message = normalizeString(body.message);
     const notes = normalizeString(body.notes);
@@ -280,12 +320,74 @@ const paymentStatus = normalizeString(body.paymentStatus);
         ? Number(body.finalAmount)
         : body.finalAmount;
 
-        if (paymentStatus && !ALLOWED_PAYMENT_STATUSES.has(paymentStatus)) {
-  return NextResponse.json(
-    { success: false, message: "Invalid payment status" },
-    { status: 400 }
-  );
-}
+    const currentStatus = String(deal.status);
+    const wantsCommercialEdit =
+      body.finalAmount !== undefined ||
+      body.message !== undefined ||
+      body.notes !== undefined ||
+      deliverables !== undefined;
+
+    const wantsPaymentStatusEdit = body.paymentStatus !== undefined;
+
+    if (revealContact) {
+      if (deal.status !== "accepted") {
+        return NextResponse.json(
+          {
+            success: false,
+            message: "Contact reveal allowed only after deal acceptance",
+          },
+          { status: 400 }
+        );
+      }
+
+      const now = new Date();
+
+      if (roleInDeal === "ORGANIZER") {
+        deal.contactReveal.organizerRevealed = true;
+        deal.contactReveal.organizerRevealedAt = now;
+      }
+
+      if (roleInDeal === "SPONSOR") {
+        deal.contactReveal.sponsorRevealed = true;
+        deal.contactReveal.sponsorRevealedAt = now;
+      }
+
+      if (
+        deal.contactReveal.organizerRevealed &&
+        deal.contactReveal.sponsorRevealed
+      ) {
+        deal.contactReveal.fullyRevealed = true;
+      }
+
+      deal.lastActionBy = currentUser._id;
+
+      await deal.save();
+
+      const updatedDeal = await DealModel.findById(deal._id)
+        .populate("organizerId", "_id name email phone companyName")
+        .populate("sponsorId", "_id name email phone companyName")
+        .populate("eventId", "_id title location startDate");
+
+      const safeDeal = sanitizeDealContactsForResponse(updatedDeal);
+
+      return NextResponse.json(
+        {
+          success: true,
+          message: deal.contactReveal.fullyRevealed
+            ? "Contact details unlocked"
+            : "Your contact details revealed. Waiting for other party.",
+          deal: safeDeal,
+        },
+        { status: 200 }
+      );
+    }
+
+    if (paymentStatus && !ALLOWED_PAYMENT_STATUSES.has(paymentStatus)) {
+      return NextResponse.json(
+        { success: false, message: "Invalid payment status" },
+        { status: 400 }
+      );
+    }
 
     if (nextStatus && !ALLOWED_STATUSES.has(nextStatus)) {
       return NextResponse.json(
@@ -308,9 +410,33 @@ const paymentStatus = normalizeString(body.paymentStatus);
       );
     }
 
-    if (nextStatus) {
-      const currentStatus = String(deal.status);
+    if (
+      wantsCommercialEdit &&
+      !canEditCommercialFields(currentStatus, roleInDeal)
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "You are not allowed to edit commercial deal details in this state",
+        },
+        { status: 403 }
+      );
+    }
 
+    if (
+      wantsPaymentStatusEdit &&
+      !canEditPaymentStatus(currentStatus, roleInDeal)
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "You are not allowed to update payment status for this deal",
+        },
+        { status: 403 }
+      );
+    }
+
+    if (nextStatus) {
       if (currentStatus === nextStatus) {
         return NextResponse.json(
           { success: false, message: "Deal is already in this status" },
@@ -363,23 +489,25 @@ const paymentStatus = normalizeString(body.paymentStatus);
     }
 
     if (body.paymentStatus !== undefined) {
-  deal.paymentStatus = paymentStatus as any;
-}
+      deal.paymentStatus = paymentStatus as any;
+    }
 
     deal.lastActionBy = currentUser._id;
 
     await deal.save();
 
     const updatedDeal = await DealModel.findById(deal._id)
-      .populate("organizerId", "_id name email companyName")
-      .populate("sponsorId", "_id name email companyName")
-      .populate("eventId", "_id title city startDate");
+      .populate("organizerId", "_id name email phone companyName")
+      .populate("sponsorId", "_id name email phone companyName")
+      .populate("eventId", "_id title location startDate");
+
+    const safeDeal = sanitizeDealContactsForResponse(updatedDeal);
 
     return NextResponse.json(
       {
         success: true,
         message: "Deal updated successfully",
-        deal: updatedDeal,
+        deal: safeDeal,
       },
       { status: 200 }
     );

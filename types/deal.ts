@@ -11,19 +11,29 @@ export type DealStatus =
 
 export type DealPaymentStatus = "unpaid" | "pending" | "paid";
 
+// 🔹 Contact reveal state
+export interface DealContactReveal {
+  organizerRevealed: boolean;
+  sponsorRevealed: boolean;
+  organizerRevealedAt: string | null;
+  sponsorRevealedAt: string | null;
+  fullyRevealed: boolean;
+}
+
 // 🔹 Basic User Summary (used in Deal response)
 export interface DealUser {
   _id: string;
   name?: string;
   email?: string;
   companyName?: string;
+  phone?: string;
 }
 
 // 🔹 Event Summary (used in Deal response)
 export interface DealEvent {
   _id: string;
   title?: string;
- location?: string;
+  location?: string;
   startDate?: string;
 }
 
@@ -53,6 +63,8 @@ export interface Deal {
   cancelledAt: string | null;
   completedAt: string | null;
 
+  contactReveal: DealContactReveal;
+
   createdAt: string;
   updatedAt: string;
 
@@ -65,12 +77,20 @@ export interface Deal {
 export interface DealResponse {
   success: boolean;
   deal: Deal;
+  message?: string;
 }
 
 // 🔹 API Response: Deal List
 export interface DealListResponse {
   success: boolean;
   deals: Deal[];
+  message?: string;
+  pagination?: {
+    page: number;
+    limit: number;
+    total: number;
+    totalPages: number;
+  };
 }
 
 // 🔹 Create Deal Payload
@@ -94,12 +114,15 @@ export interface CreateDealPayload {
 // 🔹 Update Deal Payload (PATCH)
 export interface UpdateDealPayload {
   status?: DealStatus;
+  paymentStatus?: DealPaymentStatus;
 
-  finalAmount?: number;
+  finalAmount?: number | null;
 
   message?: string;
   deliverables?: string[];
   notes?: string;
 
   disputeReason?: string;
+
+  revealContact?: boolean;
 }

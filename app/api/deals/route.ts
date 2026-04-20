@@ -105,9 +105,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (Number.isNaN(proposedAmount) || proposedAmount < 0) {
+    if (Number.isNaN(proposedAmount) || proposedAmount <= 0) {
       return NextResponse.json(
-        { success: false, message: "Valid proposedAmount is required" },
+        { success: false, message: "Proposed amount must be greater than 0" },
         { status: 400 }
       );
     }
@@ -139,7 +139,9 @@ export async function POST(request: NextRequest) {
     const [organizer, sponsor, event] = await Promise.all([
       User.findById(organizerId).select("_id name email role companyName"),
       User.findById(sponsorId).select("_id name email role companyName"),
-      EventModel.findById(eventId).select("_id title location startDate organizerId"),
+      EventModel.findById(eventId).select(
+        "_id title location startDate endDate organizerId status"
+      ),
     ]);
 
     if (!organizer || organizer.role !== "ORGANIZER") {
@@ -161,6 +163,43 @@ export async function POST(request: NextRequest) {
         { success: false, message: "Event not found" },
         { status: 404 }
       );
+    }
+
+    if (String(event.organizerId) !== organizerId) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "This event does not belong to the provided organizer",
+        },
+        { status: 400 }
+      );
+    }
+
+    if (
+      ["DRAFT", "COMPLETED", "CANCELLED"].includes(
+        String((event as any).status)
+      )
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Deals cannot be created for this event in its current status",
+        },
+        { status: 400 }
+      );
+    }
+
+    if ((event as any).endDate) {
+      const endDate = new Date((event as any).endDate);
+      if (!Number.isNaN(endDate.getTime()) && endDate < new Date()) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: "Deals cannot be created for past events",
+          },
+          { status: 400 }
+        );
+      }
     }
 
     const duplicateDeal = await DealModel.findOne({
@@ -281,7 +320,7 @@ export async function GET(request: NextRequest) {
       DealModel.find(query)
         .populate("organizerId", "_id name email companyName")
         .populate("sponsorId", "_id name email companyName")
-        .populate("eventId", "_id title city startDate")
+        .populate("eventId", "_id title location startDate")
         .sort({ updatedAt: -1 })
         .skip((page - 1) * limit)
         .limit(limit),

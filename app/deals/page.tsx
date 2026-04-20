@@ -89,12 +89,20 @@ function normalizeDeal(raw: any): Deal {
     rejectedAt: raw?.rejectedAt || null,
     cancelledAt: raw?.cancelledAt || null,
     completedAt: raw?.completedAt || null,
+    contactReveal: {
+      organizerRevealed: Boolean(raw?.contactReveal?.organizerRevealed),
+      sponsorRevealed: Boolean(raw?.contactReveal?.sponsorRevealed),
+      organizerRevealedAt: raw?.contactReveal?.organizerRevealedAt || null,
+      sponsorRevealedAt: raw?.contactReveal?.sponsorRevealedAt || null,
+      fullyRevealed: Boolean(raw?.contactReveal?.fullyRevealed),
+    },
     createdAt: raw?.createdAt || "",
     updatedAt: raw?.updatedAt || "",
     organizer: {
       _id: String(raw?.organizerId?._id || raw?.organizer?._id || ""),
       name: raw?.organizerId?.name || raw?.organizer?.name || "",
       email: raw?.organizerId?.email || raw?.organizer?.email || "",
+      phone: raw?.organizerId?.phone || raw?.organizer?.phone || "",
       companyName:
         raw?.organizerId?.companyName || raw?.organizer?.companyName || "",
     },
@@ -102,15 +110,16 @@ function normalizeDeal(raw: any): Deal {
       _id: String(raw?.sponsorId?._id || raw?.sponsor?._id || ""),
       name: raw?.sponsorId?.name || raw?.sponsor?.name || "",
       email: raw?.sponsorId?.email || raw?.sponsor?.email || "",
+      phone: raw?.sponsorId?.phone || raw?.sponsor?.phone || "",
       companyName:
         raw?.sponsorId?.companyName || raw?.sponsor?.companyName || "",
     },
     event: {
-  _id: String(raw?.eventId?._id || raw?.event?._id || ""),
-  title: raw?.eventId?.title || raw?.event?.title || "",
-  location: raw?.eventId?.location || raw?.event?.location || "",
-  startDate: raw?.eventId?.startDate || raw?.event?.startDate || "",
-},
+      _id: String(raw?.eventId?._id || raw?.event?._id || ""),
+      title: raw?.eventId?.title || raw?.event?.title || "",
+      location: raw?.eventId?.location || raw?.event?.location || "",
+      startDate: raw?.eventId?.startDate || raw?.event?.startDate || "",
+    },
   };
 }
 
@@ -356,10 +365,10 @@ export default function DealsPage() {
                         </span>
                       </div>
                       <div className="flex items-center justify-between gap-3">
-                       <span>Location</span>
-<span className="max-w-[60%] truncate text-right text-white">
-  {deal.event.location || "Not set"}
-</span>
+                        <span>Location</span>
+                        <span className="max-w-[60%] truncate text-right text-white">
+                          {deal.event.location || "Not set"}
+                        </span>
                       </div>
                       <div className="flex items-center justify-between gap-3">
                         <span>Updated</span>

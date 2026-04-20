@@ -167,12 +167,12 @@ export function Footer() {
                 </Link>
               </li>
               <li>
-                <a
-                  href="mailto:sponexus.team@gmail.com"
-                  className="text-text-muted transition hover:text-[#FFB347]"
-                >
-                  Contact Support
-                </a>
+                <Link
+  href="/contact-support"
+  className="text-text-muted transition hover:text-[#FFB347]"
+>
+  Contact Support
+</Link>
               </li>
               <li>
                 <Link

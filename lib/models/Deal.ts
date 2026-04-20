@@ -11,6 +11,14 @@ export type DealStatus =
 
 export type DealPaymentStatus = "unpaid" | "pending" | "paid";
 
+export interface IDealContactReveal {
+  organizerRevealed: boolean;
+  sponsorRevealed: boolean;
+  organizerRevealedAt: Date | null;
+  sponsorRevealedAt: Date | null;
+  fullyRevealed: boolean;
+}
+
 export interface IDeal extends mongoose.Document {
   organizerId: Types.ObjectId;
   sponsorId: Types.ObjectId;
@@ -40,9 +48,38 @@ export interface IDeal extends mongoose.Document {
   cancelledAt: Date | null;
   completedAt: Date | null;
 
+  contactReveal: IDealContactReveal;
+
   createdAt: Date;
   updatedAt: Date;
 }
+
+const contactRevealSchema = new Schema<IDealContactReveal>(
+  {
+    organizerRevealed: {
+      type: Boolean,
+      default: false,
+    },
+    sponsorRevealed: {
+      type: Boolean,
+      default: false,
+    },
+    organizerRevealedAt: {
+      type: Date,
+      default: null,
+    },
+    sponsorRevealedAt: {
+      type: Date,
+      default: null,
+    },
+    fullyRevealed: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+  },
+  { _id: false }
+);
 
 const dealSchema = new Schema<IDeal>(
   {
@@ -180,6 +217,17 @@ const dealSchema = new Schema<IDeal>(
       type: Date,
       default: null,
     },
+
+    contactReveal: {
+      type: contactRevealSchema,
+      default: () => ({
+        organizerRevealed: false,
+        sponsorRevealed: false,
+        organizerRevealedAt: null,
+        sponsorRevealedAt: null,
+        fullyRevealed: false,
+      }),
+    },
   },
   {
     timestamps: true,
@@ -201,6 +249,13 @@ dealSchema.pre("save", function (next) {
 
   if (this.status !== "disputed" && this.disputeReason) {
     this.disputeReason = "";
+  }
+
+  if (
+    this.contactReveal?.organizerRevealed &&
+    this.contactReveal?.sponsorRevealed
+  ) {
+    this.contactReveal.fullyRevealed = true;
   }
 
   next();

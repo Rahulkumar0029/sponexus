@@ -121,6 +121,7 @@ export default function SponsorshipDetailPage() {
   const [dealMessage, setDealMessage] = useState("");
   const [dealLoading, setDealLoading] = useState(false);
   const [dealError, setDealError] = useState("");
+  const [dealSuccess, setDealSuccess] = useState("");
 
   useEffect(() => {
     const loadSponsorship = async () => {
@@ -223,11 +224,13 @@ export default function SponsorshipDetailPage() {
 
     if (!item?._id || !user?._id || !item.sponsorOwnerId) {
       setDealError("Missing sponsorship or user details.");
+      setDealSuccess("");
       return;
     }
 
     if (!selectedEvent) {
       setDealError("Please select your event.");
+      setDealSuccess("");
       return;
     }
 
@@ -235,17 +238,20 @@ export default function SponsorshipDetailPage() {
 
     if (Number.isNaN(parsedAmount) || parsedAmount <= 0) {
       setDealError("Please enter a valid proposed amount.");
+      setDealSuccess("");
       return;
     }
 
     if (!dealMessage.trim()) {
       setDealError("Please write a proposal message.");
+      setDealSuccess("");
       return;
     }
 
     try {
       setDealLoading(true);
       setDealError("");
+      setDealSuccess("");
 
       const res = await fetch("/api/deals", {
         method: "POST",
@@ -270,9 +276,21 @@ export default function SponsorshipDetailPage() {
         throw new Error(data.message || "Failed to create deal");
       }
 
+      setDealSuccess("Deal created successfully. Redirecting...");
       router.push(`/deals/${data.deal._id}`);
     } catch (err: any) {
-      setDealError(err?.message || "Failed to create deal");
+      const message = err?.message || "Failed to create deal";
+
+      if (
+        typeof message === "string" &&
+        message.toLowerCase().includes("active deal already exists")
+      ) {
+        setDealError("You already have an active deal for this sponsorship and event.");
+      } else {
+        setDealError(message);
+      }
+
+      setDealSuccess("");
     } finally {
       setDealLoading(false);
     }
@@ -379,6 +397,10 @@ export default function SponsorshipDetailPage() {
 
                     {dealError ? (
                       <p className="text-sm text-red-300">{dealError}</p>
+                    ) : null}
+
+                    {dealSuccess ? (
+                      <p className="text-sm text-[#FFB347]">{dealSuccess}</p>
                     ) : null}
 
                     <Button
