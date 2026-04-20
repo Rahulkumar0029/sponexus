@@ -1,29 +1,97 @@
-import type { Metadata } from 'next';
-import { Providers } from '@/components/Providers';
-import { Navbar } from '@/components/Navbar';
-import { Footer } from '@/components/Footer';
-import './globals.css';
+import type { Metadata } from "next";
+import Script from "next/script";
+
+import { Providers } from "@/components/Providers";
+import { Navbar } from "@/components/Navbar";
+import { Footer } from "@/components/Footer";
+
+import "./globals.css";
+
+const siteUrl = "https://sponexus.app";
+const siteName = "Sponexus";
+const siteTitle = "Sponexus | Where Sponsors and Events Find the Right Fit";
+const siteDescription =
+  "Sponexus is the intelligent marketplace where event organizers and sponsors discover the right partnerships faster through structured listings, business-ready profiles, and smarter matching.";
 
 export const metadata: Metadata = {
-  title: 'Sponexus - Event Sponsorship Marketplace',
-  description:
-    'Connect events with the perfect sponsors. Intelligent matching platform for event organizers and sponsors.',
-  keywords:
-    'events, sponsorship, marketplace, matching, organizers, sponsors',
+  metadataBase: new URL(siteUrl),
+  title: {
+    default: siteTitle,
+    template: `%s | ${siteName}`,
+  },
+  description: siteDescription,
+  applicationName: siteName,
+  keywords: [
+    "Sponexus",
+    "event sponsorship platform",
+    "event sponsorship marketplace",
+    "sponsors for events",
+    "find event sponsors",
+    "brand partnerships",
+    "college event sponsors",
+    "sponsorship opportunities",
+    "event organizers",
+    "sponsor marketplace",
+  ],
+  alternates: {
+    canonical: "/",
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-video-preview": -1,
+      "max-image-preview": "large",
+      "max-snippet": -1,
+    },
+  },
+  openGraph: {
+    type: "website",
+    url: siteUrl,
+    siteName,
+    title: siteTitle,
+    description: siteDescription,
+    locale: "en_IN",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: siteTitle,
+    description: siteDescription,
+  },
+  category: "business",
 };
 
 export default function RootLayout({
   children,
-}: {
+}: Readonly<{
   children: React.ReactNode;
-}) {
+}>) {
+  const gaId = process.env.NEXT_PUBLIC_GA_ID;
+
+  console.log("GA ID:", process.env.NEXT_PUBLIC_GA_ID);
+  
   return (
     <html lang="en">
-      <head>
-        <meta charSet="utf-8" />
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
-      </head>
       <body>
+        {gaId ? (
+          <>
+            <Script
+              src={`https://www.googletagmanager.com/gtag/js?id=${gaId}`}
+              strategy="afterInteractive"
+            />
+            <Script id="google-analytics" strategy="afterInteractive">
+              {`
+                window.dataLayer = window.dataLayer || [];
+                function gtag(){dataLayer.push(arguments);}
+                gtag('js', new Date());
+                gtag('config', '${gaId}');
+              `}
+            </Script>
+          </>
+        ) : null}
+
         <Providers>
           <Navbar />
           <main className="min-h-screen">{children}</main>
