@@ -7,6 +7,14 @@ import { Input } from '@/components/Input';
 import { Button } from '@/components/Button';
 import { validateRegistration } from '@/lib/validations';
 
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "Register",
+  description:
+    "Create your Sponexus account as an organizer or sponsor and start building the right partnerships.",
+};
+
 export default function RegisterPage() {
   const router = useRouter();
 

@@ -21,6 +21,12 @@ type ApiResponse = {
   };
 };
 
+export const metadata = {
+  title: "Browse Events | Sponexus",
+  description:
+    "Discover events looking for sponsors. Find the right partnership opportunities on Sponexus.",
+};
+
 export default function EventsPage() {
   const { user, loading: authLoading } = useAuth();
 

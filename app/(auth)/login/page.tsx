@@ -33,6 +33,13 @@ type LoginResponseUser = {
   updatedAt?: string;
 };
 
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "Login",
+  description: "Login to your Sponexus account to manage events, sponsorships, and deals.",
+};
+
 export default function LoginPage() {
   const router = useRouter();
 

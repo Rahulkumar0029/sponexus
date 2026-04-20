@@ -60,6 +60,11 @@ export const metadata: Metadata = {
     title: siteTitle,
     description: siteDescription,
   },
+  icons: {
+    icon: "/favicon.ico",
+    shortcut: "/favicon.ico",
+    apple: "/apple-touch-icon.png",
+  },
   category: "business",
 };
 
@@ -70,8 +75,32 @@ export default function RootLayout({
 }>) {
   const gaId = process.env.NEXT_PUBLIC_GA_ID;
 
-  console.log("GA ID:", process.env.NEXT_PUBLIC_GA_ID);
-  
+  const organizationSchema = {
+    "@context": "https://schema.org",
+    "@type": "Organization",
+    name: "Sponexus",
+    url: siteUrl,
+    logo: `${siteUrl}/logo.png`,
+    description: siteDescription,
+    sameAs: [
+      "https://www.linkedin.com/company/sponexus",
+      "https://www.instagram.com/sponexus",
+    ],
+  };
+
+  const websiteSchema = {
+    "@context": "https://schema.org",
+    "@type": "WebSite",
+    name: siteName,
+    url: siteUrl,
+    description: siteDescription,
+    potentialAction: {
+      "@type": "SearchAction",
+      target: `${siteUrl}/events?search={search_term_string}`,
+      "query-input": "required name=search_term_string",
+    },
+  };
+
   return (
     <html lang="en">
       <body>
@@ -85,12 +114,33 @@ export default function RootLayout({
               {`
                 window.dataLayer = window.dataLayer || [];
                 function gtag(){dataLayer.push(arguments);}
+                window.gtag = gtag;
                 gtag('js', new Date());
-                gtag('config', '${gaId}');
+                gtag('config', '${gaId}', {
+                  page_path: window.location.pathname,
+                });
               `}
             </Script>
           </>
         ) : null}
+
+        <Script
+          id="organization-schema"
+          type="application/ld+json"
+          strategy="afterInteractive"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify(organizationSchema),
+          }}
+        />
+
+        <Script
+          id="website-schema"
+          type="application/ld+json"
+          strategy="afterInteractive"
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify(websiteSchema),
+          }}
+        />
 
         <Providers>
           <Navbar />

@@ -95,6 +95,12 @@ function getStatusClasses(status?: SponsorshipStatus) {
   return "border-emerald-500/30 bg-emerald-500/10 text-emerald-300";
 }
 
+export const metadata = {
+  title: "Sponsorship Opportunities | Sponexus",
+  description:
+    "Explore sponsorship listings and connect with event organizers for impactful brand collaborations.",
+};
+
 export default function SponsorshipsPage() {
   const router = useRouter();
   const { user } = useAuth();
