@@ -7,6 +7,26 @@ function redirectToLogin(req: NextRequest) {
   return NextResponse.redirect(loginUrl);
 }
 
+function clearAuthCookies(response: NextResponse) {
+  response.cookies.set("auth-token", "", {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    expires: new Date(0),
+  });
+
+  response.cookies.set("user-role", "", {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    expires: new Date(0),
+  });
+
+  return response;
+}
+
 function redirectToDashboard(req: NextRequest, role?: string) {
   const fallback =
     role === "SPONSOR" ? "/dashboard/sponsor" : "/dashboard/organizer";
@@ -14,10 +34,55 @@ function redirectToDashboard(req: NextRequest, role?: string) {
   return NextResponse.redirect(new URL(fallback, req.url));
 }
 
+function rewriteToUnavailable(req: NextRequest) {
+  return NextResponse.rewrite(new URL("/_not-found", req.url));
+}
+
 export function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
-
   const token = req.cookies.get("auth-token")?.value;
+
+  const isFounderAccessRoute =
+    pathname === "/founder-access-yr118" ||
+    pathname.startsWith("/founder-access-yr118/");
+
+  if (isFounderAccessRoute) {
+    if (!token) {
+      return NextResponse.next();
+    }
+
+    const payload = verifyAccessToken(token);
+
+    if (!payload) {
+      return clearAuthCookies(NextResponse.next());
+    }
+
+    if (payload.adminRole && payload.adminRole !== "NONE") {
+      return NextResponse.redirect(new URL("/admin", req.url));
+    }
+
+    return rewriteToUnavailable(req);
+  }
+
+  if (pathname === "/admin" || pathname.startsWith("/admin/")) {
+    if (!token) {
+      return rewriteToUnavailable(req);
+    }
+
+    const payload = verifyAccessToken(token);
+
+    if (!payload) {
+      return clearAuthCookies(rewriteToUnavailable(req));
+    }
+
+    const adminRole = payload.adminRole || "NONE";
+
+    if (adminRole === "NONE") {
+      return rewriteToUnavailable(req);
+    }
+
+    return NextResponse.next();
+  }
 
   if (!token) {
     return redirectToLogin(req);
@@ -26,30 +91,11 @@ export function proxy(req: NextRequest) {
   const payload = verifyAccessToken(token);
 
   if (!payload) {
-    const response = redirectToLogin(req);
-
-    response.cookies.set("auth-token", "", {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      path: "/",
-      expires: new Date(0),
-    });
-
-    response.cookies.set("user-role", "", {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-      sameSite: "lax",
-      path: "/",
-      expires: new Date(0),
-    });
-
-    return response;
+    return clearAuthCookies(redirectToLogin(req));
   }
 
   const role = payload.role;
 
-  // Role-based create pages
   if (pathname.startsWith("/events/create") && role !== "ORGANIZER") {
     return redirectToDashboard(req, role);
   }
@@ -58,12 +104,10 @@ export function proxy(req: NextRequest) {
     return redirectToDashboard(req, role);
   }
 
-  // Organizer-only dashboard
   if (pathname.startsWith("/dashboard/organizer") && role !== "ORGANIZER") {
     return redirectToDashboard(req, role);
   }
 
-  // Sponsor-only dashboard
   if (pathname.startsWith("/dashboard/sponsor") && role !== "SPONSOR") {
     return redirectToDashboard(req, role);
   }
@@ -73,6 +117,10 @@ export function proxy(req: NextRequest) {
 
 export const config = {
   matcher: [
+    "/admin",
+    "/admin/:path*",
+    "/founder-access-yr118",
+    "/founder-access-yr118/:path*",
     "/dashboard/:path*",
     "/events/create",
     "/sponsorships/create",

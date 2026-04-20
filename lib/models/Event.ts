@@ -138,6 +138,59 @@ const eventSchema = new mongoose.Schema(
       type: String,
       enum: ["DRAFT", "PUBLISHED", "ONGOING", "COMPLETED", "CANCELLED"],
       default: "DRAFT",
+      index: true,
+    },
+
+    visibilityStatus: {
+      type: String,
+      enum: ["VISIBLE", "HIDDEN", "UNDER_REVIEW"],
+      default: "VISIBLE",
+      index: true,
+    },
+
+    moderationStatus: {
+      type: String,
+      enum: ["APPROVED", "FLAGGED", "PENDING_REVIEW"],
+      default: "APPROVED",
+      index: true,
+    },
+
+    isDeleted: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+
+    deletedAt: {
+      type: Date,
+      default: null,
+    },
+
+    deletedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+
+    hiddenReason: {
+      type: String,
+      default: "",
+      trim: true,
+      maxlength: 1000,
+    },
+
+    flagReason: {
+      type: String,
+      default: "",
+      trim: true,
+      maxlength: 1000,
+    },
+
+    adminNotes: {
+      type: String,
+      default: "",
+      trim: true,
+      maxlength: 3000,
     },
 
     slug: {
@@ -157,6 +210,7 @@ eventSchema.index({ categories: 1 });
 eventSchema.index({ startDate: 1 });
 eventSchema.index({ endDate: 1 });
 eventSchema.index({ providedDeliverables: 1 });
+eventSchema.index({ visibilityStatus: 1, moderationStatus: 1, isDeleted: 1 });
 
 eventSchema.virtual("category").get(function () {
   return this.eventType;

@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
-// rest of file...
 
 import { connectDB } from "@/lib/db";
 import { verifyAccessToken } from "@/lib/auth";
@@ -73,6 +72,8 @@ export async function GET(request: NextRequest) {
           name: user.name,
           email: user.email,
           role: user.role,
+          adminRole: user.adminRole || "NONE",
+          accountStatus: user.accountStatus || "ACTIVE",
           firstName: user.firstName,
           lastName: user.lastName,
           companyName: user.companyName || "",

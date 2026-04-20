@@ -10,6 +10,7 @@ export type DealStatus =
   | "disputed";
 
 export type DealPaymentStatus = "unpaid" | "pending" | "paid";
+export type DealAdminReviewStatus = "NONE" | "UNDER_REVIEW" | "RESOLVED";
 
 export interface IDealContactReveal {
   organizerRevealed: boolean;
@@ -49,6 +50,20 @@ export interface IDeal extends mongoose.Document {
   completedAt: Date | null;
 
   contactReveal: IDealContactReveal;
+
+  isFrozen: boolean;
+  frozenAt: Date | null;
+  frozenBy: Types.ObjectId | null;
+  freezeReason: string;
+
+  adminReviewStatus: DealAdminReviewStatus;
+  internalNotes: string;
+  resolvedByAdminId: Types.ObjectId | null;
+  resolvedAt: Date | null;
+
+  isDeleted: boolean;
+  deletedAt: Date | null;
+  deletedBy: Types.ObjectId | null;
 
   createdAt: Date;
   updatedAt: Date;
@@ -228,20 +243,85 @@ const dealSchema = new Schema<IDeal>(
         fullyRevealed: false,
       }),
     },
+
+    isFrozen: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+
+    frozenAt: {
+      type: Date,
+      default: null,
+    },
+
+    frozenBy: {
+      type: Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+
+    freezeReason: {
+      type: String,
+      trim: true,
+      default: "",
+      maxlength: [1000, "Freeze reason cannot exceed 1000 characters"],
+    },
+
+    adminReviewStatus: {
+      type: String,
+      enum: ["NONE", "UNDER_REVIEW", "RESOLVED"],
+      default: "NONE",
+      index: true,
+    },
+
+    internalNotes: {
+      type: String,
+      trim: true,
+      default: "",
+      maxlength: [5000, "Internal notes cannot exceed 5000 characters"],
+    },
+
+    resolvedByAdminId: {
+      type: Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+
+    resolvedAt: {
+      type: Date,
+      default: null,
+    },
+
+    isDeleted: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+
+    deletedAt: {
+      type: Date,
+      default: null,
+    },
+
+    deletedBy: {
+      type: Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
   },
   {
     timestamps: true,
   }
 );
 
-// Performance indexes
 dealSchema.index({ organizerId: 1, status: 1, updatedAt: -1 });
 dealSchema.index({ sponsorId: 1, status: 1, updatedAt: -1 });
 dealSchema.index({ eventId: 1, status: 1 });
 dealSchema.index({ createdAt: -1 });
 dealSchema.index({ updatedAt: -1 });
+dealSchema.index({ isFrozen: 1, adminReviewStatus: 1, isDeleted: 1 });
 
-// Prevent impossible final amount
 dealSchema.pre("save", function (next) {
   if (this.finalAmount !== null && this.finalAmount < 0) {
     return next(new Error("Final amount must be >= 0"));
@@ -256,6 +336,12 @@ dealSchema.pre("save", function (next) {
     this.contactReveal?.sponsorRevealed
   ) {
     this.contactReveal.fullyRevealed = true;
+  }
+
+  if (!this.isFrozen) {
+    this.freezeReason = "";
+    this.frozenAt = null;
+    this.frozenBy = null;
   }
 
   next();

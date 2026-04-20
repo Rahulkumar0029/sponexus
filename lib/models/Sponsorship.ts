@@ -1,6 +1,8 @@
 import mongoose, { Document, Model, Schema, Types } from "mongoose";
 
 export type SponsorshipStatus = "active" | "paused" | "closed";
+export type SponsorshipVisibilityStatus = "VISIBLE" | "HIDDEN" | "UNDER_REVIEW";
+export type SponsorshipModerationStatus = "APPROVED" | "FLAGGED" | "PENDING_REVIEW";
 
 export interface ISponsorship extends Document {
   sponsorOwnerId: Types.ObjectId;
@@ -27,6 +29,16 @@ export interface ISponsorship extends Document {
   contactPhone: string;
 
   status: SponsorshipStatus;
+  visibilityStatus: SponsorshipVisibilityStatus;
+  moderationStatus: SponsorshipModerationStatus;
+
+  isDeleted: boolean;
+  deletedAt: Date | null;
+  deletedBy: Types.ObjectId | null;
+
+  flagReason: string;
+  adminNotes: string;
+
   expiresAt: Date | null;
 
   createdAt: Date;
@@ -176,6 +188,51 @@ const SponsorshipSchema = new Schema<ISponsorship>(
       index: true,
     },
 
+    visibilityStatus: {
+      type: String,
+      enum: ["VISIBLE", "HIDDEN", "UNDER_REVIEW"],
+      default: "VISIBLE",
+      index: true,
+    },
+
+    moderationStatus: {
+      type: String,
+      enum: ["APPROVED", "FLAGGED", "PENDING_REVIEW"],
+      default: "APPROVED",
+      index: true,
+    },
+
+    isDeleted: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+
+    deletedAt: {
+      type: Date,
+      default: null,
+    },
+
+    deletedBy: {
+      type: Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+
+    flagReason: {
+      type: String,
+      default: "",
+      trim: true,
+      maxlength: 1000,
+    },
+
+    adminNotes: {
+      type: String,
+      default: "",
+      trim: true,
+      maxlength: 3000,
+    },
+
     expiresAt: {
       type: Date,
       default: null,
@@ -235,11 +292,11 @@ SponsorshipSchema.pre("validate", function (next) {
   next();
 });
 
-// Performance indexes
 SponsorshipSchema.index({ sponsorOwnerId: 1, createdAt: -1 });
 SponsorshipSchema.index({ status: 1, createdAt: -1 });
 SponsorshipSchema.index({ category: 1, locationPreference: 1, status: 1 });
 SponsorshipSchema.index({ status: 1, expiresAt: 1 });
+SponsorshipSchema.index({ visibilityStatus: 1, moderationStatus: 1, isDeleted: 1 });
 
 const Sponsorship: Model<ISponsorship> =
   mongoose.models.Sponsorship ||

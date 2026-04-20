@@ -4,6 +4,9 @@ import { connectDB } from "@/lib/db";
 import { comparePasswords, generateAccessToken } from "@/lib/auth";
 import User from "@/lib/models/User";
 
+const MAX_FAILED_LOGIN_ATTEMPTS = 5;
+const LOCK_TIME_MS = 15 * 60 * 1000;
+
 export async function POST(request: NextRequest) {
   try {
     await connectDB();
@@ -23,7 +26,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const user = await User.findOne({ email }).select("+password");
+    const user = await User.findOne({ email, isDeleted: false }).select("+password");
 
     if (!user || !user.password) {
       return NextResponse.json(
@@ -35,9 +38,58 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (user.lockUntil && user.lockUntil.getTime() > Date.now()) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Account temporarily locked. Please try again later.",
+        },
+        { status: 423 }
+      );
+    }
+
+    if (user.accountStatus === "DISABLED") {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "This account has been disabled. Please contact support.",
+        },
+        { status: 403 }
+      );
+    }
+
+    if (user.accountStatus === "SUSPENDED") {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "This account has been suspended. Please contact support.",
+        },
+        { status: 403 }
+      );
+    }
+
+    if (user.accountStatus === "PENDING_REVIEW") {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Your account is under review. Please try again later.",
+        },
+        { status: 403 }
+      );
+    }
+
     const isPasswordValid = await comparePasswords(password, user.password);
 
     if (!isPasswordValid) {
+      user.failedLoginAttempts = (user.failedLoginAttempts || 0) + 1;
+
+      if (user.failedLoginAttempts >= MAX_FAILED_LOGIN_ATTEMPTS) {
+        user.lockUntil = new Date(Date.now() + LOCK_TIME_MS);
+        user.failedLoginAttempts = 0;
+      }
+
+      await user.save();
+
       return NextResponse.json(
         {
           success: false,
@@ -47,10 +99,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    user.failedLoginAttempts = 0;
+    user.lockUntil = null;
+    user.lastLoginAt = new Date();
+    user.lastActiveAt = new Date();
+    await user.save();
+
     const token = generateAccessToken({
       userId: String(user._id),
       email: user.email,
       role: user.role,
+      adminRole: user.adminRole,
     });
 
     const safeUser = {
@@ -58,6 +117,7 @@ export async function POST(request: NextRequest) {
       name: user.name,
       email: user.email,
       role: user.role,
+      adminRole: user.adminRole,
       firstName: user.firstName,
       lastName: user.lastName,
       companyName: user.companyName || "",
@@ -70,6 +130,7 @@ export async function POST(request: NextRequest) {
       organizerLocation: user.organizerLocation || "",
       isEmailVerified: user.isEmailVerified,
       isProfileComplete: user.isProfileComplete,
+      accountStatus: user.accountStatus,
       createdAt: user.createdAt,
       updatedAt: user.updatedAt,
     };

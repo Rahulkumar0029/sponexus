@@ -1,6 +1,7 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import crypto from "crypto";
+import type { AdminRole, UserRole } from "@/lib/models/User";
 
 const SALT_ROUNDS = 10;
 
@@ -14,12 +15,13 @@ function getJwtSecret() {
   return secret;
 }
 
-export type AuthRole = "ORGANIZER" | "SPONSOR";
+export type AuthRole = UserRole;
 
 export interface AuthTokenPayload {
   userId: string;
   email: string;
   role: AuthRole;
+  adminRole?: AdminRole;
   type: "access";
 }
 
@@ -53,7 +55,13 @@ export function verifyAccessToken(token: string): AuthTokenPayload | null {
   try {
     const decoded = jwt.verify(token, getJwtSecret()) as AuthTokenPayload;
 
-    if (!decoded || decoded.type !== "access" || !decoded.userId || !decoded.email || !decoded.role) {
+    if (
+      !decoded ||
+      decoded.type !== "access" ||
+      !decoded.userId ||
+      !decoded.email ||
+      !decoded.role
+    ) {
       return null;
     }
 
@@ -69,4 +77,19 @@ export function generateRandomToken(bytes: number = 32): string {
 
 export function hashToken(rawToken: string): string {
   return crypto.createHash("sha256").update(rawToken).digest("hex");
+}
+
+export function generateOtpCode(length: number = 6): string {
+  const digits = "0123456789";
+  let otp = "";
+
+  for (let i = 0; i < length; i++) {
+    otp += digits[Math.floor(Math.random() * digits.length)];
+  }
+
+  return otp;
+}
+
+export function hashOtpCode(code: string): string {
+  return crypto.createHash("sha256").update(code).digest("hex");
 }

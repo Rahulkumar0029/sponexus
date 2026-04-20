@@ -85,6 +85,14 @@ export async function POST(request: NextRequest) {
       isProfileComplete: false,
       emailVerificationToken: hashedVerificationToken,
       emailVerificationExpires: verificationExpires,
+      accountStatus: "ACTIVE",
+      adminRole: "NONE",
+      isDeleted: false,
+      failedLoginAttempts: 0,
+      lockUntil: null,
+      lastLoginAt: null,
+      lastActiveAt: null,
+      passwordChangedAt: new Date(),
     });
 
     const appUrl = process.env.APP_URL;
