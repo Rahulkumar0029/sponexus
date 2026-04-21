@@ -95,9 +95,7 @@ export async function POST(request: NextRequest) {
     const user = await User.findOne({
       email,
       isDeleted: false,
-    }).select(
-      "+emailVerificationToken +emailVerificationExpires firstName name email isEmailVerified accountStatus"
-    );
+    }).select("firstName name email isEmailVerified accountStatus");
 
     if (!user) {
       return buildNoStoreResponse(
@@ -136,14 +134,21 @@ export async function POST(request: NextRequest) {
     const hashedVerificationToken = hashToken(rawVerificationToken);
     const verificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
-    user.emailVerificationToken = hashedVerificationToken;
-    user.emailVerificationExpires = verificationExpires;
-
-    await user.save();
+    await User.updateOne(
+      { _id: user._id },
+      {
+        $set: {
+          emailVerificationToken: hashedVerificationToken,
+          emailVerificationExpires: verificationExpires,
+        },
+      }
+    );
 
     const verificationLink = `${parsedAppUrl
       .toString()
-      .replace(/\/$/, "")}/verify-email?token=${rawVerificationToken}`;
+      .replace(/\/$/, "")}/verify-email?token=${encodeURIComponent(
+      rawVerificationToken
+    )}`;
 
     await sendVerificationEmail({
       to: user.email,
@@ -159,12 +164,25 @@ export async function POST(request: NextRequest) {
       200
     );
   } catch (error) {
-    console.error("Resend verification error:", error);
+    console.error("===== RESEND VERIFICATION ERROR =====");
+
+    if (error instanceof Error) {
+      console.error("Message:", error.message);
+      console.error("Stack:", error.stack);
+    } else {
+      console.error("Unknown error:", error);
+    }
 
     return buildNoStoreResponse(
       {
         success: false,
         message: "Failed to resend verification email",
+        error:
+          process.env.NODE_ENV === "development"
+            ? error instanceof Error
+              ? error.message
+              : "Unknown error"
+            : undefined,
       },
       500
     );
