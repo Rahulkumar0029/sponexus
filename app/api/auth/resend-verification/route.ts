@@ -31,6 +31,7 @@ export async function POST(request: NextRequest) {
         {
           success: false,
           message: "Email is required",
+          error: "Email is required",
         },
         400
       );
@@ -41,6 +42,7 @@ export async function POST(request: NextRequest) {
         {
           success: false,
           message: "Email is too long",
+          error: "Email is too long",
         },
         400
       );
@@ -51,6 +53,7 @@ export async function POST(request: NextRequest) {
         {
           success: false,
           message: "Please enter a valid email address",
+          error: "Please enter a valid email address",
         },
         400
       );
@@ -63,6 +66,7 @@ export async function POST(request: NextRequest) {
         {
           success: false,
           message: "Missing APP_URL environment variable",
+          error: "Missing APP_URL environment variable",
         },
         500
       );
@@ -77,6 +81,7 @@ export async function POST(request: NextRequest) {
         {
           success: false,
           message: "APP_URL is not a valid URL",
+          error: "APP_URL is not a valid URL",
         },
         500
       );
@@ -87,6 +92,7 @@ export async function POST(request: NextRequest) {
         {
           success: false,
           message: "APP_URL must use http or https",
+          error: "APP_URL must use http or https",
         },
         500
       );
@@ -125,6 +131,7 @@ export async function POST(request: NextRequest) {
         {
           success: false,
           message: "Email is already verified",
+          error: "Email is already verified",
         },
         400
       );
@@ -177,12 +184,7 @@ export async function POST(request: NextRequest) {
       {
         success: false,
         message: "Failed to resend verification email",
-        error:
-          process.env.NODE_ENV === "development"
-            ? error instanceof Error
-              ? error.message
-              : "Unknown error"
-            : undefined,
+        error: error instanceof Error ? error.message : "Unknown error",
       },
       500
     );

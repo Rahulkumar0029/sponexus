@@ -32,6 +32,7 @@ export async function POST(req: Request) {
         {
           success: false,
           message: "Email is required",
+          error: "Email is required",
         },
         400
       );
@@ -42,6 +43,7 @@ export async function POST(req: Request) {
         {
           success: false,
           message: "Email is too long",
+          error: "Email is too long",
         },
         400
       );
@@ -52,6 +54,7 @@ export async function POST(req: Request) {
         {
           success: false,
           message: "Please enter a valid email address",
+          error: "Please enter a valid email address",
         },
         400
       );
@@ -64,6 +67,7 @@ export async function POST(req: Request) {
         {
           success: false,
           message: "Missing APP_URL environment variable",
+          error: "Missing APP_URL environment variable",
         },
         500
       );
@@ -78,6 +82,7 @@ export async function POST(req: Request) {
         {
           success: false,
           message: "APP_URL is not a valid URL",
+          error: "APP_URL is not a valid URL",
         },
         500
       );
@@ -88,6 +93,7 @@ export async function POST(req: Request) {
         {
           success: false,
           message: "APP_URL must use http or https",
+          error: "APP_URL must use http or https",
         },
         500
       );
@@ -96,9 +102,7 @@ export async function POST(req: Request) {
     const user = await User.findOne({
       email,
       isDeleted: false,
-    }).select(
-      "+resetPasswordToken +resetPasswordExpires firstName name email accountStatus"
-    );
+    }).select("firstName name email accountStatus");
 
     if (!user) {
       return buildNoStoreResponse(
@@ -127,14 +131,21 @@ export async function POST(req: Request) {
     const hashedResetToken = hashToken(rawResetToken);
     const resetExpires = new Date(Date.now() + 15 * 60 * 1000);
 
-    user.resetPasswordToken = hashedResetToken;
-    user.resetPasswordExpires = resetExpires;
-
-    await user.save();
+    await User.updateOne(
+      { _id: user._id },
+      {
+        $set: {
+          resetPasswordToken: hashedResetToken,
+          resetPasswordExpires: resetExpires,
+        },
+      }
+    );
 
     const resetLink = `${parsedAppUrl
       .toString()
-      .replace(/\/$/, "")}/reset-password?token=${rawResetToken}`;
+      .replace(/\/$/, "")}/reset-password?token=${encodeURIComponent(
+      rawResetToken
+    )}`;
 
     await sendPasswordResetEmail({
       to: user.email,
@@ -150,12 +161,20 @@ export async function POST(req: Request) {
       200
     );
   } catch (error) {
-    console.error("Forgot password error:", error);
+    console.error("===== FORGOT PASSWORD ERROR =====");
+
+    if (error instanceof Error) {
+      console.error("Message:", error.message);
+      console.error("Stack:", error.stack);
+    } else {
+      console.error("Unknown error:", error);
+    }
 
     return buildNoStoreResponse(
       {
         success: false,
-        message: "Server error",
+        message: "Failed to process forgot password request",
+        error: error instanceof Error ? error.message : "Unknown error",
       },
       500
     );
