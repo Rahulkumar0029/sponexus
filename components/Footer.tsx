@@ -10,7 +10,12 @@ export function Footer() {
       <div className="container-custom px-4 py-14">
         <div className="mb-10 grid grid-cols-1 gap-10 md:grid-cols-2 xl:grid-cols-5">
           <div className="md:col-span-2">
-            <h3 className="mb-3 text-2xl font-bold gradient-text">Sponexus</h3>
+            <h3 className="mb-3 flex items-center text-2xl font-extrabold tracking-[-0.03em]">
+  <span className="bg-gradient-to-r from-[#FF7A18] to-[#FFB347] bg-clip-text text-transparent">
+    Spon
+  </span>
+  <span className="text-white">Exus</span>
+</h3>
             <p className="max-w-md text-sm leading-relaxed text-text-muted">
               Where sponsors and events find the right fit. Sponexus helps event
               organizers and sponsors discover better partnership opportunities
@@ -94,14 +99,8 @@ export function Footer() {
                   Explore Sponsors
                 </Link>
               </li>
-              <li>
-                <Link
-                  href="/sponsorships"
-                  className="text-text-muted transition hover:text-[#FFB347]"
-                >
-                  Sponsorship Opportunities
-                </Link>
-              </li>
+              
+                
               <li>
                 <Link
                   href="/match"

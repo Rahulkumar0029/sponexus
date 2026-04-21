@@ -1,5 +1,6 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { v2 as cloudinary } from 'cloudinary';
+import { NextRequest, NextResponse } from "next/server";
+import { v2 as cloudinary } from "cloudinary";
+import { getCurrentUser } from "@/lib/current-user";
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
@@ -8,21 +9,86 @@ cloudinary.config({
 });
 
 function bufferToDataUri(buffer: Buffer, mimeType: string) {
-  return `data:${mimeType};base64,${buffer.toString('base64')}`;
+  return `data:${mimeType};base64,${buffer.toString("base64")}`;
 }
 
-const MAX_IMAGE_SIZE = 10 * 1024 * 1024; // 10 MB
-const MAX_VIDEO_SIZE = 50 * 1024 * 1024; // 50 MB
+function buildNoStoreResponse(
+  body: Record<string, unknown>,
+  status: number
+) {
+  const response = NextResponse.json(body, { status });
+  response.headers.set("Cache-Control", "no-store");
+  response.headers.set("Pragma", "no-cache");
+  response.headers.set("Expires", "0");
+  return response;
+}
+
+const MAX_IMAGE_SIZE = 10 * 1024 * 1024;
+const MAX_VIDEO_SIZE = 50 * 1024 * 1024;
+const MAX_FILES = 5;
+const MAX_FILENAME_LENGTH = 120;
+const MAX_TOTAL_UPLOAD_SIZE = 100 * 1024 * 1024;
+
+const ALLOWED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
+const ALLOWED_VIDEO_TYPES = ["video/mp4", "video/webm"];
+
+function sanitizeFileName(name: string) {
+  const safe = name.replace(/[^a-zA-Z0-9.\-_]/g, "_");
+  return safe.slice(0, MAX_FILENAME_LENGTH) || `file_${Date.now()}`;
+}
 
 export async function POST(request: NextRequest) {
   try {
-    const formData = await request.formData();
-    const files = formData.getAll('files') as File[];
+    const user = await getCurrentUser();
 
-    if (!files || files.length === 0) {
-      return NextResponse.json(
-        { success: false, message: 'No files uploaded' },
-        { status: 400 }
+    if (!user) {
+      return buildNoStoreResponse(
+        { success: false, message: "Authentication required" },
+        401
+      );
+    }
+
+    if (
+      user.accountStatus === "SUSPENDED" ||
+      user.accountStatus === "DISABLED" ||
+      user.isDeleted
+    ) {
+      return buildNoStoreResponse(
+        { success: false, message: "Account access restricted" },
+        403
+      );
+    }
+
+    const formData = await request.formData();
+    const rawFiles = formData.getAll("files");
+    const files = rawFiles.filter((item): item is File => item instanceof File);
+
+    if (!files.length) {
+      return buildNoStoreResponse(
+        { success: false, message: "No files uploaded" },
+        400
+      );
+    }
+
+    if (files.length > MAX_FILES) {
+      return buildNoStoreResponse(
+        {
+          success: false,
+          message: `You can upload a maximum of ${MAX_FILES} files at once.`,
+        },
+        400
+      );
+    }
+
+    const totalUploadSize = files.reduce((sum, file) => sum + file.size, 0);
+
+    if (totalUploadSize > MAX_TOTAL_UPLOAD_SIZE) {
+      return buildNoStoreResponse(
+        {
+          success: false,
+          message: "Total upload size exceeds allowed limit.",
+        },
+        400
       );
     }
 
@@ -30,62 +96,97 @@ export async function POST(request: NextRequest) {
 
     for (const file of files) {
       const mimeType = file.type;
-      const isImage = mimeType.startsWith('image/');
-      const isVideo = mimeType.startsWith('video/');
+      const isImage = ALLOWED_IMAGE_TYPES.includes(mimeType);
+      const isVideo = ALLOWED_VIDEO_TYPES.includes(mimeType);
 
       if (!isImage && !isVideo) {
-        return NextResponse.json(
-          { success: false, message: `Unsupported file type: ${file.name}` },
-          { status: 400 }
+        return buildNoStoreResponse(
+          {
+            success: false,
+            message:
+              "Invalid file format. Only JPG, PNG, WEBP images and MP4 or WEBM videos are allowed.",
+          },
+          400
+        );
+      }
+
+      if (file.size <= 0) {
+        return buildNoStoreResponse(
+          {
+            success: false,
+            message: "Empty files are not allowed.",
+          },
+          400
         );
       }
 
       if (isImage && file.size > MAX_IMAGE_SIZE) {
-        return NextResponse.json(
-          { success: false, message: `Image too large: ${file.name}` },
-          { status: 400 }
+        return buildNoStoreResponse(
+          {
+            success: false,
+            message: "Image size exceeds 10MB limit.",
+          },
+          400
         );
       }
 
       if (isVideo && file.size > MAX_VIDEO_SIZE) {
-        return NextResponse.json(
-          { success: false, message: `Video too large: ${file.name}` },
-          { status: 400 }
+        return buildNoStoreResponse(
+          {
+            success: false,
+            message: "Video size exceeds 50MB limit.",
+          },
+          400
         );
       }
 
+      const safeFileName = sanitizeFileName(file.name);
       const bytes = await file.arrayBuffer();
       const buffer = Buffer.from(bytes);
+
+      if (!buffer.length) {
+        return buildNoStoreResponse(
+          {
+            success: false,
+            message: "Empty files are not allowed.",
+          },
+          400
+        );
+      }
 
       const dataUri = bufferToDataUri(buffer, mimeType);
 
       const result = await cloudinary.uploader.upload(dataUri, {
-        folder: 'sponexus/events',
-        resource_type: isVideo ? 'video' : 'image',
+        folder: `sponexus/${String(user._id)}`,
+        resource_type: isVideo ? "video" : "image",
+        public_id: `${Date.now()}_${safeFileName}`,
+        overwrite: false,
+        unique_filename: true,
+        use_filename: false,
       });
 
       uploadedFiles.push({
         url: result.secure_url,
         publicId: result.public_id,
-        type: isVideo ? 'video' : 'image',
-        title: file.name,
+        type: isVideo ? "video" : "image",
+        title: safeFileName,
         uploadedAt: new Date(),
       });
     }
 
-    return NextResponse.json(
+    return buildNoStoreResponse(
       {
         success: true,
         files: uploadedFiles,
       },
-      { status: 200 }
+      200
     );
   } catch (error) {
-    console.error('Upload error:', error);
+    console.error("Upload error:", error);
 
-    return NextResponse.json(
-      { success: false, message: 'Upload failed' },
-      { status: 500 }
+    return buildNoStoreResponse(
+      { success: false, message: "Upload failed" },
+      500
     );
   }
 }

@@ -2,10 +2,12 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation"; // ✅ ADDED
 import { EventCard } from "@/components/EventCard";
 import { Button } from "@/components/Button";
 import { useAuth } from "@/hooks/useAuth";
 import { Event } from "@/types/event";
+import { useSubscription } from "@/hooks/useSubscription";
 
 type ApiResponse = {
   success: boolean;
@@ -23,7 +25,9 @@ type ApiResponse = {
 
 
 export default function EventsClient() {
+  const router = useRouter();
   const { user, loading: authLoading } = useAuth();
+const { hasAccess } = useSubscription();
 
   const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
@@ -96,16 +100,34 @@ export default function EventsClient() {
 
           <div className="flex gap-3">
             {isOrganizer && (
-              <Link href="/events/create">
-                <Button variant="primary">+ Create Event</Button>
-              </Link>
-            )}
+  <Button
+    variant="primary"
+    onClick={() => {
+      if (!hasAccess) {
+        router.push("/pricing");
+        return;
+      }
+      router.push("/events/create");
+    }}
+  >
+    + Create Event
+  </Button>
+)}
 
             {isSponsor && (
-              <Link href="/match">
-                <Button variant="secondary">View Matches</Button>
-              </Link>
-            )}
+  <Button
+    variant="secondary"
+    onClick={() => {
+      if (!hasAccess) {
+        router.push("/pricing");
+        return;
+      }
+      router.push("/match");
+    }}
+  >
+    View Matches
+  </Button>
+)}
 
             {!user && (
               <Link href="/login?redirect=/events">

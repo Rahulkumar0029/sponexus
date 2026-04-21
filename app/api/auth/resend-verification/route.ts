@@ -5,44 +5,130 @@ import { generateRandomToken, hashToken } from "@/lib/auth";
 import { sendVerificationEmail } from "@/lib/email";
 import User from "@/lib/models/User";
 
+const MAX_EMAIL_LENGTH = 320;
+
+function buildNoStoreResponse(
+  body: Record<string, unknown>,
+  status: number
+) {
+  const response = NextResponse.json(body, { status });
+  response.headers.set("Cache-Control", "no-store");
+  response.headers.set("Pragma", "no-cache");
+  response.headers.set("Expires", "0");
+  return response;
+}
+
 export async function POST(request: NextRequest) {
   try {
     await connectDB();
 
     const body = await request.json();
-    const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
+    const email =
+      typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
 
     if (!email) {
-      return NextResponse.json(
+      return buildNoStoreResponse(
         {
           success: false,
           message: "Email is required",
         },
-        { status: 400 }
+        400
       );
     }
 
-    const user = await User.findOne({ email }).select(
-      "+emailVerificationToken +emailVerificationExpires"
+    if (email.length > MAX_EMAIL_LENGTH) {
+      return buildNoStoreResponse(
+        {
+          success: false,
+          message: "Email is too long",
+        },
+        400
+      );
+    }
+
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return buildNoStoreResponse(
+        {
+          success: false,
+          message: "Please enter a valid email address",
+        },
+        400
+      );
+    }
+
+    const appUrl = process.env.APP_URL;
+
+    if (!appUrl) {
+      return buildNoStoreResponse(
+        {
+          success: false,
+          message: "Missing APP_URL environment variable",
+        },
+        500
+      );
+    }
+
+    let parsedAppUrl: URL;
+
+    try {
+      parsedAppUrl = new URL(appUrl);
+    } catch {
+      return buildNoStoreResponse(
+        {
+          success: false,
+          message: "APP_URL is not a valid URL",
+        },
+        500
+      );
+    }
+
+    if (!["http:", "https:"].includes(parsedAppUrl.protocol)) {
+      return buildNoStoreResponse(
+        {
+          success: false,
+          message: "APP_URL must use http or https",
+        },
+        500
+      );
+    }
+
+    const user = await User.findOne({
+      email,
+      isDeleted: false,
+    }).select(
+      "+emailVerificationToken +emailVerificationExpires firstName name email isEmailVerified accountStatus"
     );
 
     if (!user) {
-      return NextResponse.json(
+      return buildNoStoreResponse(
         {
           success: true,
           message: "If this email exists, a verification email has been sent.",
         },
-        { status: 200 }
+        200
+      );
+    }
+
+    if (
+      user.accountStatus === "DISABLED" ||
+      user.accountStatus === "SUSPENDED"
+    ) {
+      return buildNoStoreResponse(
+        {
+          success: true,
+          message: "If this email exists, a verification email has been sent.",
+        },
+        200
       );
     }
 
     if (user.isEmailVerified) {
-      return NextResponse.json(
+      return buildNoStoreResponse(
         {
           success: false,
           message: "Email is already verified",
         },
-        { status: 400 }
+        400
       );
     }
 
@@ -55,19 +141,9 @@ export async function POST(request: NextRequest) {
 
     await user.save();
 
-    const appUrl = process.env.APP_URL;
-
-    if (!appUrl) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Missing APP_URL environment variable",
-        },
-        { status: 500 }
-      );
-    }
-
-    const verificationLink = `${appUrl}/verify-email?token=${rawVerificationToken}`;
+    const verificationLink = `${parsedAppUrl
+      .toString()
+      .replace(/\/$/, "")}/verify-email?token=${rawVerificationToken}`;
 
     await sendVerificationEmail({
       to: user.email,
@@ -75,22 +151,22 @@ export async function POST(request: NextRequest) {
       verificationLink,
     });
 
-    return NextResponse.json(
+    return buildNoStoreResponse(
       {
         success: true,
         message: "If this email exists, a verification email has been sent.",
       },
-      { status: 200 }
+      200
     );
   } catch (error) {
     console.error("Resend verification error:", error);
 
-    return NextResponse.json(
+    return buildNoStoreResponse(
       {
         success: false,
         message: "Failed to resend verification email",
       },
-      { status: 500 }
+      500
     );
   }
 }

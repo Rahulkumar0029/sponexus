@@ -7,9 +7,43 @@ import Sponsor from "@/lib/models/Sponsor";
 import User from "@/lib/models/User";
 import { getCurrentUser } from "@/lib/current-user";
 
-// ------------------------------------------------------------
-// GET: Fetch single sponsorship
-// ------------------------------------------------------------
+const PUBLIC_VISIBLE_STATUS = "active";
+
+function buildNoStoreResponse(
+  body: Record<string, unknown>,
+  status: number
+) {
+  const response = NextResponse.json(body, { status });
+  response.headers.set("Cache-Control", "no-store");
+  response.headers.set("Pragma", "no-cache");
+  response.headers.set("Expires", "0");
+  return response;
+}
+
+function sanitizePublicSponsorProfile(profile: any) {
+  if (!profile) return null;
+
+  const plain =
+    typeof profile?.toObject === "function" ? profile.toObject() : { ...profile };
+
+  plain.officialEmail = undefined;
+  plain.phone = undefined;
+  plain.userId = undefined;
+
+  return plain;
+}
+
+function sanitizeOwnerSponsorProfile(profile: any) {
+  if (!profile) return null;
+
+  const plain =
+    typeof profile?.toObject === "function" ? profile.toObject() : { ...profile };
+
+  plain.userId = undefined;
+
+  return plain;
+}
+
 export async function GET(
   _req: NextRequest,
   { params }: { params: { id: string } }
@@ -18,9 +52,9 @@ export async function GET(
     const { id } = params;
 
     if (!id || !mongoose.Types.ObjectId.isValid(id)) {
-      return NextResponse.json(
+      return buildNoStoreResponse(
         { success: false, message: "Invalid sponsorship ID" },
-        { status: 400 }
+        400
       );
     }
 
@@ -31,9 +65,9 @@ export async function GET(
     const sponsorship = await Sponsorship.findById(id).lean();
 
     if (!sponsorship) {
-      return NextResponse.json(
+      return buildNoStoreResponse(
         { success: false, message: "Sponsorship not found" },
-        { status: 404 }
+        404
       );
     }
 
@@ -41,112 +75,97 @@ export async function GET(
       sponsorship.sponsorProfileId
     ).lean();
 
-    // ------------------------------------------------------------
-    // PUBLIC
-    // ------------------------------------------------------------
+    const isPubliclyVisible =
+      sponsorship.status === PUBLIC_VISIBLE_STATUS &&
+      !!sponsorProfile?.isPublic &&
+      !!sponsorProfile?.isProfileComplete;
+
     if (!currentUser?._id) {
-      if (
-        sponsorship.status !== "active" ||
-        !sponsorProfile?.isPublic ||
-        !sponsorProfile?.isProfileComplete
-      ) {
-        return NextResponse.json(
+      if (!isPubliclyVisible) {
+        return buildNoStoreResponse(
           { success: false, message: "Sponsorship not available" },
-          { status: 404 }
+          404
         );
       }
 
-      return NextResponse.json(
+      return buildNoStoreResponse(
         {
           success: true,
           mode: "public_view",
           data: {
             ...sponsorship,
-            sponsorProfile,
+            sponsorProfile: sanitizePublicSponsorProfile(sponsorProfile),
           },
         },
-        { status: 200 }
+        200
       );
     }
 
-    const user = await User.findById(currentUser._id);
+    const user = await User.findById(currentUser._id).select("_id role");
 
     if (!user) {
-      return NextResponse.json(
+      return buildNoStoreResponse(
         { success: false, message: "User not found" },
-        { status: 404 }
+        404
       );
     }
 
-    // ------------------------------------------------------------
-    // SPONSOR (owner only)
-    // ------------------------------------------------------------
     if (user.role === "SPONSOR") {
       if (String(sponsorship.sponsorOwnerId) !== String(user._id)) {
-        return NextResponse.json(
+        return buildNoStoreResponse(
           { success: false, message: "Access denied" },
-          { status: 403 }
+          403
         );
       }
 
-      return NextResponse.json(
+      return buildNoStoreResponse(
         {
           success: true,
           mode: "owner_view",
           data: {
             ...sponsorship,
-            sponsorProfile,
+            sponsorProfile: sanitizeOwnerSponsorProfile(sponsorProfile),
           },
         },
-        { status: 200 }
+        200
       );
     }
 
-    // ------------------------------------------------------------
-    // ORGANIZER
-    // ------------------------------------------------------------
     if (user.role === "ORGANIZER") {
-      if (
-        sponsorship.status !== "active" ||
-        !sponsorProfile?.isPublic ||
-        !sponsorProfile?.isProfileComplete
-      ) {
-        return NextResponse.json(
+      if (!isPubliclyVisible) {
+        return buildNoStoreResponse(
           { success: false, message: "Sponsorship not available" },
-          { status: 404 }
+          404
         );
       }
 
-      return NextResponse.json(
+      return buildNoStoreResponse(
         {
           success: true,
           mode: "organizer_view",
           data: {
             ...sponsorship,
-            sponsorProfile,
+            sponsorProfile: sanitizePublicSponsorProfile(sponsorProfile),
           },
         },
-        { status: 200 }
+        200
       );
     }
 
-    return NextResponse.json(
+    return buildNoStoreResponse(
       { success: false, message: "Unauthorized role" },
-      { status: 403 }
+      403
     );
   } catch (error) {
     console.error("Error fetching sponsorship:", error);
 
-    return NextResponse.json(
+    return buildNoStoreResponse(
       { success: false, message: "Failed to fetch sponsorship" },
-      { status: 500 }
+      500
     );
   }
 }
 
-// ------------------------------------------------------------
-// DELETE: Sponsor deletes own sponsorship
-// ------------------------------------------------------------
 export async function DELETE(
   _req: NextRequest,
   { params }: { params: { id: string } }
@@ -155,9 +174,9 @@ export async function DELETE(
     const { id } = params;
 
     if (!id || !mongoose.Types.ObjectId.isValid(id)) {
-      return NextResponse.json(
+      return buildNoStoreResponse(
         { success: false, message: "Invalid ID" },
-        { status: 400 }
+        400
       );
     }
 
@@ -166,52 +185,54 @@ export async function DELETE(
     const currentUser = await getCurrentUser();
 
     if (!currentUser?._id) {
-      return NextResponse.json(
+      return buildNoStoreResponse(
         { success: false, message: "Authentication required" },
-        { status: 401 }
+        401
       );
     }
 
-    const user = await User.findById(currentUser._id);
+    const user = await User.findById(currentUser._id).select("_id role");
 
     if (!user || user.role !== "SPONSOR") {
-      return NextResponse.json(
+      return buildNoStoreResponse(
         { success: false, message: "Unauthorized" },
-        { status: 403 }
+        403
       );
     }
 
     const sponsorship = await Sponsorship.findById(id);
 
     if (!sponsorship) {
-      return NextResponse.json(
+      return buildNoStoreResponse(
         { success: false, message: "Not found" },
-        { status: 404 }
+        404
       );
     }
 
     if (String(sponsorship.sponsorOwnerId) !== String(user._id)) {
-      return NextResponse.json(
+      return buildNoStoreResponse(
         { success: false, message: "Access denied" },
-        { status: 403 }
+        403
       );
     }
 
-    await sponsorship.deleteOne();
+    sponsorship.status = "closed";
+    sponsorship.expiresAt = new Date();
+    await sponsorship.save();
 
-    return NextResponse.json(
+    return buildNoStoreResponse(
       {
         success: true,
         message: "Sponsorship deleted successfully",
       },
-      { status: 200 }
+      200
     );
   } catch (error) {
     console.error("Delete sponsorship error:", error);
 
-    return NextResponse.json(
+    return buildNoStoreResponse(
       { success: false, message: "Failed to delete sponsorship" },
-      { status: 500 }
+      500
     );
   }
 }

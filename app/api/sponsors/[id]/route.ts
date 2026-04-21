@@ -6,6 +6,43 @@ import Sponsor from "@/lib/models/Sponsor";
 import User from "@/lib/models/User";
 import { getCurrentUser } from "@/lib/current-user";
 
+function buildNoStoreResponse(
+  body: Record<string, unknown>,
+  status: number
+) {
+  const response = NextResponse.json(body, { status });
+  response.headers.set("Cache-Control", "no-store");
+  response.headers.set("Pragma", "no-cache");
+  response.headers.set("Expires", "0");
+  return response;
+}
+
+function sanitizePublicSponsor(profile: any) {
+  if (!profile) return profile;
+
+  const plain =
+    typeof profile?.toObject === "function" ? profile.toObject() : { ...profile };
+
+  plain.userId = undefined;
+  plain.officialEmail = undefined;
+  plain.phone = undefined;
+  plain.instagramUrl = undefined;
+  plain.linkedinUrl = undefined;
+
+  return plain;
+}
+
+function sanitizeOwnerSponsor(profile: any) {
+  if (!profile) return profile;
+
+  const plain =
+    typeof profile?.toObject === "function" ? profile.toObject() : { ...profile };
+
+  plain.userId = undefined;
+
+  return plain;
+}
+
 export async function GET(
   _request: NextRequest,
   { params }: { params: { id: string } }
@@ -14,9 +51,9 @@ export async function GET(
     const { id } = params;
 
     if (!id || !mongoose.Types.ObjectId.isValid(id)) {
-      return NextResponse.json(
+      return buildNoStoreResponse(
         { success: false, message: "Invalid sponsor ID" },
-        { status: 400 }
+        400
       );
     }
 
@@ -32,9 +69,6 @@ export async function GET(
 
     const ownerSelect = organizerSelect;
 
-    // ------------------------------------------------------------
-    // PUBLIC ACCESS
-    // ------------------------------------------------------------
     if (!currentUser?._id) {
       const sponsor = await Sponsor.findOne({
         _id: id,
@@ -45,34 +79,31 @@ export async function GET(
         .lean();
 
       if (!sponsor) {
-        return NextResponse.json(
+        return buildNoStoreResponse(
           { success: false, message: "Sponsor not found" },
-          { status: 404 }
+          404
         );
       }
 
-      return NextResponse.json(
+      return buildNoStoreResponse(
         {
           success: true,
           mode: "public_view",
-          data: sponsor,
+          data: sanitizePublicSponsor(sponsor),
         },
-        { status: 200 }
+        200
       );
     }
 
-    const user = await User.findById(currentUser._id);
+    const user = await User.findById(currentUser._id).select("_id role");
 
     if (!user) {
-      return NextResponse.json(
+      return buildNoStoreResponse(
         { success: false, message: "User not found" },
-        { status: 404 }
+        404
       );
     }
 
-    // ------------------------------------------------------------
-    // SPONSOR ACCESS: only own profile
-    // ------------------------------------------------------------
     if (user.role === "SPONSOR") {
       const sponsor = await Sponsor.findOne({
         _id: id,
@@ -82,28 +113,25 @@ export async function GET(
         .lean();
 
       if (!sponsor) {
-        return NextResponse.json(
+        return buildNoStoreResponse(
           {
             success: false,
             message: "You are not allowed to view this sponsor profile",
           },
-          { status: 403 }
+          403
         );
       }
 
-      return NextResponse.json(
+      return buildNoStoreResponse(
         {
           success: true,
           mode: "owner_view",
-          data: sponsor,
+          data: sanitizeOwnerSponsor(sponsor),
         },
-        { status: 200 }
+        200
       );
     }
 
-    // ------------------------------------------------------------
-    // ORGANIZER ACCESS
-    // ------------------------------------------------------------
     if (user.role === "ORGANIZER") {
       const sponsor = await Sponsor.findOne({
         _id: id,
@@ -114,32 +142,32 @@ export async function GET(
         .lean();
 
       if (!sponsor) {
-        return NextResponse.json(
+        return buildNoStoreResponse(
           { success: false, message: "Sponsor not found" },
-          { status: 404 }
+          404
         );
       }
 
-      return NextResponse.json(
+      return buildNoStoreResponse(
         {
           success: true,
           mode: "organizer_view",
-          data: sponsor,
+          data: sanitizePublicSponsor(sponsor),
         },
-        { status: 200 }
+        200
       );
     }
 
-    return NextResponse.json(
+    return buildNoStoreResponse(
       { success: false, message: "Unauthorized role" },
-      { status: 403 }
+      403
     );
   } catch (error) {
     console.error("Error fetching sponsor:", error);
 
-    return NextResponse.json(
+    return buildNoStoreResponse(
       { success: false, message: "Failed to fetch sponsor" },
-      { status: 500 }
+      500
     );
   }
 }

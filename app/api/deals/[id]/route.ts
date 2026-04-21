@@ -6,6 +6,8 @@ import { connectDB } from "@/lib/db";
 import { verifyAccessToken } from "@/lib/auth";
 import { DealModel } from "@/lib/models/Deal";
 import User from "@/lib/models/User";
+import { checkSubscriptionAccess } from "@/lib/subscription/checkAccess";
+import { ACTIONS } from "@/lib/subscription/constants";
 
 const ALLOWED_STATUSES = new Set([
   "pending",
@@ -18,6 +20,13 @@ const ALLOWED_STATUSES = new Set([
 ]);
 
 const ALLOWED_PAYMENT_STATUSES = new Set(["unpaid", "pending", "paid"]);
+
+const MAX_MESSAGE_LENGTH = 2000;
+const MAX_NOTES_LENGTH = 5000;
+const MAX_DISPUTE_REASON_LENGTH = 2000;
+const MAX_DELIVERABLES = 30;
+const MAX_DELIVERABLE_ITEM_LENGTH = 200;
+const MAX_FINAL_AMOUNT = 100000000;
 
 function normalizeString(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
@@ -32,6 +41,52 @@ function normalizeArray(value: unknown): string[] {
 
 function isValidObjectId(value: unknown) {
   return typeof value === "string" && mongoose.Types.ObjectId.isValid(value);
+}
+
+function isSafeLength(value: string, max: number) {
+  return value.length <= max;
+}
+
+function validateDeliverables(value: unknown) {
+  if (!Array.isArray(value)) {
+    return { valid: false, message: "deliverables must be an array" };
+  }
+
+  if (value.length > MAX_DELIVERABLES) {
+    return {
+      valid: false,
+      message: `deliverables cannot exceed ${MAX_DELIVERABLES} items`,
+    };
+  }
+
+  for (const item of value) {
+    if (typeof item !== "string") {
+      return { valid: false, message: "Each deliverable must be a string" };
+    }
+
+    const trimmed = item.trim();
+
+    if (!trimmed) {
+      return { valid: false, message: "Deliverable items cannot be empty" };
+    }
+
+    if (trimmed.length > MAX_DELIVERABLE_ITEM_LENGTH) {
+      return {
+        valid: false,
+        message: `Each deliverable must be at most ${MAX_DELIVERABLE_ITEM_LENGTH} characters`,
+      };
+    }
+  }
+
+  return { valid: true, message: "" };
+}
+
+function isValidCurrencyAmount(value: unknown) {
+  if (typeof value !== "number") return false;
+  if (!Number.isFinite(value)) return false;
+  if (value < 0) return false;
+  if (value > MAX_FINAL_AMOUNT) return false;
+  return Number(value.toFixed(2)) === value;
 }
 
 function canAccessDeal(userId: string, deal: any) {
@@ -121,24 +176,42 @@ function canEditCommercialFields(
   currentStatus: string,
   role: "ORGANIZER" | "SPONSOR"
 ) {
+  if (role !== "ORGANIZER") return false;
   if (isFinalDealState(currentStatus)) return false;
+  if (currentStatus === "accepted") return false;
 
-  if (currentStatus === "accepted") {
-    return role === "ORGANIZER";
-  }
-
-  return role === "ORGANIZER";
+  return (
+    currentStatus === "pending" ||
+    currentStatus === "negotiating" ||
+    currentStatus === "disputed"
+  );
 }
 
-function canEditPaymentStatus(
+function canUpdatePaymentStatusTo(
   currentStatus: string,
+  currentPaymentStatus: string,
+  nextPaymentStatus: string,
   role: "ORGANIZER" | "SPONSOR"
 ) {
-  if (isFinalDealState(currentStatus)) {
-    return role === "ORGANIZER";
+  if (role !== "ORGANIZER") return false;
+
+  if (currentStatus !== "accepted" && currentStatus !== "completed") {
+    return false;
   }
 
-  return role === "ORGANIZER";
+  if (nextPaymentStatus === "paid") {
+    return false;
+  }
+
+  const allowedTransitions: Record<string, string[]> = {
+    unpaid: ["pending"],
+    pending: ["unpaid"],
+    paid: [],
+  };
+
+  return (allowedTransitions[currentPaymentStatus] || []).includes(
+    nextPaymentStatus
+  );
 }
 
 function sanitizeDealContactsForResponse(deal: any) {
@@ -176,7 +249,9 @@ async function getAuthenticatedUser() {
     return { user: null, error: "Invalid or expired token", status: 401 };
   }
 
-  const user = await User.findById(payload.userId).select("_id email role");
+  const user = await User.findById(payload.userId).select(
+    "_id email role firstName lastName name companyName adminRole"
+  );
 
   if (!user) {
     return { user: null, error: "User not found", status: 404 };
@@ -302,6 +377,8 @@ export async function PATCH(
       );
     }
 
+    const statusAtReadTime = String(deal.status);
+
     const body = await request.json();
 
     const revealContact = body.revealContact === true;
@@ -329,6 +406,50 @@ export async function PATCH(
 
     const wantsPaymentStatusEdit = body.paymentStatus !== undefined;
 
+    if (message && !isSafeLength(message, MAX_MESSAGE_LENGTH)) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: `message cannot exceed ${MAX_MESSAGE_LENGTH} characters`,
+        },
+        { status: 400 }
+      );
+    }
+
+    if (notes && !isSafeLength(notes, MAX_NOTES_LENGTH)) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: `notes cannot exceed ${MAX_NOTES_LENGTH} characters`,
+        },
+        { status: 400 }
+      );
+    }
+
+    if (disputeReason && !isSafeLength(disputeReason, MAX_DISPUTE_REASON_LENGTH)) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: `disputeReason cannot exceed ${MAX_DISPUTE_REASON_LENGTH} characters`,
+        },
+        { status: 400 }
+      );
+    }
+
+    if (body.deliverables !== undefined) {
+      const deliverablesValidation = validateDeliverables(body.deliverables);
+
+      if (!deliverablesValidation.valid) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: deliverablesValidation.message,
+          },
+          { status: 400 }
+        );
+      }
+    }
+
     if (revealContact) {
       if (deal.status !== "accepted") {
         return NextResponse.json(
@@ -337,6 +458,46 @@ export async function PATCH(
             message: "Contact reveal allowed only after deal acceptance",
           },
           { status: 400 }
+        );
+      }
+
+      if (
+        (roleInDeal === "ORGANIZER" && deal.contactReveal?.organizerRevealed) ||
+        (roleInDeal === "SPONSOR" && deal.contactReveal?.sponsorRevealed)
+      ) {
+        const updatedDeal = await DealModel.findById(deal._id)
+          .populate("organizerId", "_id name email phone companyName")
+          .populate("sponsorId", "_id name email phone companyName")
+          .populate("eventId", "_id title location startDate");
+
+        const safeDeal = sanitizeDealContactsForResponse(updatedDeal);
+
+        return NextResponse.json(
+          {
+            success: true,
+            message: "Your contact details are already revealed for this deal",
+            deal: safeDeal,
+          },
+          { status: 200 }
+        );
+      }
+
+      const access = await checkSubscriptionAccess({
+        userId: currentUserId,
+        role: roleInDeal,
+        action: ACTIONS.REVEAL_CONTACT,
+      });
+
+      if (!access.allowed) {
+        return NextResponse.json(
+          {
+            success: false,
+            message:
+              access.message ||
+              "Upgrade your subscription to unlock contact details on Sponexus.",
+            requiresUpgrade: true,
+          },
+          { status: 403 }
         );
       }
 
@@ -359,9 +520,38 @@ export async function PATCH(
         deal.contactReveal.fullyRevealed = true;
       }
 
-      deal.lastActionBy = currentUser._id;
+      const revealResult = await DealModel.updateOne(
+        {
+          _id: deal._id,
+          status: statusAtReadTime,
+        },
+        {
+          $set: {
+            lastActionBy: currentUser._id,
+            "contactReveal.organizerRevealed":
+              deal.contactReveal?.organizerRevealed ?? false,
+            "contactReveal.organizerRevealedAt":
+              deal.contactReveal?.organizerRevealedAt ?? null,
+            "contactReveal.sponsorRevealed":
+              deal.contactReveal?.sponsorRevealed ?? false,
+            "contactReveal.sponsorRevealedAt":
+              deal.contactReveal?.sponsorRevealedAt ?? null,
+            "contactReveal.fullyRevealed":
+              deal.contactReveal?.fullyRevealed ?? false,
+          },
+        }
+      );
 
-      await deal.save();
+      if (revealResult.modifiedCount !== 1) {
+        return NextResponse.json(
+          {
+            success: false,
+            message:
+              "This deal was updated by another action. Please refresh and try again.",
+          },
+          { status: 409 }
+        );
+      }
 
       const updatedDeal = await DealModel.findById(deal._id)
         .populate("organizerId", "_id name email phone companyName")
@@ -396,18 +586,17 @@ export async function PATCH(
       );
     }
 
-    if (
-      body.finalAmount !== undefined &&
-      body.finalAmount !== null &&
-      (Number.isNaN(finalAmount) || finalAmount < 0)
-    ) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "finalAmount must be a valid non-negative number",
-        },
-        { status: 400 }
-      );
+    if (body.finalAmount !== undefined && body.finalAmount !== null) {
+      if (!isValidCurrencyAmount(finalAmount)) {
+        return NextResponse.json(
+          {
+            success: false,
+            message:
+              "finalAmount must be a valid currency amount with max 2 decimals and within allowed range",
+          },
+          { status: 400 }
+        );
+      }
     }
 
     if (
@@ -423,17 +612,31 @@ export async function PATCH(
       );
     }
 
-    if (
-      wantsPaymentStatusEdit &&
-      !canEditPaymentStatus(currentStatus, roleInDeal)
-    ) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "You are not allowed to update payment status for this deal",
-        },
-        { status: 403 }
-      );
+    if (wantsPaymentStatusEdit) {
+      if (!paymentStatus) {
+        return NextResponse.json(
+          { success: false, message: "paymentStatus is required" },
+          { status: 400 }
+        );
+      }
+
+      if (
+        !canUpdatePaymentStatusTo(
+          currentStatus,
+          String(deal.paymentStatus || "unpaid"),
+          paymentStatus,
+          roleInDeal
+        )
+      ) {
+        return NextResponse.json(
+          {
+            success: false,
+            message:
+              "You are not allowed to update payment status to this value from this route",
+          },
+          { status: 403 }
+        );
+      }
     }
 
     if (nextStatus) {
@@ -494,7 +697,49 @@ export async function PATCH(
 
     deal.lastActionBy = currentUser._id;
 
-    await deal.save();
+    const saveResult = await DealModel.updateOne(
+      {
+        _id: deal._id,
+        status: statusAtReadTime,
+      },
+      {
+        $set: {
+          status: deal.status,
+          finalAmount: deal.finalAmount,
+          message: deal.message,
+          notes: deal.notes,
+          deliverables: deal.deliverables,
+          paymentStatus: deal.paymentStatus,
+          disputeReason: deal.disputeReason,
+          lastActionBy: currentUser._id,
+          acceptedAt: deal.acceptedAt,
+          rejectedAt: deal.rejectedAt,
+          cancelledAt: deal.cancelledAt,
+          completedAt: deal.completedAt,
+          "contactReveal.organizerRevealed":
+            deal.contactReveal?.organizerRevealed ?? false,
+          "contactReveal.organizerRevealedAt":
+            deal.contactReveal?.organizerRevealedAt ?? null,
+          "contactReveal.sponsorRevealed":
+            deal.contactReveal?.sponsorRevealed ?? false,
+          "contactReveal.sponsorRevealedAt":
+            deal.contactReveal?.sponsorRevealedAt ?? null,
+          "contactReveal.fullyRevealed":
+            deal.contactReveal?.fullyRevealed ?? false,
+        },
+      }
+    );
+
+    if (saveResult.modifiedCount !== 1) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "This deal was updated by another action. Please refresh and try again.",
+        },
+        { status: 409 }
+      );
+    }
 
     const updatedDeal = await DealModel.findById(deal._id)
       .populate("organizerId", "_id name email phone companyName")

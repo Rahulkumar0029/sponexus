@@ -46,6 +46,7 @@ export interface ISponsorship extends Document {
 }
 
 const phoneRegex = /^[0-9+\-\s()]{7,20}$/;
+const MAX_BUDGET = 100000000;
 
 const SponsorshipSchema = new Schema<ISponsorship>(
   {
@@ -81,6 +82,7 @@ const SponsorshipSchema = new Schema<ISponsorship>(
       type: Number,
       required: true,
       min: 0,
+      max: MAX_BUDGET,
       validate: {
         validator: Number.isFinite,
         message: "Budget must be a valid number",
@@ -211,12 +213,14 @@ const SponsorshipSchema = new Schema<ISponsorship>(
     deletedAt: {
       type: Date,
       default: null,
+      select: false,
     },
 
     deletedBy: {
       type: Schema.Types.ObjectId,
       ref: "User",
       default: null,
+      select: false,
     },
 
     flagReason: {
@@ -224,6 +228,7 @@ const SponsorshipSchema = new Schema<ISponsorship>(
       default: "",
       trim: true,
       maxlength: 1000,
+      select: false,
     },
 
     adminNotes: {
@@ -231,6 +236,7 @@ const SponsorshipSchema = new Schema<ISponsorship>(
       default: "",
       trim: true,
       maxlength: 3000,
+      select: false,
     },
 
     expiresAt: {
@@ -241,6 +247,25 @@ const SponsorshipSchema = new Schema<ISponsorship>(
   },
   {
     timestamps: true,
+    minimize: true,
+    toJSON: {
+      transform: (_doc, ret: any) => {
+        delete ret.deletedAt;
+        delete ret.deletedBy;
+        delete ret.flagReason;
+        delete ret.adminNotes;
+        return ret;
+      },
+    },
+    toObject: {
+      transform: (_doc, ret: any) => {
+        delete ret.deletedAt;
+        delete ret.deletedBy;
+        delete ret.flagReason;
+        delete ret.adminNotes;
+        return ret;
+      },
+    },
   }
 );
 
@@ -289,14 +314,25 @@ SponsorshipSchema.pre("validate", function (next) {
     this.contactPhone = this.contactPhone.trim();
   }
 
+  if (!this.isDeleted) {
+    this.deletedAt = null;
+    this.deletedBy = null;
+  }
+
+  if (this.moderationStatus !== "FLAGGED") {
+    this.flagReason = "";
+  }
+
   next();
 });
 
 SponsorshipSchema.index({ sponsorOwnerId: 1, createdAt: -1 });
+SponsorshipSchema.index({ sponsorProfileId: 1, createdAt: -1 });
 SponsorshipSchema.index({ status: 1, createdAt: -1 });
 SponsorshipSchema.index({ category: 1, locationPreference: 1, status: 1 });
 SponsorshipSchema.index({ status: 1, expiresAt: 1 });
 SponsorshipSchema.index({ visibilityStatus: 1, moderationStatus: 1, isDeleted: 1 });
+SponsorshipSchema.index({ isDeleted: 1, status: 1, createdAt: -1 });
 
 const Sponsorship: Model<ISponsorship> =
   mongoose.models.Sponsorship ||

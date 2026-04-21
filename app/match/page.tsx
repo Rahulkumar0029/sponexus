@@ -10,6 +10,8 @@ import { EventCard } from "@/components/EventCard";
 import { SponsorCard } from "@/components/SponsorCard";
 import { MatchWeights } from "@/types/match";
 import { useMatch } from "@/hooks/useMatch";
+import { useSubscription } from "@/hooks/useSubscription";
+
 
 type CurrentUser = {
   _id?: string;
@@ -113,6 +115,7 @@ export default function MatchPage() {
   const [weights, setWeights] = useState<MatchWeights>(BALANCED_WEIGHTS);
 
   const { matches, loading, error, findMatches, resetMatches } = useMatch();
+const { hasAccess } = useSubscription();
 
   const getUserId = useCallback(() => {
     return user?._id ?? user?.id ?? "";
@@ -229,44 +232,46 @@ export default function MatchPage() {
   );
 
   const loadMatches = useCallback(
-    async (nextWeights: MatchWeights) => {
-      if (!user) return;
+  async (nextWeights: MatchWeights): Promise<void> => {
+    if (!user) return;
 
-      const userId = getUserId();
+    const userId = getUserId();
 
-      if (!userId) {
-        setPageError("User session is missing a valid ID.");
+    if (!userId) {
+      setPageError("User session is missing a valid ID.");
+      return;
+    }
+
+    setPageError("");
+    setEmptyMessage("");
+
+    try {
+      if (isSponsor) {
+        await fetchSponsorMatches(userId, nextWeights);
         return;
       }
 
-      setPageError("");
-      setEmptyMessage("");
-
-      try {
-        if (isSponsor) {
-          await fetchSponsorMatches(userId, nextWeights);
-          return;
-        }
-
-        if (isOrganizer) {
-          await fetchOrganizerEventAndMatch(userId, nextWeights);
-          return;
-        }
-
-        setPageError("Unsupported account role.");
-      } catch (err: any) {
-        setPageError(err?.message || "Failed to load matches.");
+      if (isOrganizer) {
+        await fetchOrganizerEventAndMatch(userId, nextWeights);
+        return;
       }
-    },
-    [
-      user,
-      getUserId,
-      isSponsor,
-      isOrganizer,
-      fetchOrganizerEventAndMatch,
-      fetchSponsorMatches,
-    ]
-  );
+
+      setPageError("Unsupported account role.");
+      return;
+    } catch (err: any) {
+      setPageError(err?.message || "Failed to load matches.");
+      return;
+    }
+  },
+  [
+    user,
+    getUserId,
+    isSponsor,
+    isOrganizer,
+    fetchOrganizerEventAndMatch,
+    fetchSponsorMatches,
+  ]
+);
 
   useEffect(() => {
     loadMatches(weights);
@@ -351,7 +356,18 @@ export default function MatchPage() {
       </div>
     );
   }
-
+if (user && !hasAccess) {
+  return (
+    <div className="min-h-screen flex items-center justify-center">
+      <EmptyState
+        title="Upgrade to unlock Smart Matching"
+        description="Matching is available only for active users."
+        actionLabel="View Plans"
+        onAction={() => router.push("/pricing")}
+      />
+    </div>
+  );
+}
   return (
     <div className="relative min-h-screen px-4 py-12">
       <div className="absolute inset-0 -z-20 bg-[radial-gradient(circle_at_20%_30%,rgba(251,191,36,0.08),transparent_40%),radial-gradient(circle_at_80%_70%,rgba(59,130,246,0.08),transparent_40%),linear-gradient(135deg,#020617,#07152f,#020617)]" />

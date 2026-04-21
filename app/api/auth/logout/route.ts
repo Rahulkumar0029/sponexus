@@ -1,12 +1,23 @@
 import { NextResponse } from "next/server";
 
+function buildNoStoreResponse(
+  body: Record<string, unknown>,
+  status: number
+) {
+  const response = NextResponse.json(body, { status });
+  response.headers.set("Cache-Control", "no-store");
+  response.headers.set("Pragma", "no-cache");
+  response.headers.set("Expires", "0");
+  return response;
+}
+
 export async function POST() {
-  const response = NextResponse.json(
+  const response = buildNoStoreResponse(
     {
       success: true,
       message: "Logout successful",
     },
-    { status: 200 }
+    200
   );
 
   response.cookies.set("auth-token", "", {
@@ -15,6 +26,7 @@ export async function POST() {
     sameSite: "lax",
     path: "/",
     expires: new Date(0),
+    priority: "high",
   });
 
   response.cookies.set("user-role", "", {
@@ -23,6 +35,7 @@ export async function POST() {
     sameSite: "lax",
     path: "/",
     expires: new Date(0),
+    priority: "medium",
   });
 
   return response;

@@ -68,6 +68,7 @@ const userSchema = new Schema<IUser>(
       type: String,
       trim: true,
       default: "",
+      maxlength: 150,
     },
 
     email: {
@@ -76,6 +77,7 @@ const userSchema = new Schema<IUser>(
       unique: true,
       lowercase: true,
       trim: true,
+      maxlength: 320,
       match: [/^[^\s@]+@[^\s@]+\.[^\s@]+$/, "Invalid email"],
       index: true,
     },
@@ -84,6 +86,7 @@ const userSchema = new Schema<IUser>(
       type: String,
       required: [true, "Password is required"],
       minlength: 8,
+      maxlength: 200,
       select: false,
     },
 
@@ -98,57 +101,67 @@ const userSchema = new Schema<IUser>(
       type: String,
       required: [true, "First name is required"],
       trim: true,
+      maxlength: 60,
     },
 
     lastName: {
       type: String,
       required: [true, "Last name is required"],
       trim: true,
+      maxlength: 60,
     },
 
     companyName: {
       type: String,
       trim: true,
       default: "",
+      maxlength: 120,
     },
 
     avatar: {
       type: String,
       default: "",
+      maxlength: 2000,
     },
 
     bio: {
       type: String,
       default: "",
+      maxlength: 1000,
     },
 
     phone: {
       type: String,
       default: "",
+      maxlength: 20,
     },
 
     organizationName: {
       type: String,
       trim: true,
       default: "",
+      maxlength: 120,
     },
 
     eventFocus: {
       type: String,
       trim: true,
       default: "",
+      maxlength: 120,
     },
 
     organizerTargetAudience: {
       type: String,
       trim: true,
       default: "",
+      maxlength: 120,
     },
 
     organizerLocation: {
       type: String,
       trim: true,
       default: "",
+      maxlength: 120,
     },
 
     isEmailVerified: {
@@ -203,12 +216,14 @@ const userSchema = new Schema<IUser>(
     deletedAt: {
       type: Date,
       default: null,
+      select: false,
     },
 
     deletedBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       default: null,
+      select: false,
     },
 
     adminRole: {
@@ -221,12 +236,14 @@ const userSchema = new Schema<IUser>(
     suspendedAt: {
       type: Date,
       default: null,
+      select: false,
     },
 
     suspendedBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       default: null,
+      select: false,
     },
 
     suspensionReason: {
@@ -234,17 +251,20 @@ const userSchema = new Schema<IUser>(
       default: "",
       trim: true,
       maxlength: 500,
+      select: false,
     },
 
     failedLoginAttempts: {
       type: Number,
       default: 0,
       min: 0,
+      select: false,
     },
 
     lockUntil: {
       type: Date,
       default: null,
+      select: false,
     },
 
     lastLoginAt: {
@@ -261,23 +281,97 @@ const userSchema = new Schema<IUser>(
     passwordChangedAt: {
       type: Date,
       default: null,
+      select: false,
     },
   },
   {
     timestamps: true,
+    minimize: true,
+    toJSON: {
+      transform: (_doc, ret: any) => {
+        delete ret.password;
+        delete ret.emailVerificationToken;
+        delete ret.emailVerificationExpires;
+        delete ret.resetPasswordToken;
+        delete ret.resetPasswordExpires;
+        delete ret.failedLoginAttempts;
+        delete ret.lockUntil;
+        delete ret.deletedAt;
+        delete ret.deletedBy;
+        delete ret.suspendedAt;
+        delete ret.suspendedBy;
+        delete ret.suspensionReason;
+        delete ret.passwordChangedAt;
+        return ret;
+      },
+    },
+    toObject: {
+      transform: (_doc, ret: any) => {
+        delete ret.password;
+        delete ret.emailVerificationToken;
+        delete ret.emailVerificationExpires;
+        delete ret.resetPasswordToken;
+        delete ret.resetPasswordExpires;
+        delete ret.failedLoginAttempts;
+        delete ret.lockUntil;
+        delete ret.deletedAt;
+        delete ret.deletedBy;
+        delete ret.suspendedAt;
+        delete ret.suspendedBy;
+        delete ret.suspensionReason;
+        delete ret.passwordChangedAt;
+        return ret;
+      },
+    },
   }
 );
 
 userSchema.pre("validate", function (next) {
-  if (this.firstName || this.lastName) {
-    this.name = `${this.firstName || ""} ${this.lastName || ""}`.trim();
+  if (typeof this.email === "string") {
+    this.email = this.email.trim().toLowerCase();
   }
+
+  if (this.firstName || this.lastName) {
+    this.firstName = (this.firstName || "").trim();
+    this.lastName = (this.lastName || "").trim();
+    this.name = `${this.firstName} ${this.lastName}`.trim();
+  }
+
+  if (typeof this.companyName === "string") {
+    this.companyName = this.companyName.trim();
+  }
+
+  if (typeof this.phone === "string") {
+    this.phone = this.phone.trim();
+  }
+
+  if (typeof this.bio === "string") {
+    this.bio = this.bio.trim();
+  }
+
+  if (typeof this.organizationName === "string") {
+    this.organizationName = this.organizationName.trim();
+  }
+
+  if (typeof this.eventFocus === "string") {
+    this.eventFocus = this.eventFocus.trim();
+  }
+
+  if (typeof this.organizerTargetAudience === "string") {
+    this.organizerTargetAudience = this.organizerTargetAudience.trim();
+  }
+
+  if (typeof this.organizerLocation === "string") {
+    this.organizerLocation = this.organizerLocation.trim();
+  }
+
   next();
 });
 
 userSchema.index({ role: 1, createdAt: -1 });
 userSchema.index({ adminRole: 1, accountStatus: 1 });
 userSchema.index({ isDeleted: 1, accountStatus: 1 });
+userSchema.index({ email: 1 }, { unique: true });
 
 const User: Model<IUser> =
   mongoose.models.User || mongoose.model<IUser>("User", userSchema);

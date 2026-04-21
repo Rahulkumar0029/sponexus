@@ -1,10 +1,22 @@
 import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
+
 import { connectDB } from "@/lib/db";
 import User from "@/lib/models/User";
 import Sponsor from "@/lib/models/Sponsor";
 import { getCurrentUser } from "@/lib/current-user";
+
+function buildNoStoreResponse(
+  body: Record<string, unknown>,
+  status: number
+) {
+  const response = NextResponse.json(body, { status });
+  response.headers.set("Cache-Control", "no-store");
+  response.headers.set("Pragma", "no-cache");
+  response.headers.set("Expires", "0");
+  return response;
+}
 
 export async function GET() {
   try {
@@ -13,20 +25,22 @@ export async function GET() {
     const currentUser = await getCurrentUser();
 
     if (!currentUser) {
-      return NextResponse.json(
+      return buildNoStoreResponse(
         { success: false, message: "Authentication required" },
-        { status: 401 }
+        401
       );
     }
 
     const user = await User.findById(currentUser._id)
-      .select("-password -emailVerificationToken -resetPasswordToken")
+      .select(
+        "-password -emailVerificationToken -resetPasswordToken -resetPasswordExpires -emailVerificationExpires"
+      )
       .lean();
 
     if (!user) {
-      return NextResponse.json(
+      return buildNoStoreResponse(
         { success: false, message: "User not found" },
-        { status: 404 }
+        404
       );
     }
 
@@ -35,23 +49,27 @@ export async function GET() {
     if (user.role === "SPONSOR") {
       sponsorProfile = await Sponsor.findOne({
         userId: user._id,
-      }).lean();
+      })
+        .select(
+          "-officialEmail -phone"
+        )
+        .lean();
     }
 
-    return NextResponse.json(
+    return buildNoStoreResponse(
       {
         success: true,
         user,
         sponsorProfile,
       },
-      { status: 200 }
+      200
     );
   } catch (error) {
     console.error("Settings me error:", error);
 
-    return NextResponse.json(
+    return buildNoStoreResponse(
       { success: false, message: "Failed to load settings" },
-      { status: 500 }
+      500
     );
   }
 }

@@ -14,6 +14,25 @@ function clearAuthCookies(response: NextResponse) {
     sameSite: "lax",
     path: "/",
     expires: new Date(0),
+    priority: "high",
+  });
+
+  response.cookies.set("token", "", {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    expires: new Date(0),
+    priority: "high",
+  });
+
+  response.cookies.set("accessToken", "", {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    expires: new Date(0),
+    priority: "high",
   });
 
   response.cookies.set("user-role", "", {
@@ -22,6 +41,7 @@ function clearAuthCookies(response: NextResponse) {
     sameSite: "lax",
     path: "/",
     expires: new Date(0),
+    priority: "medium",
   });
 
   return response;
@@ -38,9 +58,26 @@ function rewriteToUnavailable(req: NextRequest) {
   return NextResponse.rewrite(new URL("/_not-found", req.url));
 }
 
+function getTokenFromRequest(req: NextRequest) {
+  return (
+    req.cookies.get("auth-token")?.value ||
+    req.cookies.get("token")?.value ||
+    req.cookies.get("accessToken")?.value
+  );
+}
+
+function isAdminRole(adminRole?: string) {
+  return (
+    adminRole === "SUPPORT_ADMIN" ||
+    adminRole === "VERIFICATION_ADMIN" ||
+    adminRole === "ADMIN" ||
+    adminRole === "SUPER_ADMIN"
+  );
+}
+
 export function proxy(req: NextRequest) {
   const { pathname } = req.nextUrl;
-  const token = req.cookies.get("auth-token")?.value;
+  const token = getTokenFromRequest(req);
 
   const isFounderAccessRoute =
     pathname === "/founder-access-yr118" ||
@@ -53,11 +90,11 @@ export function proxy(req: NextRequest) {
 
     const payload = verifyAccessToken(token);
 
-    if (!payload) {
+    if (!payload?.userId || !payload?.email || !payload?.role) {
       return clearAuthCookies(NextResponse.next());
     }
 
-    if (payload.adminRole && payload.adminRole !== "NONE") {
+    if (isAdminRole(payload.adminRole || "NONE")) {
       return NextResponse.redirect(new URL("/admin", req.url));
     }
 
@@ -71,13 +108,11 @@ export function proxy(req: NextRequest) {
 
     const payload = verifyAccessToken(token);
 
-    if (!payload) {
+    if (!payload?.userId || !payload?.email || !payload?.role) {
       return clearAuthCookies(rewriteToUnavailable(req));
     }
 
-    const adminRole = payload.adminRole || "NONE";
-
-    if (adminRole === "NONE") {
+    if (!isAdminRole(payload.adminRole || "NONE")) {
       return rewriteToUnavailable(req);
     }
 
@@ -90,7 +125,7 @@ export function proxy(req: NextRequest) {
 
   const payload = verifyAccessToken(token);
 
-  if (!payload) {
+  if (!payload?.userId || !payload?.email || !payload?.role) {
     return clearAuthCookies(redirectToLogin(req));
   }
 
@@ -110,6 +145,18 @@ export function proxy(req: NextRequest) {
 
   if (pathname.startsWith("/dashboard/sponsor") && role !== "SPONSOR") {
     return redirectToDashboard(req, role);
+  }
+
+  if (pathname.startsWith("/settings") && role !== "ORGANIZER" && role !== "SPONSOR") {
+    return clearAuthCookies(redirectToLogin(req));
+  }
+
+  if (pathname.startsWith("/deals") && role !== "ORGANIZER" && role !== "SPONSOR") {
+    return clearAuthCookies(redirectToLogin(req));
+  }
+
+  if (pathname.startsWith("/match") && role !== "ORGANIZER" && role !== "SPONSOR") {
+    return clearAuthCookies(redirectToLogin(req));
   }
 
   return NextResponse.next();

@@ -10,17 +10,43 @@ import {
   writeAdminAuditLog,
 } from "@/lib/admin-auth";
 
+function getSafeReason(value: unknown, fallback = "") {
+  if (typeof value !== "string") return fallback;
+  return value.trim().slice(0, 500);
+}
+
+function getErrorStatus(error: unknown) {
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "status" in error &&
+    typeof (error as { status?: unknown }).status === "number"
+  ) {
+    return (error as { status: number }).status;
+  }
+
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "statusCode" in error &&
+    typeof (error as { statusCode?: unknown }).statusCode === "number"
+  ) {
+    return (error as { statusCode: number }).statusCode;
+  }
+
+  return 500;
+}
+
 export async function PATCH(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
-    await connectDB();
-
     const actor = await requireAdminPermission("admin:users:suspend");
     await requireStepUpVerification();
+    await connectDB();
 
-    const { id } = params;
+    const id = String(params?.id || "").trim();
 
     if (!mongoose.Types.ObjectId.isValid(id)) {
       return NextResponse.json(
@@ -36,9 +62,17 @@ export async function PATCH(
       );
     }
 
-    const body = await request.json();
+    let body: unknown = {};
+    try {
+      body = await request.json();
+    } catch {
+      body = {};
+    }
+
     const reason =
-      typeof body.reason === "string" ? body.reason.trim() : "";
+      typeof body === "object" && body !== null
+        ? getSafeReason((body as { reason?: unknown }).reason)
+        : "";
 
     if (!reason) {
       return NextResponse.json(
@@ -100,15 +134,19 @@ export async function PATCH(
   } catch (error) {
     console.error("Admin suspend user error:", error);
 
+    const status = getErrorStatus(error);
+
     return NextResponse.json(
       {
         success: false,
         message:
-          error instanceof Error
-            ? error.message
+          status === 401 || status === 403
+            ? error instanceof Error
+              ? error.message
+              : "Unauthorized"
             : "Failed to suspend user",
       },
-      { status: 500 }
+      { status }
     );
   }
 }

@@ -3,30 +3,25 @@ import mongoose, { Document, Model, Schema, Types } from "mongoose";
 export interface ISponsor extends Document {
   userId: Types.ObjectId;
 
-  // Brand identity
   brandName: string;
   companyName: string;
   website: string;
   officialEmail: string;
   phone: string;
 
-  // Business profile
   industry: string;
   companySize: string;
   about: string;
   logoUrl: string;
 
-  // Preferences for matching
   targetAudience: string;
   preferredCategories: string[];
   preferredLocations: string[];
   sponsorshipInterests: string[];
 
-  // Optional public contact / social presence
   instagramUrl: string;
   linkedinUrl: string;
 
-  // Profile completeness / visibility
   isProfileComplete: boolean;
   isPublic: boolean;
 
@@ -34,12 +29,44 @@ export interface ISponsor extends Document {
   updatedAt: Date;
 }
 
+const MAX_BRAND_NAME_LENGTH = 120;
+const MAX_COMPANY_NAME_LENGTH = 120;
+const MAX_WEBSITE_LENGTH = 500;
+const MAX_EMAIL_LENGTH = 320;
+const MAX_PHONE_LENGTH = 20;
+const MAX_INDUSTRY_LENGTH = 80;
+const MAX_COMPANY_SIZE_LENGTH = 50;
+const MAX_ABOUT_LENGTH = 3000;
+const MAX_LOGO_URL_LENGTH = 2000;
+const MAX_TARGET_AUDIENCE_LENGTH = 120;
+const MAX_SOCIAL_URL_LENGTH = 500;
+const MAX_ARRAY_ITEMS = 20;
+const MAX_ARRAY_ITEM_LENGTH = 80;
+
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
+const phoneRegex = /^[0-9+\-\s()]{7,20}$/;
+
+function isValidHttpUrl(value: string) {
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
 
 function normalizeStringArray(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
 
-  return [...new Set(value.map((item) => String(item).trim()).filter(Boolean))];
+  return [
+    ...new Set(
+      value
+        .map((item) => String(item).trim())
+        .filter(
+          (item) => Boolean(item) && item.length > 0 && item.length <= MAX_ARRAY_ITEM_LENGTH
+        )
+    ),
+  ].slice(0, MAX_ARRAY_ITEMS);
 }
 
 const SponsorSchema = new Schema<ISponsor>(
@@ -48,30 +75,30 @@ const SponsorSchema = new Schema<ISponsor>(
       type: Schema.Types.ObjectId,
       ref: "User",
       required: true,
+      index: true,
     },
 
     brandName: {
       type: String,
       required: true,
       trim: true,
-      maxlength: 100,
+      maxlength: MAX_BRAND_NAME_LENGTH,
     },
 
     companyName: {
       type: String,
       required: true,
       trim: true,
-      maxlength: 120,
+      maxlength: MAX_COMPANY_NAME_LENGTH,
     },
 
     website: {
       type: String,
       trim: true,
       default: "",
-      maxlength: 300,
+      maxlength: MAX_WEBSITE_LENGTH,
       validate: {
-        validator: (value: string) =>
-          !value || /^(https?:\/\/)?([\w-]+\.)+[\w-]{2,}(\/.*)?$/i.test(value),
+        validator: (value: string) => !value || isValidHttpUrl(value),
         message: "Invalid website URL",
       },
     },
@@ -81,7 +108,7 @@ const SponsorSchema = new Schema<ISponsor>(
       required: true,
       trim: true,
       lowercase: true,
-      maxlength: 150,
+      maxlength: MAX_EMAIL_LENGTH,
       validate: {
         validator: (value: string) => emailRegex.test(value),
         message: "Invalid official email address",
@@ -92,14 +119,18 @@ const SponsorSchema = new Schema<ISponsor>(
       type: String,
       required: true,
       trim: true,
-      maxlength: 30,
+      maxlength: MAX_PHONE_LENGTH,
+      validate: {
+        validator: (value: string) => phoneRegex.test(value),
+        message: "Invalid phone number",
+      },
     },
 
     industry: {
       type: String,
       required: true,
       trim: true,
-      maxlength: 80,
+      maxlength: MAX_INDUSTRY_LENGTH,
       index: true,
     },
 
@@ -107,28 +138,32 @@ const SponsorSchema = new Schema<ISponsor>(
       type: String,
       trim: true,
       default: "",
-      maxlength: 50,
+      maxlength: MAX_COMPANY_SIZE_LENGTH,
     },
 
     about: {
       type: String,
       trim: true,
       default: "",
-      maxlength: 2000,
+      maxlength: MAX_ABOUT_LENGTH,
     },
 
     logoUrl: {
       type: String,
       trim: true,
       default: "",
-      maxlength: 500,
+      maxlength: MAX_LOGO_URL_LENGTH,
+      validate: {
+        validator: (value: string) => !value || isValidHttpUrl(value),
+        message: "Invalid logo URL",
+      },
     },
 
     targetAudience: {
       type: String,
       trim: true,
       default: "",
-      maxlength: 300,
+      maxlength: MAX_TARGET_AUDIENCE_LENGTH,
     },
 
     preferredCategories: {
@@ -136,6 +171,11 @@ const SponsorSchema = new Schema<ISponsor>(
       default: [],
       set: normalizeStringArray,
       index: true,
+      validate: {
+        validator: (arr: unknown) =>
+          Array.isArray(arr) && arr.length <= MAX_ARRAY_ITEMS,
+        message: `Preferred categories cannot exceed ${MAX_ARRAY_ITEMS} items`,
+      },
     },
 
     preferredLocations: {
@@ -143,22 +183,32 @@ const SponsorSchema = new Schema<ISponsor>(
       default: [],
       set: normalizeStringArray,
       index: true,
+      validate: {
+        validator: (arr: unknown) =>
+          Array.isArray(arr) && arr.length <= MAX_ARRAY_ITEMS,
+        message: `Preferred locations cannot exceed ${MAX_ARRAY_ITEMS} items`,
+      },
     },
 
     sponsorshipInterests: {
       type: [String],
       default: [],
       set: normalizeStringArray,
+      validate: {
+        validator: (arr: unknown) =>
+          Array.isArray(arr) && arr.length <= MAX_ARRAY_ITEMS,
+        message: `Sponsorship interests cannot exceed ${MAX_ARRAY_ITEMS} items`,
+      },
     },
 
     instagramUrl: {
       type: String,
       trim: true,
       default: "",
-      maxlength: 300,
+      maxlength: MAX_SOCIAL_URL_LENGTH,
       validate: {
         validator: (value: string) =>
-          !value || /^(https?:\/\/)?(www\.)?instagram\.com\/.+/i.test(value),
+          !value || isValidHttpUrl(value),
         message: "Invalid Instagram URL",
       },
     },
@@ -167,10 +217,10 @@ const SponsorSchema = new Schema<ISponsor>(
       type: String,
       trim: true,
       default: "",
-      maxlength: 300,
+      maxlength: MAX_SOCIAL_URL_LENGTH,
       validate: {
         validator: (value: string) =>
-          !value || /^(https?:\/\/)?(www\.)?linkedin\.com\/.+/i.test(value),
+          !value || isValidHttpUrl(value),
         message: "Invalid LinkedIn URL",
       },
     },
@@ -189,11 +239,75 @@ const SponsorSchema = new Schema<ISponsor>(
   },
   {
     timestamps: true,
+    minimize: true,
+    toJSON: {
+      transform: (_doc, ret: any) => {
+        delete ret.userId;
+        delete ret.officialEmail;
+        delete ret.phone;
+        return ret;
+      },
+    },
+    toObject: {
+      transform: (_doc, ret: any) => {
+        delete ret.userId;
+        delete ret.officialEmail;
+        delete ret.phone;
+        return ret;
+      },
+    },
   }
 );
 
-// Auto-calculate profile completeness
 SponsorSchema.pre("validate", function (next) {
+  if (typeof this.brandName === "string") {
+    this.brandName = this.brandName.trim();
+  }
+
+  if (typeof this.companyName === "string") {
+    this.companyName = this.companyName.trim();
+  }
+
+  if (typeof this.website === "string") {
+    this.website = this.website.trim();
+  }
+
+  if (typeof this.officialEmail === "string") {
+    this.officialEmail = this.officialEmail.trim().toLowerCase();
+  }
+
+  if (typeof this.phone === "string") {
+    this.phone = this.phone.trim();
+  }
+
+  if (typeof this.industry === "string") {
+    this.industry = this.industry.trim();
+  }
+
+  if (typeof this.companySize === "string") {
+    this.companySize = this.companySize.trim();
+  }
+
+  if (typeof this.about === "string") {
+    this.about = this.about.trim();
+  }
+
+  if (typeof this.logoUrl === "string") {
+    this.logoUrl = this.logoUrl.trim();
+  }
+
+  if (typeof this.targetAudience === "string") {
+    this.targetAudience = this.targetAudience.trim();
+  }
+
+  if (typeof this.instagramUrl === "string") {
+    this.instagramUrl = this.instagramUrl.trim();
+  }
+
+  if (typeof this.linkedinUrl === "string") {
+    this.linkedinUrl = this.linkedinUrl.trim();
+  }
+
   this.isProfileComplete = Boolean(
     this.brandName?.trim() &&
       this.companyName?.trim() &&
@@ -205,14 +319,13 @@ SponsorSchema.pre("validate", function (next) {
   next();
 });
 
-// One sponsor profile per user (ONLY ONE INDEX HERE)
 SponsorSchema.index({ userId: 1 }, { unique: true });
-
-// Useful for discovery / matching
 SponsorSchema.index({ industry: 1, isPublic: 1 });
 SponsorSchema.index({ preferredCategories: 1, preferredLocations: 1 });
+SponsorSchema.index({ isPublic: 1, isProfileComplete: 1, createdAt: -1 });
+SponsorSchema.index({ companyName: 1, isPublic: 1 });
+SponsorSchema.index({ brandName: 1, isPublic: 1 });
 
-// Prevent model overwrite in dev / hot reload
 const Sponsor: Model<ISponsor> =
   mongoose.models.Sponsor ||
   mongoose.model<ISponsor>("Sponsor", SponsorSchema);

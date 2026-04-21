@@ -130,22 +130,33 @@ export default function SettingsPage() {
     if (authLoading) return;
 
     if (!user) {
+      router.replace("/login?redirect=/settings");
+      return;
+    }
+
+    if (user.role !== "ORGANIZER" && user.role !== "SPONSOR") {
       router.replace("/login");
     }
   }, [authLoading, user, router]);
 
   useEffect(() => {
-    const loadSettings = async () => {
-      if (!user) return;
+    if (!user) return;
 
+    const controller = new AbortController();
+    let isMounted = true;
+
+    const loadSettings = async () => {
       try {
         setPageLoading(true);
         setPageError("");
+        setSaveError("");
+        setSaveSuccess("");
 
         const res = await fetch("/api/settings/me", {
           method: "GET",
           credentials: "include",
           cache: "no-store",
+          signal: controller.signal,
         });
 
         const data: SettingsMeResponse = await res.json();
@@ -154,13 +165,17 @@ export default function SettingsPage() {
           throw new Error(data.message || "Unable to load settings");
         }
 
+        if (!isMounted) return;
+
         const loadedUser = data.user || null;
         const loadedSponsorProfile = data.sponsorProfile || null;
 
         setCurrentUser(loadedUser);
         setSponsorProfile(loadedSponsorProfile);
 
-        if ((loadedUser?.role || user?.role) === "SPONSOR") {
+        const resolvedRole = loadedUser?.role || user?.role;
+
+        if (resolvedRole === "SPONSOR") {
           setSponsorForm({
             brandName: loadedSponsorProfile?.brandName || "",
             companyName:
@@ -185,7 +200,7 @@ export default function SettingsPage() {
             sponsorshipInterests: Array.isArray(
               loadedSponsorProfile?.sponsorshipInterests
             )
-              ? loadedSponsorProfile!.sponsorshipInterests!
+              ? loadedSponsorProfile.sponsorshipInterests
               : [],
             instagramUrl: loadedSponsorProfile?.instagramUrl || "",
             linkedinUrl: loadedSponsorProfile?.linkedinUrl || "",
@@ -194,17 +209,28 @@ export default function SettingsPage() {
                 ? loadedSponsorProfile.isPublic
                 : true,
           });
+        } else {
+          setSponsorForm(initialSponsorForm);
         }
       } catch (err: any) {
+        if (!isMounted || err?.name === "AbortError") return;
+
         setPageError(err?.message || "Unable to load settings");
         setCurrentUser(null);
         setSponsorProfile(null);
       } finally {
-        setPageLoading(false);
+        if (isMounted) {
+          setPageLoading(false);
+        }
       }
     };
 
     loadSettings();
+
+    return () => {
+      isMounted = false;
+      controller.abort();
+    };
   }, [user]);
 
   const role = currentUser?.role || user?.role;
@@ -235,6 +261,9 @@ export default function SettingsPage() {
   ) => {
     const { name, value, type } = e.target;
 
+    setSaveError("");
+    setSaveSuccess("");
+
     if (type === "checkbox") {
       const checked = (e.target as HTMLInputElement).checked;
       setSponsorForm((prev) => ({
@@ -251,6 +280,9 @@ export default function SettingsPage() {
   };
 
   const toggleInterest = (value: EventDeliverable) => {
+    setSaveError("");
+    setSaveSuccess("");
+
     setSponsorForm((prev) => ({
       ...prev,
       sponsorshipInterests: prev.sponsorshipInterests.includes(value)
@@ -297,6 +329,7 @@ export default function SettingsPage() {
           "Content-Type": "application/json",
         },
         credentials: "include",
+        cache: "no-store",
         body: JSON.stringify(payload),
       });
 
@@ -343,7 +376,7 @@ export default function SettingsPage() {
             </p>
 
             <h1 className="text-4xl font-bold text-white md:text-5xl">
-              Account & Profile Settings
+              Account &amp; Profile Settings
             </h1>
 
             <p className="mt-3 max-w-3xl text-text-muted">

@@ -5,6 +5,22 @@ import User from "@/lib/models/User";
 import { generateRandomToken, hashPassword, hashToken } from "@/lib/auth";
 import { sendVerificationEmail } from "@/lib/email";
 
+const MAX_NAME_LENGTH = 60;
+const MAX_EMAIL_LENGTH = 320;
+const MAX_PASSWORD_LENGTH = 200;
+const MAX_COMPANY_NAME_LENGTH = 120;
+
+function buildNoStoreResponse(
+  body: Record<string, unknown>,
+  status: number
+) {
+  const response = NextResponse.json(body, { status });
+  response.headers.set("Cache-Control", "no-store");
+  response.headers.set("Pragma", "no-cache");
+  response.headers.set("Expires", "0");
+  return response;
+}
+
 export async function POST(request: NextRequest) {
   try {
     await connectDB();
@@ -24,47 +40,133 @@ export async function POST(request: NextRequest) {
       typeof body.companyName === "string" ? body.companyName.trim() : "";
 
     if (!firstName || !lastName || !email || !password || !role) {
-      return NextResponse.json(
+      return buildNoStoreResponse(
         {
           success: false,
           message:
             "First name, last name, email, password, and role are required",
         },
-        { status: 400 }
+        400
+      );
+    }
+
+    if (firstName.length > MAX_NAME_LENGTH) {
+      return buildNoStoreResponse(
+        {
+          success: false,
+          message: `First name cannot exceed ${MAX_NAME_LENGTH} characters`,
+        },
+        400
+      );
+    }
+
+    if (lastName.length > MAX_NAME_LENGTH) {
+      return buildNoStoreResponse(
+        {
+          success: false,
+          message: `Last name cannot exceed ${MAX_NAME_LENGTH} characters`,
+        },
+        400
+      );
+    }
+
+    if (email.length > MAX_EMAIL_LENGTH) {
+      return buildNoStoreResponse(
+        {
+          success: false,
+          message: "Email is too long",
+        },
+        400
+      );
+    }
+
+    if (password.length < 8) {
+      return buildNoStoreResponse(
+        {
+          success: false,
+          message: "Password must be at least 8 characters",
+        },
+        400
+      );
+    }
+
+    if (password.length > MAX_PASSWORD_LENGTH) {
+      return buildNoStoreResponse(
+        {
+          success: false,
+          message: "Password is too long",
+        },
+        400
+      );
+    }
+
+    if (companyName.length > MAX_COMPANY_NAME_LENGTH) {
+      return buildNoStoreResponse(
+        {
+          success: false,
+          message: `Company name cannot exceed ${MAX_COMPANY_NAME_LENGTH} characters`,
+        },
+        400
       );
     }
 
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
     if (!emailRegex.test(email)) {
-      return NextResponse.json(
+      return buildNoStoreResponse(
         {
           success: false,
           message: "Please enter a valid email address",
         },
-        { status: 400 }
+        400
       );
     }
 
-    if (password.length < 8) {
-      return NextResponse.json(
+    const appUrl = process.env.APP_URL;
+
+    if (!appUrl) {
+      return buildNoStoreResponse(
         {
           success: false,
-          message: "Password must be at least 8 characters",
+          message: "Missing APP_URL environment variable",
         },
-        { status: 400 }
+        500
       );
     }
 
-    const existingUser = await User.findOne({ email });
+    let parsedAppUrl: URL;
+
+    try {
+      parsedAppUrl = new URL(appUrl);
+    } catch {
+      return buildNoStoreResponse(
+        {
+          success: false,
+          message: "APP_URL is not a valid URL",
+        },
+        500
+      );
+    }
+
+    if (!["http:", "https:"].includes(parsedAppUrl.protocol)) {
+      return buildNoStoreResponse(
+        {
+          success: false,
+          message: "APP_URL must use http or https",
+        },
+        500
+      );
+    }
+
+    const existingUser = await User.findOne({ email }).select("_id");
 
     if (existingUser) {
-      return NextResponse.json(
+      return buildNoStoreResponse(
         {
           success: false,
           message: "An account with this email already exists",
         },
-        { status: 409 }
+        409
       );
     }
 
@@ -95,19 +197,7 @@ export async function POST(request: NextRequest) {
       passwordChangedAt: new Date(),
     });
 
-    const appUrl = process.env.APP_URL;
-
-    if (!appUrl) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Missing APP_URL environment variable",
-        },
-        { status: 500 }
-      );
-    }
-
-    const verificationLink = `${appUrl}/verify-email?token=${rawVerificationToken}`;
+    const verificationLink = `${parsedAppUrl.toString().replace(/\/$/, "")}/verify-email?token=${rawVerificationToken}`;
 
     await sendVerificationEmail({
       to: user.email,
@@ -115,22 +205,32 @@ export async function POST(request: NextRequest) {
       verificationLink,
     });
 
-    return NextResponse.json(
+    return buildNoStoreResponse(
       {
         success: true,
         message: "Registration successful. Please verify your email.",
       },
-      { status: 201 }
+      201
     );
-  } catch (error) {
+  } catch (error: any) {
     console.error("Register error:", error);
 
-    return NextResponse.json(
+    if (error?.code === 11000) {
+      return buildNoStoreResponse(
+        {
+          success: false,
+          message: "An account with this email already exists",
+        },
+        409
+      );
+    }
+
+    return buildNoStoreResponse(
       {
         success: false,
         message: "Registration failed",
       },
-      { status: 500 }
+      500
     );
   }
 }

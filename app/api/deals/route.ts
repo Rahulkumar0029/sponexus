@@ -7,6 +7,28 @@ import { verifyAccessToken } from "@/lib/auth";
 import { DealModel } from "@/lib/models/Deal";
 import User from "@/lib/models/User";
 import { EventModel } from "@/lib/models/Event";
+import Plan from "@/lib/models/Plan";
+import Subscription from "@/lib/models/Subscription";
+import { canUserAccessSubscriptionFeature } from "@/lib/subscription/access";
+import { ACTIONS, SUBSCRIPTION_STATUS } from "@/lib/subscription/constants";
+
+const ALLOWED_DEAL_STATUSES = new Set([
+  "pending",
+  "negotiating",
+  "accepted",
+  "rejected",
+  "completed",
+  "cancelled",
+  "disputed",
+]);
+
+const MAX_TITLE_LENGTH = 150;
+const MAX_DESCRIPTION_LENGTH = 5000;
+const MAX_MESSAGE_LENGTH = 2000;
+const MAX_NOTES_LENGTH = 5000;
+const MAX_DELIVERABLES = 30;
+const MAX_DELIVERABLE_ITEM_LENGTH = 200;
+const MAX_PROPOSED_AMOUNT = 100000000;
 
 function normalizeString(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
@@ -21,6 +43,73 @@ function normalizeArray(value: unknown): string[] {
 
 function isValidObjectId(value: unknown) {
   return typeof value === "string" && mongoose.Types.ObjectId.isValid(value);
+}
+
+function isSafeLength(value: string, max: number) {
+  return value.length <= max;
+}
+
+function validateDeliverables(value: unknown) {
+  if (!Array.isArray(value)) {
+    return { valid: false, message: "deliverables must be an array" };
+  }
+
+  if (value.length > MAX_DELIVERABLES) {
+    return {
+      valid: false,
+      message: `deliverables cannot exceed ${MAX_DELIVERABLES} items`,
+    };
+  }
+
+  for (const item of value) {
+    if (typeof item !== "string") {
+      return { valid: false, message: "Each deliverable must be a string" };
+    }
+
+    const trimmed = item.trim();
+
+    if (!trimmed) {
+      return { valid: false, message: "Deliverable items cannot be empty" };
+    }
+
+    if (trimmed.length > MAX_DELIVERABLE_ITEM_LENGTH) {
+      return {
+        valid: false,
+        message: `Each deliverable must be at most ${MAX_DELIVERABLE_ITEM_LENGTH} characters`,
+      };
+    }
+  }
+
+  return { valid: true, message: "" };
+}
+
+function isValidCurrencyAmount(value: unknown) {
+  if (typeof value !== "number") return false;
+  if (!Number.isFinite(value)) return false;
+  if (value <= 0) return false;
+  if (value > MAX_PROPOSED_AMOUNT) return false;
+  return Number(value.toFixed(2)) === value;
+}
+
+function sanitizeDealContactsForResponse(deal: any) {
+  const plainDeal =
+    typeof deal?.toObject === "function" ? deal.toObject() : { ...deal };
+
+  const fullyRevealed = Boolean(plainDeal?.contactReveal?.fullyRevealed);
+
+  if (!fullyRevealed) {
+    if (plainDeal?.organizerId) {
+      plainDeal.organizerId.email = undefined;
+      plainDeal.organizerId.phone = undefined;
+    }
+
+    if (plainDeal?.sponsorId) {
+      plainDeal.sponsorId.email = undefined;
+      plainDeal.sponsorId.phone = undefined;
+    }
+  }
+
+  return plainDeal;
 }
 
 async function getAuthenticatedUser() {
@@ -38,7 +127,7 @@ async function getAuthenticatedUser() {
   }
 
   const user = await User.findById(payload.userId).select(
-    "_id email role name companyName"
+    "_id email role name companyName firstName lastName adminRole"
   );
 
   if (!user) {
@@ -46,6 +135,27 @@ async function getAuthenticatedUser() {
   }
 
   return { user, error: null, status: 200 };
+}
+
+async function getActiveSubscriptionForRole(
+  userId: string,
+  role: "ORGANIZER" | "SPONSOR"
+) {
+  const subscription = await Subscription.findOne({
+    userId,
+    role,
+    status: {
+      $in: [SUBSCRIPTION_STATUS.ACTIVE, SUBSCRIPTION_STATUS.GRACE],
+    },
+  }).sort({ endDate: -1, createdAt: -1 });
+
+  if (!subscription) {
+    return { subscription: null, plan: null };
+  }
+
+  const plan = await Plan.findById(subscription.planId);
+
+  return { subscription, plan };
 }
 
 export async function POST(request: NextRequest) {
@@ -62,6 +172,14 @@ export async function POST(request: NextRequest) {
     }
 
     const currentUser = auth.user;
+
+    if (currentUser.role !== "ORGANIZER" && currentUser.role !== "SPONSOR") {
+      return NextResponse.json(
+        { success: false, message: "Unsupported user role" },
+        { status: 403 }
+      );
+    }
+
     const body = await request.json();
 
     const organizerId = normalizeString(body.organizerId);
@@ -84,6 +202,74 @@ export async function POST(request: NextRequest) {
         ? new Date(body.expiresAt)
         : null;
 
+    if (!title) {
+      return NextResponse.json(
+        { success: false, message: "title is required" },
+        { status: 400 }
+      );
+    }
+
+    if (!description) {
+      return NextResponse.json(
+        { success: false, message: "description is required" },
+        { status: 400 }
+      );
+    }
+
+    if (!isSafeLength(title, MAX_TITLE_LENGTH)) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: `title cannot exceed ${MAX_TITLE_LENGTH} characters`,
+        },
+        { status: 400 }
+      );
+    }
+
+    if (!isSafeLength(description, MAX_DESCRIPTION_LENGTH)) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: `description cannot exceed ${MAX_DESCRIPTION_LENGTH} characters`,
+        },
+        { status: 400 }
+      );
+    }
+
+    if (message && !isSafeLength(message, MAX_MESSAGE_LENGTH)) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: `message cannot exceed ${MAX_MESSAGE_LENGTH} characters`,
+        },
+        { status: 400 }
+      );
+    }
+
+    if (notes && !isSafeLength(notes, MAX_NOTES_LENGTH)) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: `notes cannot exceed ${MAX_NOTES_LENGTH} characters`,
+        },
+        { status: 400 }
+      );
+    }
+
+    const deliverablesValidation = validateDeliverables(
+      body.deliverables ?? []
+    );
+
+    if (!deliverablesValidation.valid) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: deliverablesValidation.message,
+        },
+        { status: 400 }
+      );
+    }
+
     if (!isValidObjectId(organizerId)) {
       return NextResponse.json(
         { success: false, message: "Valid organizerId is required" },
@@ -105,9 +291,23 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (Number.isNaN(proposedAmount) || proposedAmount <= 0) {
+    if (organizerId === sponsorId) {
       return NextResponse.json(
-        { success: false, message: "Proposed amount must be greater than 0" },
+        {
+          success: false,
+          message: "Organizer and sponsor must be different users",
+        },
+        { status: 400 }
+      );
+    }
+
+    if (!isValidCurrencyAmount(proposedAmount)) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Proposed amount must be a valid currency amount with max 2 decimals and within allowed range",
+        },
         { status: 400 }
       );
     }
@@ -115,6 +315,13 @@ export async function POST(request: NextRequest) {
     if (expiresAt && Number.isNaN(expiresAt.getTime())) {
       return NextResponse.json(
         { success: false, message: "Invalid expiresAt value" },
+        { status: 400 }
+      );
+    }
+
+    if (expiresAt && expiresAt <= new Date()) {
+      return NextResponse.json(
+        { success: false, message: "expiresAt must be a future date" },
         { status: 400 }
       );
     }
@@ -136,11 +343,65 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (currentUser.role === "ORGANIZER") {
+      const { subscription, plan } = await getActiveSubscriptionForRole(
+        currentUserId,
+        "ORGANIZER"
+      );
+
+      const access = canUserAccessSubscriptionFeature({
+        user: currentUser as any,
+        subscription,
+        plan,
+        action: ACTIONS.SEND_INTEREST,
+      });
+
+      if (!access.allowed) {
+        return NextResponse.json(
+          {
+            success: false,
+            message:
+              access.message ||
+              "Upgrade your subscription to create and manage deals on Sponexus.",
+            requiresUpgrade: true,
+          },
+          { status: 403 }
+        );
+      }
+    }
+
+    if (currentUser.role === "SPONSOR") {
+      const { subscription, plan } = await getActiveSubscriptionForRole(
+        currentUserId,
+        "SPONSOR"
+      );
+
+      const access = canUserAccessSubscriptionFeature({
+        user: currentUser as any,
+        subscription,
+        plan,
+        action: ACTIONS.SEND_INTEREST,
+      });
+
+      if (!access.allowed) {
+        return NextResponse.json(
+          {
+            success: false,
+            message:
+              access.message ||
+              "Upgrade your subscription to create and manage deals on Sponexus.",
+            requiresUpgrade: true,
+          },
+          { status: 403 }
+        );
+      }
+    }
+
     const [organizer, sponsor, event] = await Promise.all([
       User.findById(organizerId).select("_id name email role companyName"),
       User.findById(sponsorId).select("_id name email role companyName"),
       EventModel.findById(eventId).select(
-        "_id title location startDate endDate organizerId status"
+        "_id title location startDate endDate organizerId status visibilityStatus moderationStatus isDeleted"
       ),
     ]);
 
@@ -176,14 +437,26 @@ export async function POST(request: NextRequest) {
     }
 
     if (
-      ["DRAFT", "COMPLETED", "CANCELLED"].includes(
-        String((event as any).status)
-      )
+      ["DRAFT", "COMPLETED", "CANCELLED"].includes(String((event as any).status))
     ) {
       return NextResponse.json(
         {
           success: false,
           message: "Deals cannot be created for this event in its current status",
+        },
+        { status: 400 }
+      );
+    }
+
+    if (
+      (event as any).isDeleted === true ||
+      (event as any).visibilityStatus === "HIDDEN" ||
+      (event as any).moderationStatus === "FLAGGED"
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Deals cannot be created for this event right now",
         },
         { status: 400 }
       );
@@ -220,6 +493,24 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const duplicateDealBeforeCreate = await DealModel.findOne({
+      organizerId,
+      sponsorId,
+      eventId,
+      status: { $in: ["pending", "negotiating", "accepted"] },
+    }).select("_id status");
+
+    if (duplicateDealBeforeCreate) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "An active deal already exists between this organizer, sponsor, and event",
+        },
+        { status: 409 }
+      );
+    }
+
     const deal = await DealModel.create({
       organizerId,
       sponsorId,
@@ -239,20 +530,32 @@ export async function POST(request: NextRequest) {
     });
 
     const populatedDeal = await DealModel.findById(deal._id)
-      .populate("organizerId", "_id name email companyName")
-      .populate("sponsorId", "_id name email companyName")
+      .populate("organizerId", "_id name email phone companyName")
+      .populate("sponsorId", "_id name email phone companyName")
       .populate("eventId", "_id title location startDate");
+
+    const safeDeal = sanitizeDealContactsForResponse(populatedDeal);
 
     return NextResponse.json(
       {
         success: true,
         message: "Deal created successfully",
-        deal: populatedDeal,
+        deal: safeDeal,
       },
       { status: 201 }
     );
-  } catch (error) {
+  } catch (error: any) {
     console.error("POST /api/deals error:", error);
+
+    if (error?.code === 11000) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "A duplicate deal already exists",
+        },
+        { status: 409 }
+      );
+    }
 
     return NextResponse.json(
       { success: false, message: "Failed to create deal" },
@@ -301,6 +604,13 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    if (status && !ALLOWED_DEAL_STATUSES.has(status)) {
+      return NextResponse.json(
+        { success: false, message: "Invalid status filter" },
+        { status: 400 }
+      );
+    }
+
     if (status) {
       query.status = status;
     }
@@ -318,8 +628,8 @@ export async function GET(request: NextRequest) {
 
     const [deals, total] = await Promise.all([
       DealModel.find(query)
-        .populate("organizerId", "_id name email companyName")
-        .populate("sponsorId", "_id name email companyName")
+        .populate("organizerId", "_id name email phone companyName")
+        .populate("sponsorId", "_id name email phone companyName")
         .populate("eventId", "_id title location startDate")
         .sort({ updatedAt: -1 })
         .skip((page - 1) * limit)
@@ -327,10 +637,12 @@ export async function GET(request: NextRequest) {
       DealModel.countDocuments(query),
     ]);
 
+    const safeDeals = deals.map((deal) => sanitizeDealContactsForResponse(deal));
+
     return NextResponse.json(
       {
         success: true,
-        deals,
+        deals: safeDeals,
         pagination: {
           page,
           limit,

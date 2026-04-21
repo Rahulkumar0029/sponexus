@@ -6,34 +6,88 @@ import { requireAdminPermission, writeAdminAuditLog } from "@/lib/admin-auth";
 
 export const dynamic = "force-dynamic";
 
+const ALLOWED_DEAL_STATUSES = new Set([
+  "pending",
+  "negotiating",
+  "accepted",
+  "rejected",
+  "completed",
+  "cancelled",
+  "disputed",
+]);
+
+const ALLOWED_PAYMENT_STATUSES = new Set(["unpaid", "pending", "paid"]);
+
+const ALLOWED_ADMIN_REVIEW_STATUSES = new Set([
+  "NONE",
+  "UNDER_REVIEW",
+  "RESOLVED",
+]);
+
+function parsePositiveInt(value: string | null, fallback: number) {
+  const num = Number(value);
+
+  if (!Number.isFinite(num)) {
+    return fallback;
+  }
+
+  const int = Math.floor(num);
+  return int >= 1 ? int : fallback;
+}
+
+function escapeRegex(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function getErrorStatus(error: unknown) {
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "status" in error &&
+    typeof (error as { status?: unknown }).status === "number"
+  ) {
+    return (error as { status: number }).status;
+  }
+
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "statusCode" in error &&
+    typeof (error as { statusCode?: unknown }).statusCode === "number"
+  ) {
+    return (error as { statusCode: number }).statusCode;
+  }
+
+  return 500;
+}
+
 export async function GET(request: NextRequest) {
   try {
-    await connectDB();
     const actor = await requireAdminPermission("admin:deals:read");
+    await connectDB();
 
-    const page = Math.max(
-      1,
-      Number(request.nextUrl.searchParams.get("page") || "1")
-    );
+    const page = parsePositiveInt(request.nextUrl.searchParams.get("page"), 1);
     const limit = Math.min(
       50,
-      Math.max(1, Number(request.nextUrl.searchParams.get("limit") || "20"))
+      parsePositiveInt(request.nextUrl.searchParams.get("limit"), 20)
     );
 
-    const q = request.nextUrl.searchParams.get("q")?.trim() || "";
-    const status = request.nextUrl.searchParams.get("status")?.trim() || "";
-    const paymentStatus =
-      request.nextUrl.searchParams.get("paymentStatus")?.trim() || "";
-    const adminReviewStatus =
-      request.nextUrl.searchParams.get("adminReviewStatus")?.trim() || "";
-    const frozen = request.nextUrl.searchParams.get("frozen")?.trim() || "";
+    const q = (request.nextUrl.searchParams.get("q")?.trim() || "").slice(0, 100);
+    const status = (request.nextUrl.searchParams.get("status")?.trim() || "").toLowerCase();
+    const paymentStatus = (
+      request.nextUrl.searchParams.get("paymentStatus")?.trim() || ""
+    ).toLowerCase();
+    const adminReviewStatus = (
+      request.nextUrl.searchParams.get("adminReviewStatus")?.trim() || ""
+    ).toUpperCase();
+    const frozen = (request.nextUrl.searchParams.get("frozen")?.trim() || "").toLowerCase();
 
     const query: Record<string, unknown> = {
       isDeleted: false,
     };
 
     if (q) {
-      const regex = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+      const regex = new RegExp(escapeRegex(q), "i");
       query.$or = [
         { title: regex },
         { description: regex },
@@ -43,29 +97,15 @@ export async function GET(request: NextRequest) {
       ];
     }
 
-    if (
-      status &&
-      [
-        "pending",
-        "negotiating",
-        "accepted",
-        "rejected",
-        "completed",
-        "cancelled",
-        "disputed",
-      ].includes(status)
-    ) {
+    if (ALLOWED_DEAL_STATUSES.has(status)) {
       query.status = status;
     }
 
-    if (paymentStatus && ["unpaid", "pending", "paid"].includes(paymentStatus)) {
+    if (ALLOWED_PAYMENT_STATUSES.has(paymentStatus)) {
       query.paymentStatus = paymentStatus;
     }
 
-    if (
-      adminReviewStatus &&
-      ["NONE", "UNDER_REVIEW", "RESOLVED"].includes(adminReviewStatus)
-    ) {
+    if (ALLOWED_ADMIN_REVIEW_STATUSES.has(adminReviewStatus)) {
       query.adminReviewStatus = adminReviewStatus;
     }
 
@@ -138,12 +178,19 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error("Admin deals list error:", error);
 
+    const status = getErrorStatus(error);
+
     return NextResponse.json(
       {
         success: false,
-        message: "Failed to load deals",
+        message:
+          status === 401 || status === 403
+            ? error instanceof Error
+              ? error.message
+              : "Unauthorized"
+            : "Failed to load deals",
       },
-      { status: 500 }
+      { status }
     );
   }
 }

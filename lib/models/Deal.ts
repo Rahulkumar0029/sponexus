@@ -69,6 +69,10 @@ export interface IDeal extends mongoose.Document {
   updatedAt: Date;
 }
 
+const MAX_AMOUNT = 100000000;
+const MAX_DELIVERABLES = 30;
+const MAX_DELIVERABLE_LENGTH = 200;
+
 const contactRevealSchema = new Schema<IDealContactReveal>(
   {
     organizerRevealed: {
@@ -134,11 +138,13 @@ const dealSchema = new Schema<IDeal>(
       type: Number,
       required: [true, "Proposed amount is required"],
       min: [0, "Amount must be >= 0"],
+      max: [MAX_AMOUNT, `Amount cannot exceed ${MAX_AMOUNT}`],
     },
     finalAmount: {
       type: Number,
       default: null,
       min: [0, "Final amount must be >= 0"],
+      max: [MAX_AMOUNT, `Final amount cannot exceed ${MAX_AMOUNT}`],
     },
 
     status: {
@@ -173,12 +179,31 @@ const dealSchema = new Schema<IDeal>(
     deliverables: {
       type: [String],
       default: [],
-      validate: {
-        validator: function (value: string[]) {
-          return Array.isArray(value);
+      validate: [
+        {
+          validator: function (value: string[]) {
+            return Array.isArray(value);
+          },
+          message: "Deliverables must be an array of strings",
         },
-        message: "Deliverables must be an array of strings",
-      },
+        {
+          validator: function (value: string[]) {
+            return value.length <= MAX_DELIVERABLES;
+          },
+          message: `Deliverables cannot exceed ${MAX_DELIVERABLES} items`,
+        },
+        {
+          validator: function (value: string[]) {
+            return value.every(
+              (item) =>
+                typeof item === "string" &&
+                item.trim().length > 0 &&
+                item.trim().length <= MAX_DELIVERABLE_LENGTH
+            );
+          },
+          message: `Each deliverable must be 1 to ${MAX_DELIVERABLE_LENGTH} characters`,
+        },
+      ],
     },
 
     notes: {
@@ -253,12 +278,14 @@ const dealSchema = new Schema<IDeal>(
     frozenAt: {
       type: Date,
       default: null,
+      select: false,
     },
 
     frozenBy: {
       type: Schema.Types.ObjectId,
       ref: "User",
       default: null,
+      select: false,
     },
 
     freezeReason: {
@@ -266,6 +293,7 @@ const dealSchema = new Schema<IDeal>(
       trim: true,
       default: "",
       maxlength: [1000, "Freeze reason cannot exceed 1000 characters"],
+      select: false,
     },
 
     adminReviewStatus: {
@@ -280,17 +308,20 @@ const dealSchema = new Schema<IDeal>(
       trim: true,
       default: "",
       maxlength: [5000, "Internal notes cannot exceed 5000 characters"],
+      select: false,
     },
 
     resolvedByAdminId: {
       type: Schema.Types.ObjectId,
       ref: "User",
       default: null,
+      select: false,
     },
 
     resolvedAt: {
       type: Date,
       default: null,
+      select: false,
     },
 
     isDeleted: {
@@ -302,16 +333,45 @@ const dealSchema = new Schema<IDeal>(
     deletedAt: {
       type: Date,
       default: null,
+      select: false,
     },
 
     deletedBy: {
       type: Schema.Types.ObjectId,
       ref: "User",
       default: null,
+      select: false,
     },
   },
   {
     timestamps: true,
+    minimize: true,
+    toJSON: {
+      transform: (_doc, ret: any) => {
+        delete ret.internalNotes;
+        delete ret.resolvedByAdminId;
+        delete ret.resolvedAt;
+        delete ret.freezeReason;
+        delete ret.frozenAt;
+        delete ret.frozenBy;
+        delete ret.deletedAt;
+        delete ret.deletedBy;
+        return ret;
+      },
+    },
+    toObject: {
+      transform: (_doc, ret: any) => {
+        delete ret.internalNotes;
+        delete ret.resolvedByAdminId;
+        delete ret.resolvedAt;
+        delete ret.freezeReason;
+        delete ret.frozenAt;
+        delete ret.frozenBy;
+        delete ret.deletedAt;
+        delete ret.deletedBy;
+        return ret;
+      },
+    },
   }
 );
 
@@ -321,10 +381,73 @@ dealSchema.index({ eventId: 1, status: 1 });
 dealSchema.index({ createdAt: -1 });
 dealSchema.index({ updatedAt: -1 });
 dealSchema.index({ isFrozen: 1, adminReviewStatus: 1, isDeleted: 1 });
+dealSchema.index({ organizerId: 1, sponsorId: 1, eventId: 1, status: 1 });
+dealSchema.index({ isDeleted: 1, status: 1, updatedAt: -1 });
+
+dealSchema.pre("validate", function (next) {
+  if (this.organizerId && this.sponsorId && String(this.organizerId) === String(this.sponsorId)) {
+    return next(new Error("Organizer and sponsor cannot be the same user"));
+  }
+
+  if (typeof this.title === "string") {
+    this.title = this.title.trim();
+  }
+
+  if (typeof this.description === "string") {
+    this.description = this.description.trim();
+  }
+
+  if (typeof this.message === "string") {
+    this.message = this.message.trim();
+  }
+
+  if (typeof this.notes === "string") {
+    this.notes = this.notes.trim();
+  }
+
+  if (typeof this.disputeReason === "string") {
+    this.disputeReason = this.disputeReason.trim();
+  }
+
+  if (typeof this.freezeReason === "string") {
+    this.freezeReason = this.freezeReason.trim();
+  }
+
+  if (typeof this.internalNotes === "string") {
+    this.internalNotes = this.internalNotes.trim();
+  }
+
+  if (Array.isArray(this.deliverables)) {
+    this.deliverables = [
+      ...new Set(
+        this.deliverables
+          .map((item) => String(item).trim())
+          .filter(Boolean)
+      ),
+    ].slice(0, MAX_DELIVERABLES);
+  }
+
+  next();
+});
 
 dealSchema.pre("save", function (next) {
   if (this.finalAmount !== null && this.finalAmount < 0) {
     return next(new Error("Final amount must be >= 0"));
+  }
+
+  if (
+    typeof this.proposedAmount === "number" &&
+    !Number.isFinite(this.proposedAmount)
+  ) {
+    return next(new Error("Proposed amount must be a valid number"));
+  }
+
+  if (
+    this.finalAmount !== null &&
+    typeof this.finalAmount === "number" &&
+    !Number.isFinite(this.finalAmount)
+  ) {
+    return next(new Error("Final amount must be a valid number"));
   }
 
   if (this.status !== "disputed" && this.disputeReason) {
@@ -336,12 +459,19 @@ dealSchema.pre("save", function (next) {
     this.contactReveal?.sponsorRevealed
   ) {
     this.contactReveal.fullyRevealed = true;
+  } else {
+    this.contactReveal.fullyRevealed = false;
   }
 
   if (!this.isFrozen) {
     this.freezeReason = "";
     this.frozenAt = null;
     this.frozenBy = null;
+  }
+
+  if (!this.isDeleted) {
+    this.deletedAt = null;
+    this.deletedBy = null;
   }
 
   next();

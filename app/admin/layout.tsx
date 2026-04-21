@@ -7,11 +7,35 @@ import AdminLogoutButton from "@/app/admin/components/AdminLogoutButton";
 
 export const dynamic = "force-dynamic";
 
-export default function AdminLayout({ children }: { children: ReactNode }) {
-  const token = cookies().get("auth-token")?.value;
+function isAllowedAdminRole(adminRole?: string) {
+  return (
+    adminRole === "ADMIN" ||
+    adminRole === "SUPER_ADMIN" ||
+    adminRole === "SUPPORT_ADMIN" ||
+    adminRole === "VERIFICATION_ADMIN"
+  );
+}
+
+export default async function AdminLayout({
+  children,
+}: {
+  children: ReactNode;
+}) {
+  const cookieStore = await cookies();
+
+  const token =
+    cookieStore.get("auth-token")?.value ||
+    cookieStore.get("token")?.value ||
+    cookieStore.get("accessToken")?.value;
+
   const payload = token ? verifyAccessToken(token) : null;
 
-  if (!payload || !payload.adminRole || payload.adminRole === "NONE") {
+  if (
+    !payload?.userId ||
+    !payload?.email ||
+    !payload?.role ||
+    !isAllowedAdminRole(payload.adminRole)
+  ) {
     notFound();
   }
 

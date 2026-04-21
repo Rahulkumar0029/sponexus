@@ -6,6 +6,19 @@ import User from "@/lib/models/User";
 
 const MAX_FAILED_LOGIN_ATTEMPTS = 5;
 const LOCK_TIME_MS = 15 * 60 * 1000;
+const MAX_EMAIL_LENGTH = 320;
+const MAX_PASSWORD_LENGTH = 200;
+
+function buildNoStoreResponse(
+  body: Record<string, unknown>,
+  status: number
+) {
+  const response = NextResponse.json(body, { status });
+  response.headers.set("Cache-Control", "no-store");
+  response.headers.set("Pragma", "no-cache");
+  response.headers.set("Expires", "0");
+  return response;
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -13,68 +26,91 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
 
-    const email = typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
+    const email =
+      typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
     const password = typeof body.password === "string" ? body.password : "";
 
     if (!email || !password) {
-      return NextResponse.json(
+      return buildNoStoreResponse(
         {
           success: false,
           message: "Email and password are required",
         },
-        { status: 400 }
+        400
       );
     }
 
-    const user = await User.findOne({ email, isDeleted: false }).select("+password");
+    if (email.length > MAX_EMAIL_LENGTH) {
+      return buildNoStoreResponse(
+        {
+          success: false,
+          message: "Email is too long",
+        },
+        400
+      );
+    }
+
+    if (password.length > MAX_PASSWORD_LENGTH) {
+      return buildNoStoreResponse(
+        {
+          success: false,
+          message: "Password is too long",
+        },
+        400
+      );
+    }
+
+    const user = await User.findOne({ email, isDeleted: false }).select(
+      "+password failedLoginAttempts lockUntil accountStatus adminRole role email name firstName lastName companyName avatar bio phone organizationName eventFocus organizerTargetAudience organizerLocation isEmailVerified isProfileComplete createdAt updatedAt lastLoginAt lastActiveAt"
+    );
 
     if (!user || !user.password) {
-      return NextResponse.json(
+      return buildNoStoreResponse(
         {
           success: false,
           message: "Invalid credentials",
         },
-        { status: 401 }
+        401
       );
     }
 
     if (user.lockUntil && user.lockUntil.getTime() > Date.now()) {
-      return NextResponse.json(
+      return buildNoStoreResponse(
         {
           success: false,
           message: "Account temporarily locked. Please try again later.",
         },
-        { status: 423 }
+        423
       );
     }
 
     if (user.accountStatus === "DISABLED") {
-      return NextResponse.json(
+      return buildNoStoreResponse(
         {
           success: false,
           message: "This account has been disabled. Please contact support.",
         },
-        { status: 403 }
+        403
       );
     }
 
     if (user.accountStatus === "SUSPENDED") {
-      return NextResponse.json(
+      return buildNoStoreResponse(
         {
           success: false,
           message: "This account has been suspended. Please contact support.",
         },
-        { status: 403 }
+        403
       );
     }
 
     if (user.accountStatus === "PENDING_REVIEW") {
-      return NextResponse.json(
+      return buildNoStoreResponse(
         {
           success: false,
           message: "Your account is under review. Please try again later.",
         },
-        { status: 403 }
+        403
       );
     }
 
@@ -90,12 +126,12 @@ export async function POST(request: NextRequest) {
 
       await user.save();
 
-      return NextResponse.json(
+      return buildNoStoreResponse(
         {
           success: false,
           message: "Invalid credentials",
         },
-        { status: 401 }
+        401
       );
     }
 
@@ -135,13 +171,13 @@ export async function POST(request: NextRequest) {
       updatedAt: user.updatedAt,
     };
 
-    const response = NextResponse.json(
+    const response = buildNoStoreResponse(
       {
         success: true,
         message: "Login successful",
         user: safeUser,
       },
-      { status: 200 }
+      200
     );
 
     response.cookies.set("auth-token", token, {
@@ -150,6 +186,7 @@ export async function POST(request: NextRequest) {
       sameSite: "lax",
       path: "/",
       maxAge: 60 * 60 * 24 * 7,
+      priority: "high",
     });
 
     response.cookies.set("user-role", user.role, {
@@ -158,18 +195,19 @@ export async function POST(request: NextRequest) {
       sameSite: "lax",
       path: "/",
       maxAge: 60 * 60 * 24 * 7,
+      priority: "medium",
     });
 
     return response;
   } catch (error) {
     console.error("Login error:", error);
 
-    return NextResponse.json(
+    return buildNoStoreResponse(
       {
         success: false,
         message: "Login failed",
       },
-      { status: 500 }
+      500
     );
   }
 }

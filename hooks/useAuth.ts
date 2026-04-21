@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { User } from '@/types/user';
 
 type LoginResponseUser = User & {
@@ -8,11 +8,22 @@ type LoginResponseUser = User & {
   isProfileComplete?: boolean;
 };
 
+function isAdminUser(user: LoginResponseUser | null): boolean {
+  if (!user) return false;
+
+  return user.adminRole === 'ADMIN' || user.adminRole === 'SUPER_ADMIN';
+}
+
 export function useAuth() {
   const [user, setUser] = useState<LoginResponseUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+
+  const clearAuthState = useCallback(() => {
+    setUser(null);
+    setIsAuthenticated(false);
+  }, []);
 
   const fetchCurrentUser = useCallback(async () => {
     try {
@@ -26,9 +37,7 @@ export function useAuth() {
       });
 
       if (!res.ok) {
-        setUser(null);
-        setIsAuthenticated(false);
-        localStorage.removeItem('user');
+        clearAuthState();
         return null;
       }
 
@@ -36,27 +45,22 @@ export function useAuth() {
       const currentUser: LoginResponseUser | null = data?.user || null;
 
       if (!currentUser) {
-        setUser(null);
-        setIsAuthenticated(false);
-        localStorage.removeItem('user');
+        clearAuthState();
         return null;
       }
 
       setUser(currentUser);
       setIsAuthenticated(true);
-      localStorage.setItem('user', JSON.stringify(currentUser));
 
       return currentUser;
     } catch (err: any) {
-      setUser(null);
-      setIsAuthenticated(false);
-      localStorage.removeItem('user');
+      clearAuthState();
       setError(err?.message || 'Failed to fetch user');
       return null;
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [clearAuthState]);
 
   useEffect(() => {
     fetchCurrentUser();
@@ -73,6 +77,7 @@ export function useAuth() {
           'Content-Type': 'application/json',
         },
         credentials: 'include',
+        cache: 'no-store',
         body: JSON.stringify({
           email: email.trim().toLowerCase(),
           password,
@@ -93,20 +98,17 @@ export function useAuth() {
 
       setUser(loggedInUser);
       setIsAuthenticated(true);
-      localStorage.setItem('user', JSON.stringify(loggedInUser));
 
       return loggedInUser;
     } catch (err: any) {
       const message = err?.message || 'Login failed';
       setError(message);
-      setUser(null);
-      setIsAuthenticated(false);
-      localStorage.removeItem('user');
+      clearAuthState();
       throw err;
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [clearAuthState]);
 
   const logout = useCallback(async () => {
     try {
@@ -114,23 +116,31 @@ export function useAuth() {
       await fetch('/api/auth/logout', {
         method: 'POST',
         credentials: 'include',
+        cache: 'no-store',
       });
     } catch {
       // ignore logout fetch errors and still clear local UI state
     } finally {
-      localStorage.removeItem('user');
-      setUser(null);
-      setIsAuthenticated(false);
+      clearAuthState();
       setError(null);
       setLoading(false);
     }
-  }, []);
+  }, [clearAuthState]);
+
+  const isAdmin = useMemo(() => isAdminUser(user), [user]);
+  const isOrganizer = user?.role === 'ORGANIZER';
+  const isSponsor = user?.role === 'SPONSOR';
+  const adminRole = user?.adminRole || 'NONE';
 
   return {
     user,
     loading,
     error,
     isAuthenticated,
+    isAdmin,
+    adminRole,
+    isOrganizer,
+    isSponsor,
     login,
     logout,
     refreshUser: fetchCurrentUser,

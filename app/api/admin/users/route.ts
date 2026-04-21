@@ -6,33 +6,62 @@ import { requireAdminPermission, writeAdminAuditLog } from "@/lib/admin-auth";
 
 export const dynamic = "force-dynamic";
 
+const ALLOWED_ROLES = new Set(["ORGANIZER", "SPONSOR"]);
+const ALLOWED_ADMIN_ROLES = new Set([
+  "NONE",
+  "SUPPORT_ADMIN",
+  "VERIFICATION_ADMIN",
+  "ADMIN",
+  "SUPER_ADMIN",
+]);
+const ALLOWED_ACCOUNT_STATUSES = new Set([
+  "ACTIVE",
+  "SUSPENDED",
+  "DISABLED",
+  "PENDING_REVIEW",
+]);
+
+function parsePositiveInt(value: string | null, fallback: number) {
+  const num = Number(value);
+
+  if (!Number.isFinite(num)) {
+    return fallback;
+  }
+
+  const int = Math.floor(num);
+  return int >= 1 ? int : fallback;
+}
+
+function escapeRegex(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 export async function GET(request: NextRequest) {
   try {
-    await connectDB();
     const actor = await requireAdminPermission("admin:users:read");
+    await connectDB();
 
-    const page = Math.max(
-      1,
-      Number(request.nextUrl.searchParams.get("page") || "1")
-    );
+    const page = parsePositiveInt(request.nextUrl.searchParams.get("page"), 1);
     const limit = Math.min(
       50,
-      Math.max(1, Number(request.nextUrl.searchParams.get("limit") || "20"))
+      parsePositiveInt(request.nextUrl.searchParams.get("limit"), 20)
     );
 
-    const q = request.nextUrl.searchParams.get("q")?.trim() || "";
-    const role = request.nextUrl.searchParams.get("role")?.trim() || "";
-    const adminRole =
-      request.nextUrl.searchParams.get("adminRole")?.trim() || "";
-    const accountStatus =
-      request.nextUrl.searchParams.get("accountStatus")?.trim() || "";
+    const q = (request.nextUrl.searchParams.get("q")?.trim() || "").slice(0, 100);
+    const role = (request.nextUrl.searchParams.get("role")?.trim() || "").toUpperCase();
+    const adminRole = (
+      request.nextUrl.searchParams.get("adminRole")?.trim() || ""
+    ).toUpperCase();
+    const accountStatus = (
+      request.nextUrl.searchParams.get("accountStatus")?.trim() || ""
+    ).toUpperCase();
 
     const query: Record<string, unknown> = {
       isDeleted: false,
     };
 
     if (q) {
-      const regex = new RegExp(q.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "i");
+      const regex = new RegExp(escapeRegex(q), "i");
       query.$or = [
         { email: regex },
         { name: regex },
@@ -44,25 +73,15 @@ export async function GET(request: NextRequest) {
       ];
     }
 
-    if (role && ["ORGANIZER", "SPONSOR"].includes(role)) {
+    if (ALLOWED_ROLES.has(role)) {
       query.role = role;
     }
 
-    if (
-      adminRole &&
-      ["NONE", "SUPPORT_ADMIN", "VERIFICATION_ADMIN", "ADMIN", "SUPER_ADMIN"].includes(
-        adminRole
-      )
-    ) {
+    if (ALLOWED_ADMIN_ROLES.has(adminRole)) {
       query.adminRole = adminRole;
     }
 
-    if (
-      accountStatus &&
-      ["ACTIVE", "SUSPENDED", "DISABLED", "PENDING_REVIEW"].includes(
-        accountStatus
-      )
-    ) {
+    if (ALLOWED_ACCOUNT_STATUSES.has(accountStatus)) {
       query.accountStatus = accountStatus;
     }
 
@@ -126,15 +145,25 @@ export async function GET(request: NextRequest) {
       },
       { status: 200 }
     );
-  } catch (error) {
+  } catch (error: any) {
     console.error("Admin users list error:", error);
+
+    const status =
+      typeof error?.status === "number"
+        ? error.status
+        : typeof error?.statusCode === "number"
+        ? error.statusCode
+        : 500;
 
     return NextResponse.json(
       {
         success: false,
-        message: "Failed to load users",
+        message:
+          status === 401 || status === 403
+            ? error?.message || "Unauthorized"
+            : "Failed to load users",
       },
-      { status: 500 }
+      { status }
     );
   }
 }

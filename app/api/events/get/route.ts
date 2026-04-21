@@ -2,7 +2,48 @@ import { NextRequest, NextResponse } from "next/server";
 import { connectDB } from "@/lib/db";
 import { EventModel } from "@/lib/models/Event";
 import { getCurrentUser } from "@/lib/current-user";
+
 export const dynamic = "force-dynamic";
+
+const PUBLIC_VISIBLE_STATUSES = ["PUBLISHED", "ONGOING"] as const;
+const PAST_VISIBLE_STATUSES = ["COMPLETED"] as const;
+const OWNER_ALLOWED_STATUSES = [
+  "DRAFT",
+  "PUBLISHED",
+  "ONGOING",
+  "COMPLETED",
+  "CANCELLED",
+] as const;
+
+const MAX_LIMIT = 50;
+const PREVIEW_LIMIT = 4;
+
+function buildNoStoreResponse(
+  body: Record<string, unknown>,
+  status: number
+) {
+  const response = NextResponse.json(body, { status });
+  response.headers.set("Cache-Control", "no-store");
+  response.headers.set("Pragma", "no-cache");
+  response.headers.set("Expires", "0");
+  return response;
+}
+
+function sanitizeEventForPublicResponse(event: any) {
+  const plain =
+    typeof event?.toObject === "function" ? event.toObject() : { ...event };
+
+  if (plain?.organizerId) {
+    plain.organizerId.email = undefined;
+    plain.organizerId.phone = undefined;
+    plain.organizerId.bio = undefined;
+    plain.organizerId.avatar = undefined;
+    plain.organizerId.adminRole = undefined;
+    plain.organizerId.accountStatus = undefined;
+  }
+
+  return plain;
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -19,53 +60,64 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get("limit") || "10", 10);
 
     const safePage = Number.isNaN(page) || page < 1 ? 1 : page;
-    const safeLimit = Number.isNaN(limit) || limit < 1 ? 10 : limit;
+    const safeLimit =
+      Number.isNaN(limit) || limit < 1 ? 10 : Math.min(limit, MAX_LIMIT);
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
     const query: Record<string, any> = {};
 
-    // -------------------------
-    // PUBLIC USER
-    // -------------------------
     if (!currentUser) {
-      query.status = { $in: ["PUBLISHED", "ONGOING"] };
+      query.status = { $in: PUBLIC_VISIBLE_STATUSES };
       query.endDate = { $gte: today };
+      query.isDeleted = { $ne: true };
+      query.visibilityStatus = { $ne: "HIDDEN" };
+      query.moderationStatus = { $ne: "FLAGGED" };
 
       const events = await EventModel.find(query)
-        .sort({ startDate: 1 })
-        .limit(4)
+        .sort({ startDate: 1, createdAt: -1 })
+        .limit(PREVIEW_LIMIT)
         .populate("organizerId", "firstName lastName companyName");
 
-      return NextResponse.json(
+      const safeEvents = events.map((event) =>
+        sanitizeEventForPublicResponse(event)
+      );
+
+      return buildNoStoreResponse(
         {
           success: true,
           preview: true,
-          events,
+          events: safeEvents,
           pagination: {
-            total: events.length,
+            total: safeEvents.length,
             page: 1,
-            limit: 4,
+            limit: PREVIEW_LIMIT,
             pages: 1,
           },
         },
-        { status: 200 }
+        200
       );
     }
 
-    // -------------------------
-    // ORGANIZER USER
-    // -------------------------
     if (currentUser.role === "ORGANIZER") {
       query.organizerId = currentUser._id;
+      query.isDeleted = { $ne: true };
 
-      if (status && status !== "ALL" && !activeOnly && !pastOnly) {
+      if (
+        status &&
+        status !== "ALL" &&
+        !activeOnly &&
+        !pastOnly &&
+        OWNER_ALLOWED_STATUSES.includes(
+          status as (typeof OWNER_ALLOWED_STATUSES)[number]
+        )
+      ) {
         query.status = status;
       }
 
       if (activeOnly) {
-        query.status = { $in: ["PUBLISHED", "ONGOING"] };
+        query.status = { $in: PUBLIC_VISIBLE_STATUSES };
         query.endDate = { $gte: today };
       }
 
@@ -74,14 +126,14 @@ export async function GET(request: NextRequest) {
       }
 
       const events = await EventModel.find(query)
-        .sort({ startDate: -1 })
+        .sort({ startDate: -1, createdAt: -1 })
         .limit(safeLimit)
         .skip((safePage - 1) * safeLimit)
         .populate("organizerId", "firstName lastName companyName");
 
       const total = await EventModel.countDocuments(query);
 
-      return NextResponse.json(
+      return buildNoStoreResponse(
         {
           success: true,
           ownerView: true,
@@ -93,30 +145,44 @@ export async function GET(request: NextRequest) {
             pages: Math.ceil(total / safeLimit),
           },
         },
-        { status: 200 }
+        200
       );
     }
 
-    // -------------------------
-    // SPONSOR USER
-    // -------------------------
-    query.status = { $ne: "DRAFT" };
-
-    if (status && status !== "ALL" && !activeOnly && !pastOnly) {
-      query.status = status;
-    }
+    query.isDeleted = { $ne: true };
+    query.visibilityStatus = { $ne: "HIDDEN" };
+    query.moderationStatus = { $ne: "FLAGGED" };
 
     if (activeOnly) {
-      query.status = { $in: ["PUBLISHED", "ONGOING"] };
+      query.status = { $in: PUBLIC_VISIBLE_STATUSES };
       query.endDate = { $gte: today };
-    }
-
-    if (pastOnly) {
-      query.$or = [{ status: "COMPLETED" }, { endDate: { $lt: today } }];
+    } else if (pastOnly) {
+      query.$or = [
+        { status: { $in: PAST_VISIBLE_STATUSES } },
+        { endDate: { $lt: today } },
+      ];
+    } else if (status && status !== "ALL") {
+      if (
+        PUBLIC_VISIBLE_STATUSES.includes(
+          status as (typeof PUBLIC_VISIBLE_STATUSES)[number]
+        )
+      ) {
+        query.status = status;
+      } else if (
+        PAST_VISIBLE_STATUSES.includes(
+          status as (typeof PAST_VISIBLE_STATUSES)[number]
+        )
+      ) {
+        query.status = status;
+      } else {
+        query.status = { $in: PUBLIC_VISIBLE_STATUSES };
+      }
+    } else {
+      query.status = { $in: PUBLIC_VISIBLE_STATUSES };
     }
 
     const sortOption: Record<string, 1 | -1> =
-      activeOnly ? { startDate: 1 } : { startDate: -1 };
+      activeOnly || !pastOnly ? { startDate: 1 } : { startDate: -1 };
 
     const events = await EventModel.find(query)
       .sort(sortOption)
@@ -125,12 +191,13 @@ export async function GET(request: NextRequest) {
       .populate("organizerId", "firstName lastName companyName");
 
     const total = await EventModel.countDocuments(query);
+    const safeEvents = events.map((event) => sanitizeEventForPublicResponse(event));
 
-    return NextResponse.json(
+    return buildNoStoreResponse(
       {
         success: true,
         sponsorView: true,
-        events,
+        events: safeEvents,
         pagination: {
           total,
           page: safePage,
@@ -138,14 +205,14 @@ export async function GET(request: NextRequest) {
           pages: Math.ceil(total / safeLimit),
         },
       },
-      { status: 200 }
+      200
     );
   } catch (error) {
     console.error("Error fetching events:", error);
 
-    return NextResponse.json(
+    return buildNoStoreResponse(
       { success: false, message: "Failed to fetch events" },
-      { status: 500 }
+      500
     );
   }
 }

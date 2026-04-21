@@ -11,6 +11,7 @@ import { SponsorshipCard } from "@/components/SponsorshipCard";
 import { useAuth } from "@/hooks/useAuth";
 import { useMatch } from "@/hooks/useMatch";
 import type { Deal, DealStatus } from "@/types/deal";
+import type { MySubscriptionResponse } from "@/types/subscription";
 
 type SponsorProfile = {
   _id?: string;
@@ -149,6 +150,36 @@ function getSponsorDealActions(status?: DealStatus): DealActionConfig[] {
   return [];
 }
 
+function formatDate(date?: string | null) {
+  if (!date) return "—";
+  const parsed = new Date(date);
+  if (Number.isNaN(parsed.getTime())) return "—";
+
+  return parsed.toLocaleDateString("en-IN", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+}
+
+function getSubscriptionBannerClasses(
+  subscriptionData: MySubscriptionResponse | null
+) {
+  if (subscriptionData?.adminBypass) {
+    return "border-white/10 bg-white/[0.05]";
+  }
+
+  if (!subscriptionData?.hasActiveSubscription) {
+    return "border-[#FF7A18]/30 bg-[#FF7A18]/10";
+  }
+
+  if (subscriptionData?.status === "GRACE") {
+    return "border-[#FFB347]/30 bg-[#FFB347]/10";
+  }
+
+  return "border-white/10 bg-white/[0.05]";
+}
+
 export default function SponsorDashboardPage() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
@@ -165,6 +196,9 @@ export default function SponsorDashboardPage() {
   const [sponsorProfile, setSponsorProfile] = useState<SponsorProfile | null>(null);
   const [sponsorshipPosts, setSponsorshipPosts] = useState<SponsorshipItem[]>([]);
   const [recentDeals, setRecentDeals] = useState<Deal[]>([]);
+  const [subscriptionData, setSubscriptionData] =
+    useState<MySubscriptionResponse | null>(null);
+  const [subscriptionLoading, setSubscriptionLoading] = useState(true);
   const [summary, setSummary] = useState({
     totalSponsorshipPosts: 0,
     activeSponsorshipPosts: 0,
@@ -230,6 +264,25 @@ export default function SponsorDashboardPage() {
     }
   }, [user]);
 
+  const fetchSubscription = useCallback(async () => {
+    try {
+      setSubscriptionLoading(true);
+
+      const response = await fetch("/api/subscriptions/my", {
+        method: "GET",
+        credentials: "include",
+        cache: "no-store",
+      });
+
+      const data: MySubscriptionResponse = await response.json();
+      setSubscriptionData(data);
+    } catch {
+      setSubscriptionData(null);
+    } finally {
+      setSubscriptionLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (authLoading) return;
 
@@ -250,7 +303,8 @@ export default function SponsorDashboardPage() {
 
   useEffect(() => {
     loadDashboard();
-  }, [loadDashboard]);
+    fetchSubscription();
+  }, [loadDashboard, fetchSubscription]);
 
   const profileCompletion = useMemo(() => {
     if (!sponsorProfile) return 20;
@@ -411,6 +465,87 @@ export default function SponsorDashboardPage() {
             </Link>
           </div>
         </div>
+
+        {!subscriptionLoading && (
+          <section
+            className={`mb-8 rounded-[24px] border p-6 backdrop-blur-xl ${getSubscriptionBannerClasses(
+              subscriptionData
+            )}`}
+          >
+            {subscriptionData?.adminBypass ? (
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <p className="text-sm uppercase tracking-[0.18em] text-[#94A3B8]">
+                    Access Status
+                  </p>
+                  <h2 className="mt-2 text-2xl font-semibold text-white">
+                    Admin access active
+                  </h2>
+                  <p className="mt-2 text-sm text-text-muted">
+                    You can access sponsor paid actions without purchasing a subscription.
+                  </p>
+                </div>
+
+                <Button variant="secondary" onClick={() => router.push("/admin")}>
+                  Go to Admin
+                </Button>
+              </div>
+            ) : subscriptionData?.hasActiveSubscription && subscriptionData?.plan ? (
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <p className="text-sm uppercase tracking-[0.18em] text-[#94A3B8]">
+                    Current Plan
+                  </p>
+                  <h2 className="mt-2 text-2xl font-semibold text-white">
+                    {subscriptionData.plan.name}
+                  </h2>
+                  <p className="mt-2 text-sm text-text-muted">
+                    Status: {subscriptionData.status} · Valid till{" "}
+                    {formatDate(subscriptionData.subscription?.endDate || "")}
+                  </p>
+                </div>
+
+                <div className="flex flex-col gap-3 sm:flex-row">
+                  <Button
+                    variant="secondary"
+                    onClick={() => router.push("/pricing")}
+                  >
+                    View Plans
+                  </Button>
+
+                  <Button
+                    variant="primary"
+                    onClick={() => router.push("/pricing")}
+                  >
+                    Renew / Upgrade
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+                <div>
+                  <p className="text-sm uppercase tracking-[0.18em] text-[#FFB347]">
+                    Subscription Required
+                  </p>
+                  <h2 className="mt-2 text-2xl font-semibold text-white">
+                    Publish and deal actions need an active plan
+                  </h2>
+                  <p className="mt-2 text-sm text-[#CBD5E1]">
+                    You can still build your profile and explore opportunities, but creating sponsorships,
+                    managing real deal actions, and unlocking full sponsor actions need an active subscription.
+                  </p>
+                </div>
+
+                <Button
+                  variant="primary"
+                  onClick={() => router.push("/pricing")}
+                >
+                  Activate Plan
+                </Button>
+              </div>
+            )}
+          </section>
+        )}
 
         {dashboardError ? (
           <div className="mb-8 rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-red-300">

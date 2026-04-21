@@ -3,7 +3,58 @@ import { connectDB } from "@/lib/db";
 import Sponsor from "@/lib/models/Sponsor";
 import User from "@/lib/models/User";
 import { getCurrentUser } from "@/lib/current-user";
+
 export const dynamic = "force-dynamic";
+
+const MAX_LIMIT = 50;
+const PREVIEW_LIMIT = 4;
+const MAX_FILTER_LENGTH = 100;
+const MAX_SEARCH_LENGTH = 120;
+
+function buildNoStoreResponse(
+  body: Record<string, unknown>,
+  status: number
+) {
+  const response = NextResponse.json(body, { status });
+  response.headers.set("Cache-Control", "no-store");
+  response.headers.set("Pragma", "no-cache");
+  response.headers.set("Expires", "0");
+  return response;
+}
+
+function clean(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function escapeRegex(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function sanitizePublicSponsor(profile: any) {
+  if (!profile) return profile;
+
+  const plain =
+    typeof profile?.toObject === "function" ? profile.toObject() : { ...profile };
+
+  plain.userId = undefined;
+  plain.officialEmail = undefined;
+  plain.phone = undefined;
+  plain.instagramUrl = undefined;
+  plain.linkedinUrl = undefined;
+
+  return plain;
+}
+
+function sanitizeOwnSponsor(profile: any) {
+  if (!profile) return profile;
+
+  const plain =
+    typeof profile?.toObject === "function" ? profile.toObject() : { ...profile };
+
+  plain.userId = undefined;
+
+  return plain;
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -15,52 +66,81 @@ export async function GET(request: NextRequest) {
 
     const page = parseInt(searchParams.get("page") || "1", 10);
     const limit = parseInt(searchParams.get("limit") || "12", 10);
-    const industry = searchParams.get("industry");
-    const location = searchParams.get("location");
-    const category = searchParams.get("category");
-    const search = searchParams.get("search");
+    const industry = clean(searchParams.get("industry"));
+    const location = clean(searchParams.get("location"));
+    const category = clean(searchParams.get("category"));
+    const search = clean(searchParams.get("search"));
 
     const safePage = Number.isNaN(page) || page < 1 ? 1 : page;
     const requestedLimit =
-      Number.isNaN(limit) || limit < 1 ? 12 : Math.min(limit, 50);
+      Number.isNaN(limit) || limit < 1 ? 12 : Math.min(limit, MAX_LIMIT);
 
-    // Public-safe listing fields only
+    if (industry.length > MAX_FILTER_LENGTH) {
+      return buildNoStoreResponse(
+        { success: false, message: "Industry filter is too long" },
+        400
+      );
+    }
+
+    if (location.length > MAX_FILTER_LENGTH) {
+      return buildNoStoreResponse(
+        { success: false, message: "Location filter is too long" },
+        400
+      );
+    }
+
+    if (category.length > MAX_FILTER_LENGTH) {
+      return buildNoStoreResponse(
+        { success: false, message: "Category filter is too long" },
+        400
+      );
+    }
+
+    if (search.length > MAX_SEARCH_LENGTH) {
+      return buildNoStoreResponse(
+        { success: false, message: "Search query is too long" },
+        400
+      );
+    }
+
+    const safeIndustry = escapeRegex(industry);
+    const safeLocation = escapeRegex(location);
+    const safeCategory = escapeRegex(category);
+    const safeSearch = escapeRegex(search);
+
     const sponsorListSelect =
-      "userId brandName companyName website industry companySize about logoUrl targetAudience preferredCategories preferredLocations sponsorshipInterests isProfileComplete isPublic createdAt updatedAt";
+      "userId brandName companyName website industry companySize about logoUrl targetAudience preferredCategories preferredLocations sponsorshipInterests isProfileComplete isPublic createdAt updatedAt officialEmail phone instagramUrl linkedinUrl";
 
-    // ------------------------------------------------------------
-    // PUBLIC: preview only
-    // ------------------------------------------------------------
     if (!currentUser?._id) {
-      const safeLimit = Math.min(requestedLimit, 4);
+      const safeLimit = Math.min(requestedLimit, PREVIEW_LIMIT);
 
       const query: Record<string, any> = {
         isPublic: true,
         isProfileComplete: true,
       };
 
-      if (industry) {
-        query.industry = { $regex: industry, $options: "i" };
+      if (safeIndustry) {
+        query.industry = { $regex: safeIndustry, $options: "i" };
       }
 
-      if (location) {
+      if (safeLocation) {
         query.preferredLocations = {
-          $elemMatch: { $regex: location, $options: "i" },
+          $elemMatch: { $regex: safeLocation, $options: "i" },
         };
       }
 
-      if (category) {
+      if (safeCategory) {
         query.preferredCategories = {
-          $elemMatch: { $regex: category, $options: "i" },
+          $elemMatch: { $regex: safeCategory, $options: "i" },
         };
       }
 
-      if (search) {
+      if (safeSearch) {
         query.$or = [
-          { brandName: { $regex: search, $options: "i" } },
-          { companyName: { $regex: search, $options: "i" } },
-          { industry: { $regex: search, $options: "i" } },
-          { about: { $regex: search, $options: "i" } },
+          { brandName: { $regex: safeSearch, $options: "i" } },
+          { companyName: { $regex: safeSearch, $options: "i" } },
+          { industry: { $regex: safeSearch, $options: "i" } },
+          { about: { $regex: safeSearch, $options: "i" } },
         ];
       }
 
@@ -73,11 +153,15 @@ export async function GET(request: NextRequest) {
 
       const total = await Sponsor.countDocuments(query);
 
-      return NextResponse.json(
+      const safeSponsors = sponsors.map((sponsor: any) =>
+        sanitizePublicSponsor(sponsor)
+      );
+
+      return buildNoStoreResponse(
         {
           success: true,
           mode: "public_preview",
-          sponsors,
+          sponsors: safeSponsors,
           pagination: {
             total,
             page: safePage,
@@ -85,22 +169,19 @@ export async function GET(request: NextRequest) {
             pages: Math.ceil(total / safeLimit),
           },
         },
-        { status: 200 }
+        200
       );
     }
 
-    const user = await User.findById(currentUser._id);
+    const user = await User.findById(currentUser._id).select("_id role");
 
     if (!user) {
-      return NextResponse.json(
+      return buildNoStoreResponse(
         { success: false, message: "User not found" },
-        { status: 404 }
+        404
       );
     }
 
-    // ------------------------------------------------------------
-    // SPONSOR: own profile only
-    // ------------------------------------------------------------
     if (user.role === "SPONSOR") {
       const sponsor = await Sponsor.findOne({ userId: user._id })
         .select(
@@ -108,11 +189,11 @@ export async function GET(request: NextRequest) {
         )
         .lean();
 
-      return NextResponse.json(
+      return buildNoStoreResponse(
         {
           success: true,
           mode: "own_profile",
-          sponsors: sponsor ? [sponsor] : [],
+          sponsors: sponsor ? [sanitizeOwnSponsor(sponsor)] : [],
           pagination: {
             total: sponsor ? 1 : 0,
             page: 1,
@@ -120,13 +201,10 @@ export async function GET(request: NextRequest) {
             pages: sponsor ? 1 : 0,
           },
         },
-        { status: 200 }
+        200
       );
     }
 
-    // ------------------------------------------------------------
-    // ORGANIZER: browse sponsor profiles
-    // ------------------------------------------------------------
     if (user.role === "ORGANIZER") {
       const safeLimit = requestedLimit;
 
@@ -135,28 +213,28 @@ export async function GET(request: NextRequest) {
         isProfileComplete: true,
       };
 
-      if (industry) {
-        query.industry = { $regex: industry, $options: "i" };
+      if (safeIndustry) {
+        query.industry = { $regex: safeIndustry, $options: "i" };
       }
 
-      if (location) {
+      if (safeLocation) {
         query.preferredLocations = {
-          $elemMatch: { $regex: location, $options: "i" },
+          $elemMatch: { $regex: safeLocation, $options: "i" },
         };
       }
 
-      if (category) {
+      if (safeCategory) {
         query.preferredCategories = {
-          $elemMatch: { $regex: category, $options: "i" },
+          $elemMatch: { $regex: safeCategory, $options: "i" },
         };
       }
 
-      if (search) {
+      if (safeSearch) {
         query.$or = [
-          { brandName: { $regex: search, $options: "i" } },
-          { companyName: { $regex: search, $options: "i" } },
-          { industry: { $regex: search, $options: "i" } },
-          { about: { $regex: search, $options: "i" } },
+          { brandName: { $regex: safeSearch, $options: "i" } },
+          { companyName: { $regex: safeSearch, $options: "i" } },
+          { industry: { $regex: safeSearch, $options: "i" } },
+          { about: { $regex: safeSearch, $options: "i" } },
         ];
       }
 
@@ -169,11 +247,15 @@ export async function GET(request: NextRequest) {
 
       const total = await Sponsor.countDocuments(query);
 
-      return NextResponse.json(
+      const safeSponsors = sponsors.map((sponsor: any) =>
+        sanitizePublicSponsor(sponsor)
+      );
+
+      return buildNoStoreResponse(
         {
           success: true,
           mode: "organizer_browse",
-          sponsors,
+          sponsors: safeSponsors,
           pagination: {
             total,
             page: safePage,
@@ -181,23 +263,23 @@ export async function GET(request: NextRequest) {
             pages: Math.ceil(total / safeLimit),
           },
         },
-        { status: 200 }
+        200
       );
     }
 
-    return NextResponse.json(
+    return buildNoStoreResponse(
       { success: false, message: "Unauthorized role" },
-      { status: 403 }
+      403
     );
   } catch (error) {
     console.error("Error fetching sponsors:", error);
 
-    return NextResponse.json(
+    return buildNoStoreResponse(
       {
         success: false,
         message: "Failed to fetch sponsors",
       },
-      { status: 500 }
+      500
     );
   }
 }

@@ -2,12 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import mongoose from "mongoose";
 
 import { connectDB } from "@/lib/db";
+import { verifyAccessToken } from "@/lib/auth";
+import User from "@/lib/models/User";
 import { EventModel } from "@/lib/models/Event";
 import Sponsor from "@/lib/models/Sponsor";
 import { matchSponsorToEvents, matchEventToSponsors } from "@/lib/matcher";
 import { Event } from "@/types/event";
 import { MatchWeights } from "@/types/match";
 import { Sponsor as SponsorType } from "@/types/sponsor";
+import { checkSubscriptionAccess } from "@/lib/subscription/checkAccess";
+import { ACTIONS } from "@/lib/subscription/constants";
 
 const DEFAULT_WEIGHTS: MatchWeights = {
   category: 20,
@@ -17,6 +21,16 @@ const DEFAULT_WEIGHTS: MatchWeights = {
   deliverables: 20,
 };
 
+const MAX_MATCH_RESULTS = 50;
+
+function normalizeString(value: unknown): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function isValidObjectId(value: unknown) {
+  return typeof value === "string" && mongoose.Types.ObjectId.isValid(value);
+}
+
 function normalizeWeights(input?: Partial<MatchWeights>): MatchWeights {
   const weights: MatchWeights = {
     category: Number(input?.category ?? DEFAULT_WEIGHTS.category),
@@ -25,6 +39,12 @@ function normalizeWeights(input?: Partial<MatchWeights>): MatchWeights {
     budget: Number(input?.budget ?? DEFAULT_WEIGHTS.budget),
     deliverables: Number(input?.deliverables ?? DEFAULT_WEIGHTS.deliverables),
   };
+
+  const values = Object.values(weights);
+
+  if (values.some((value) => !Number.isFinite(value) || value < 0)) {
+    return DEFAULT_WEIGHTS;
+  }
 
   const total =
     weights.category +
@@ -41,67 +61,73 @@ function normalizeWeights(input?: Partial<MatchWeights>): MatchWeights {
 }
 
 function buildSponsorData(sponsorDoc: any): SponsorType {
+  const plain =
+    typeof sponsorDoc?.toObject === "function" ? sponsorDoc.toObject() : sponsorDoc;
+
   return {
-    ...sponsorDoc.toObject(),
-    _id: String(sponsorDoc._id),
-    userId: sponsorDoc.userId ? String(sponsorDoc.userId) : "",
-    brandName: sponsorDoc.brandName || "",
-    companyName: sponsorDoc.companyName || "",
-    website: sponsorDoc.website || "",
-    officialEmail: sponsorDoc.officialEmail || "",
-    phone: sponsorDoc.phone || "",
-    industry: sponsorDoc.industry || "",
-    companySize: sponsorDoc.companySize || "",
-    about: sponsorDoc.about || "",
-    logoUrl: sponsorDoc.logoUrl || "",
-    targetAudience: sponsorDoc.targetAudience || "",
-    preferredCategories: Array.isArray(sponsorDoc.preferredCategories)
-      ? sponsorDoc.preferredCategories
+    ...plain,
+    _id: String(plain._id),
+    userId: plain.userId ? String(plain.userId) : "",
+    brandName: plain.brandName || "",
+    companyName: plain.companyName || "",
+    website: plain.website || "",
+    officialEmail: "",
+    phone: "",
+    industry: plain.industry || "",
+    companySize: plain.companySize || "",
+    about: plain.about || "",
+    logoUrl: plain.logoUrl || "",
+    targetAudience: plain.targetAudience || "",
+    preferredCategories: Array.isArray(plain.preferredCategories)
+      ? plain.preferredCategories
       : [],
-    preferredLocations: Array.isArray(sponsorDoc.preferredLocations)
-      ? sponsorDoc.preferredLocations
+    preferredLocations: Array.isArray(plain.preferredLocations)
+      ? plain.preferredLocations
       : [],
-    sponsorshipInterests: Array.isArray(sponsorDoc.sponsorshipInterests)
-      ? sponsorDoc.sponsorshipInterests
+    sponsorshipInterests: Array.isArray(plain.sponsorshipInterests)
+      ? plain.sponsorshipInterests
       : [],
-    instagramUrl: sponsorDoc.instagramUrl || "",
-    linkedinUrl: sponsorDoc.linkedinUrl || "",
-    isProfileComplete: Boolean(sponsorDoc.isProfileComplete),
-    isPublic: Boolean(sponsorDoc.isPublic),
-    createdAt: sponsorDoc.createdAt
-      ? new Date(sponsorDoc.createdAt).toISOString()
+    instagramUrl: plain.instagramUrl || "",
+    linkedinUrl: plain.linkedinUrl || "",
+    isProfileComplete: Boolean(plain.isProfileComplete),
+    isPublic: Boolean(plain.isPublic),
+    createdAt: plain.createdAt
+      ? new Date(plain.createdAt).toISOString()
       : new Date().toISOString(),
-    updatedAt: sponsorDoc.updatedAt
-      ? new Date(sponsorDoc.updatedAt).toISOString()
+    updatedAt: plain.updatedAt
+      ? new Date(plain.updatedAt).toISOString()
       : new Date().toISOString(),
   };
 }
 
 function buildEventData(eventDoc: any): Event {
+  const plain =
+    typeof eventDoc?.toObject === "function" ? eventDoc.toObject() : eventDoc;
+
   return {
-    ...eventDoc,
-    _id: String(eventDoc._id),
-    organizerId: eventDoc.organizerId ? String(eventDoc.organizerId) : "",
-    title: eventDoc.title || "",
-    description: eventDoc.description || "",
-    categories: Array.isArray(eventDoc.categories) ? eventDoc.categories : [],
-    targetAudience: Array.isArray(eventDoc.targetAudience)
-      ? eventDoc.targetAudience
+    ...plain,
+    _id: String(plain._id),
+    organizerId: plain.organizerId ? String(plain.organizerId) : "",
+    title: plain.title || "",
+    description: plain.description || "",
+    categories: Array.isArray(plain.categories) ? plain.categories : [],
+    targetAudience: Array.isArray(plain.targetAudience)
+      ? plain.targetAudience
       : [],
-    location: eventDoc.location || "",
-    budget: typeof eventDoc.budget === "number" ? eventDoc.budget : 0,
-    startDate: eventDoc.startDate || "",
-    endDate: eventDoc.endDate || "",
+    location: plain.location || "",
+    budget: typeof plain.budget === "number" ? plain.budget : 0,
+    startDate: plain.startDate || "",
+    endDate: plain.endDate || "",
     attendeeCount:
-      typeof eventDoc.attendeeCount === "number" ? eventDoc.attendeeCount : 0,
-    eventType: eventDoc.eventType || "OTHER",
-    image: eventDoc.coverImage || eventDoc.image || "",
-    status: eventDoc.status || "DRAFT",
-    providedDeliverables: Array.isArray(eventDoc.providedDeliverables)
-      ? eventDoc.providedDeliverables
+      typeof plain.attendeeCount === "number" ? plain.attendeeCount : 0,
+    eventType: plain.eventType || "OTHER",
+    image: plain.coverImage || plain.image || "",
+    status: plain.status || "DRAFT",
+    providedDeliverables: Array.isArray(plain.providedDeliverables)
+      ? plain.providedDeliverables
       : [],
-    createdAt: eventDoc.createdAt || "",
-    updatedAt: eventDoc.updatedAt || "",
+    createdAt: plain.createdAt || "",
+    updatedAt: plain.updatedAt || "",
   };
 }
 
@@ -109,9 +135,9 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
 
-    const sponsorId = body?.sponsorId;
-    const sponsorOwnerId = body?.sponsorOwnerId;
-    const eventId = body?.eventId;
+    const sponsorId = normalizeString(body?.sponsorId);
+    const sponsorOwnerId = normalizeString(body?.sponsorOwnerId);
+    const eventId = normalizeString(body?.eventId);
     const weights = normalizeWeights(body?.weights);
 
     if ((sponsorId || sponsorOwnerId) && eventId) {
@@ -138,8 +164,89 @@ export async function POST(request: NextRequest) {
 
     await connectDB();
 
+    const token = request.cookies.get("auth-token")?.value;
+
+    if (!token) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Authentication required",
+          matches: [],
+        },
+        { status: 401 }
+      );
+    }
+
+    const decoded = verifyAccessToken(token);
+
+    if (!decoded?.userId) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Invalid session",
+          matches: [],
+        },
+        { status: 401 }
+      );
+    }
+
+    const user = await User.findById(decoded.userId).select(
+      "_id email role adminRole"
+    );
+
+    if (!user) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "User not found",
+          matches: [],
+        },
+        { status: 404 }
+      );
+    }
+
+    if (user.role !== "ORGANIZER" && user.role !== "SPONSOR") {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Unsupported user role",
+          matches: [],
+        },
+        { status: 403 }
+      );
+    }
+
+    const access = await checkSubscriptionAccess({
+      userId: String(user._id),
+      role: user.role,
+      action: ACTIONS.USE_MATCH,
+    });
+
+    if (!access.allowed) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: "Upgrade required to use matching.",
+          code: "SUBSCRIPTION_REQUIRED",
+          matches: [],
+        },
+        { status: 403 }
+      );
+    }
+
     if (sponsorId || sponsorOwnerId) {
-      if (sponsorId && !mongoose.Types.ObjectId.isValid(sponsorId)) {
+      if (user.role !== "SPONSOR") {
+        return NextResponse.json(
+          {
+            success: false,
+            message: "Only sponsors can request sponsor-to-events matches",
+            matches: [],
+          },
+          { status: 403 }
+        );
+      }
+
+      if (sponsorId && !isValidObjectId(sponsorId)) {
         return NextResponse.json(
           {
             success: false,
@@ -150,7 +257,7 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      if (sponsorOwnerId && !mongoose.Types.ObjectId.isValid(sponsorOwnerId)) {
+      if (sponsorOwnerId && !isValidObjectId(sponsorOwnerId)) {
         return NextResponse.json(
           {
             success: false,
@@ -161,9 +268,24 @@ export async function POST(request: NextRequest) {
         );
       }
 
+      if (sponsorOwnerId && sponsorOwnerId !== String(user._id)) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: "You can only request matches for your own sponsor profile",
+            matches: [],
+          },
+          { status: 403 }
+        );
+      }
+
       const sponsorDoc = sponsorId
-        ? await Sponsor.findById(sponsorId)
-        : await Sponsor.findOne({ userId: sponsorOwnerId });
+        ? await Sponsor.findById(sponsorId).select(
+            "_id userId brandName companyName website officialEmail phone industry companySize about logoUrl targetAudience preferredCategories preferredLocations sponsorshipInterests instagramUrl linkedinUrl isProfileComplete isPublic createdAt updatedAt"
+          )
+        : await Sponsor.findOne({ userId: sponsorOwnerId || String(user._id) }).select(
+            "_id userId brandName companyName website officialEmail phone industry companySize about logoUrl targetAudience preferredCategories preferredLocations sponsorshipInterests instagramUrl linkedinUrl isProfileComplete isPublic createdAt updatedAt"
+          );
 
       if (!sponsorDoc) {
         return NextResponse.json(
@@ -173,6 +295,17 @@ export async function POST(request: NextRequest) {
             matches: [],
           },
           { status: 404 }
+        );
+      }
+
+      if (String(sponsorDoc.userId) !== String(user._id)) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: "You can only request matches for your own sponsor profile",
+            matches: [],
+          },
+          { status: 403 }
         );
       }
 
@@ -189,12 +322,22 @@ export async function POST(request: NextRequest) {
 
       const eventDocs = await EventModel.find({
         status: { $in: ["PUBLISHED", "ONGOING"] },
-      }).lean();
+        isDeleted: { $ne: true },
+        visibilityStatus: { $ne: "HIDDEN" },
+        moderationStatus: { $ne: "FLAGGED" },
+      })
+        .select(
+          "_id organizerId title description categories targetAudience location budget startDate endDate attendeeCount eventType coverImage image status providedDeliverables createdAt updatedAt"
+        )
+        .lean();
 
       const sponsorData = buildSponsorData(sponsorDoc);
       const events = (eventDocs || []).map(buildEventData);
 
-      const matches = matchSponsorToEvents(sponsorData, events, weights);
+      const matches = matchSponsorToEvents(sponsorData, events, weights).slice(
+        0,
+        MAX_MATCH_RESULTS
+      );
 
       return NextResponse.json(
         {
@@ -210,7 +353,18 @@ export async function POST(request: NextRequest) {
     }
 
     if (eventId) {
-      if (!mongoose.Types.ObjectId.isValid(eventId)) {
+      if (user.role !== "ORGANIZER") {
+        return NextResponse.json(
+          {
+            success: false,
+            message: "Only organizers can request event-to-sponsors matches",
+            matches: [],
+          },
+          { status: 403 }
+        );
+      }
+
+      if (!isValidObjectId(eventId)) {
         return NextResponse.json(
           {
             success: false,
@@ -221,7 +375,11 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      const eventDoc = await EventModel.findById(eventId).lean();
+      const eventDoc = await EventModel.findById(eventId)
+        .select(
+          "_id organizerId title description categories targetAudience location budget startDate endDate attendeeCount eventType coverImage image status providedDeliverables createdAt updatedAt isDeleted visibilityStatus moderationStatus"
+        )
+        .lean();
 
       if (!eventDoc) {
         return NextResponse.json(
@@ -234,15 +392,48 @@ export async function POST(request: NextRequest) {
         );
       }
 
+      if (String((eventDoc as any).organizerId) !== String(user._id)) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: "You can only request matches for your own event",
+            matches: [],
+          },
+          { status: 403 }
+        );
+      }
+
+      if (
+        (eventDoc as any).isDeleted === true ||
+        (eventDoc as any).visibilityStatus === "HIDDEN" ||
+        (eventDoc as any).moderationStatus === "FLAGGED"
+      ) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: "This event is not eligible for matching right now",
+            matches: [],
+          },
+          { status: 400 }
+        );
+      }
+
       const sponsorDocs = await Sponsor.find({
         isPublic: true,
         isProfileComplete: true,
-      });
+      })
+        .select(
+          "_id userId brandName companyName website officialEmail phone industry companySize about logoUrl targetAudience preferredCategories preferredLocations sponsorshipInterests instagramUrl linkedinUrl isProfileComplete isPublic createdAt updatedAt"
+        )
+        .lean();
 
       const event = buildEventData(eventDoc);
       const sponsors = sponsorDocs.map(buildSponsorData);
 
-      const matches = matchEventToSponsors(event, sponsors, weights);
+      const matches = matchEventToSponsors(event, sponsors, weights).slice(
+        0,
+        MAX_MATCH_RESULTS
+      );
 
       return NextResponse.json(
         {

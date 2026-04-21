@@ -9,17 +9,43 @@ import { requireAdminPermission, writeAdminAuditLog } from "@/lib/admin-auth";
 
 export const dynamic = "force-dynamic";
 
+function isValidObjectId(id: string) {
+  return mongoose.Types.ObjectId.isValid(id);
+}
+
+function getErrorStatus(error: unknown) {
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "status" in error &&
+    typeof (error as { status?: unknown }).status === "number"
+  ) {
+    return (error as { status: number }).status;
+  }
+
+  if (
+    typeof error === "object" &&
+    error !== null &&
+    "statusCode" in error &&
+    typeof (error as { statusCode?: unknown }).statusCode === "number"
+  ) {
+    return (error as { statusCode: number }).statusCode;
+  }
+
+  return 500;
+}
+
 export async function GET(
   _request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
-    await connectDB();
     const actor = await requireAdminPermission("admin:deals:read");
+    await connectDB();
 
-    const { id } = params;
+    const id = String(params?.id || "").trim();
 
-    if (!mongoose.Types.ObjectId.isValid(id)) {
+    if (!isValidObjectId(id)) {
       return NextResponse.json(
         {
           success: false,
@@ -32,7 +58,30 @@ export async function GET(
     const deal = await DealModel.findOne({
       _id: id,
       isDeleted: false,
-    }).lean();
+    })
+      .select(
+        [
+          "title",
+          "description",
+          "message",
+          "notes",
+          "organizerId",
+          "sponsorId",
+          "eventId",
+          "status",
+          "paymentStatus",
+          "isFrozen",
+          "adminReviewStatus",
+          "proposedAmount",
+          "finalAmount",
+          "acceptedAt",
+          "completedAt",
+          "disputeReason",
+          "createdAt",
+          "updatedAt",
+        ].join(" ")
+      )
+      .lean();
 
     if (!deal) {
       return NextResponse.json(
@@ -45,14 +94,16 @@ export async function GET(
     }
 
     const [organizer, sponsor, event] = await Promise.all([
-      User.findById(deal.organizerId)
+      User.findOne({ _id: deal.organizerId, isDeleted: false })
         .select("name email role companyName organizationName accountStatus")
         .lean(),
-      User.findById(deal.sponsorId)
+      User.findOne({ _id: deal.sponsorId, isDeleted: false })
         .select("name email role companyName organizationName accountStatus")
         .lean(),
-      EventModel.findById(deal.eventId)
-        .select("title status visibilityStatus moderationStatus location startDate endDate")
+      EventModel.findOne({ _id: deal.eventId, isDeleted: false })
+        .select(
+          "title status visibilityStatus moderationStatus location startDate endDate"
+        )
         .lean(),
     ]);
 
@@ -80,12 +131,19 @@ export async function GET(
   } catch (error) {
     console.error("Admin deal detail error:", error);
 
+    const status = getErrorStatus(error);
+
     return NextResponse.json(
       {
         success: false,
-        message: "Failed to load deal detail",
+        message:
+          status === 401 || status === 403
+            ? error instanceof Error
+              ? error.message
+              : "Unauthorized"
+            : "Failed to load deal detail",
       },
-      { status: 500 }
+      { status }
     );
   }
 }

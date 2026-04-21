@@ -6,6 +6,39 @@ import { connectDB } from "@/lib/db";
 import { verifyAccessToken } from "@/lib/auth";
 import User from "@/lib/models/User";
 
+function buildNoStoreResponse(
+  body: Record<string, unknown>,
+  status: number
+) {
+  const response = NextResponse.json(body, { status });
+  response.headers.set("Cache-Control", "no-store");
+  response.headers.set("Pragma", "no-cache");
+  response.headers.set("Expires", "0");
+  return response;
+}
+
+function clearAuthCookies(response: NextResponse) {
+  response.cookies.set("auth-token", "", {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    expires: new Date(0),
+    priority: "high",
+  });
+
+  response.cookies.set("user-role", "", {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    expires: new Date(0),
+    priority: "medium",
+  });
+
+  return response;
+}
+
 export async function GET(request: NextRequest) {
   try {
     await connectDB();
@@ -13,58 +46,61 @@ export async function GET(request: NextRequest) {
     const token = request.cookies.get("auth-token")?.value;
 
     if (!token) {
-      return NextResponse.json(
+      return buildNoStoreResponse(
         {
           success: false,
           message: "Unauthorized",
         },
-        { status: 401 }
+        401
       );
     }
 
     const payload = verifyAccessToken(token);
 
-    if (!payload) {
-      const response = NextResponse.json(
+    if (!payload?.userId || !payload?.email) {
+      const response = buildNoStoreResponse(
         {
           success: false,
           message: "Unauthorized",
         },
-        { status: 401 }
+        401
       );
 
-      response.cookies.set("auth-token", "", {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "lax",
-        path: "/",
-        expires: new Date(0),
-      });
-
-      response.cookies.set("user-role", "", {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "lax",
-        path: "/",
-        expires: new Date(0),
-      });
-
-      return response;
+      return clearAuthCookies(response);
     }
 
-    const user = await User.findById(payload.userId);
+    const user = await User.findById(payload.userId).select(
+      "_id name email role adminRole accountStatus firstName lastName companyName avatar bio phone organizationName eventFocus organizerTargetAudience organizerLocation isEmailVerified isProfileComplete createdAt updatedAt isDeleted"
+    );
 
-    if (!user) {
-      return NextResponse.json(
+    if (!user || user.isDeleted) {
+      const response = buildNoStoreResponse(
         {
           success: false,
           message: "User not found",
         },
-        { status: 404 }
+        404
       );
+
+      return clearAuthCookies(response);
     }
 
-    return NextResponse.json(
+    if (
+      user.accountStatus === "DISABLED" ||
+      user.accountStatus === "SUSPENDED"
+    ) {
+      const response = buildNoStoreResponse(
+        {
+          success: false,
+          message: "Account access restricted",
+        },
+        403
+      );
+
+      return clearAuthCookies(response);
+    }
+
+    const response = buildNoStoreResponse(
       {
         success: true,
         user: {
@@ -90,17 +126,28 @@ export async function GET(request: NextRequest) {
           updatedAt: user.updatedAt,
         },
       },
-      { status: 200 }
+      200
     );
+
+    response.cookies.set("user-role", user.role, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/",
+      maxAge: 60 * 60 * 24 * 7,
+      priority: "medium",
+    });
+
+    return response;
   } catch (error) {
     console.error("Me route error:", error);
 
-    return NextResponse.json(
+    return buildNoStoreResponse(
       {
         success: false,
         message: "Failed to fetch user",
       },
-      { status: 500 }
+      500
     );
   }
 }

@@ -11,17 +11,21 @@ import { requireAdminPermission, writeAdminAuditLog } from "@/lib/admin-auth";
 
 export const dynamic = "force-dynamic";
 
+function isValidObjectId(id: string) {
+  return mongoose.Types.ObjectId.isValid(id);
+}
+
 export async function GET(
   _request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
-    await connectDB();
     const actor = await requireAdminPermission("admin:users:read");
+    await connectDB();
 
-    const { id } = params;
+    const id = String(params?.id || "").trim();
 
-    if (!mongoose.Types.ObjectId.isValid(id)) {
+    if (!isValidObjectId(id)) {
       return NextResponse.json(
         {
           success: false,
@@ -73,7 +77,28 @@ export async function GET(
 
     const [sponsorProfile, events, sponsorships, dealsAsOrganizer, dealsAsSponsor] =
       await Promise.all([
-        Sponsor.findOne({ userId: id }).lean(),
+        Sponsor.findOne({ userId: id, isDeleted: false })
+          .select(
+            [
+              "brandName",
+              "companyName",
+              "industry",
+              "companySize",
+              "website",
+              "officialEmail",
+              "officialPhone",
+              "logoUrl",
+              "about",
+              "targetAudience",
+              "preferredCategories",
+              "preferredLocations",
+              "isProfileComplete",
+              "isPublic",
+              "createdAt",
+              "updatedAt",
+            ].join(" ")
+          )
+          .lean(),
         EventModel.find({ organizerId: id, isDeleted: false })
           .select(
             "title status visibilityStatus moderationStatus location startDate endDate budget createdAt"
@@ -127,15 +152,25 @@ export async function GET(
       },
       { status: 200 }
     );
-  } catch (error) {
+  } catch (error: any) {
     console.error("Admin user detail error:", error);
+
+    const status =
+      typeof error?.status === "number"
+        ? error.status
+        : typeof error?.statusCode === "number"
+        ? error.statusCode
+        : 500;
 
     return NextResponse.json(
       {
         success: false,
-        message: "Failed to load user detail",
+        message:
+          status === 401 || status === 403
+            ? error?.message || "Unauthorized"
+            : "Failed to load user detail",
       },
-      { status: 500 }
+      { status }
     );
   }
 }

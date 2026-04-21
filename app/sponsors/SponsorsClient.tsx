@@ -7,6 +7,8 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/Button";
 import { EmptyState } from "@/components/EmptyState";
 import { useAuth } from "@/hooks/useAuth";
+import { useSubscription } from "@/hooks/useSubscription";
+
 
 type SponsorItem = {
   _id?: string;
@@ -49,6 +51,7 @@ export default function SponsorsClient() {
   const router = useRouter();
   const { loading: authLoading } = useAuth();
 
+  const { hasAccess } = useSubscription();
   const [items, setItems] = useState<SponsorItem[]>([]);
   const [mode, setMode] = useState<
     "public_preview" | "organizer_browse" | "own_profile"
@@ -267,11 +270,19 @@ export default function SponsorsClient() {
                   View Profile
                 </Button>
               </Link>
-              <Link href="/sponsorships" className="flex-1">
-                <Button variant="primary" fullWidth>
-                  Browse Offers
-                </Button>
-              </Link>
+              <Button
+  variant="primary"
+  fullWidth
+  onClick={() => {
+    if (!hasAccess) {
+      router.push("/pricing");
+      return;
+    }
+    router.push("/sponsorships");
+  }}
+>
+  Browse Offers
+</Button>
             </>
           ) : (
             <>

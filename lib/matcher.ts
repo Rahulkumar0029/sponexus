@@ -15,37 +15,80 @@ function splitTerms(value: string) {
   return normalize(value)
     .split(/[,&/\-|\s]+/)
     .map((term) => term.trim())
-    .filter(Boolean);
+    .filter(Boolean)
+    .slice(0, 50);
+}
+
+function clampScore(value: number) {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.min(100, Math.round(value)));
+}
+
+function sanitizeWeight(value: number, fallback: number) {
+  return Number.isFinite(value) && value >= 0 ? value : fallback;
+}
+
+function normalizeWeights(weights?: MatchWeights): MatchWeights {
+  const safeWeights: MatchWeights = {
+    category: sanitizeWeight(weights?.category ?? 20, 20),
+    audience: sanitizeWeight(weights?.audience ?? 20, 20),
+    location: sanitizeWeight(weights?.location ?? 20, 20),
+    budget: sanitizeWeight(weights?.budget ?? 20, 20),
+    deliverables: sanitizeWeight(weights?.deliverables ?? 20, 20),
+  };
+
+  const total =
+    safeWeights.category +
+    safeWeights.audience +
+    safeWeights.location +
+    safeWeights.budget +
+    safeWeights.deliverables;
+
+  if (total !== 100) {
+    return DEFAULT_MATCH_WEIGHTS;
+  }
+
+  return safeWeights;
+}
+
+function dedupeNormalized(values: string[] = []) {
+  return [...new Set(values.map(normalize).filter(Boolean))];
 }
 
 function arrayOverlapScore(source: string[] = [], target: string[] = []) {
-  const normalizedSource = source.map(normalize).filter(Boolean);
-  const normalizedTarget = target.map(normalize).filter(Boolean);
+  const normalizedSource = dedupeNormalized(source);
+  const normalizedTarget = dedupeNormalized(target);
 
   if (!normalizedSource.length || !normalizedTarget.length) return 0;
 
-  const overlap = normalizedSource.filter((item) => normalizedTarget.includes(item));
-  return Math.min(100, Math.round((overlap.length / normalizedTarget.length) * 100));
+  const overlap = normalizedSource.filter((item) =>
+    normalizedTarget.includes(item)
+  );
+
+  return clampScore((overlap.length / normalizedTarget.length) * 100);
 }
 
 function scoreCategoryMatch(preferredCategories: string[], event: Event) {
-  const sponsorCategories = preferredCategories.map(normalize).filter(Boolean);
-  const eventCategories = [event.eventType, ...(event.categories || [])]
-    .map(normalize)
-    .filter(Boolean);
+  const sponsorCategories = dedupeNormalized(preferredCategories);
+  const eventCategories = dedupeNormalized([
+    event.eventType || "",
+    ...(event.categories || []),
+  ]);
 
   return arrayOverlapScore(sponsorCategories, eventCategories);
 }
 
 function scoreAudienceMatch(targetAudience: string, event: Event) {
-  const sponsorAudienceTerms = splitTerms(targetAudience);
-  const eventAudienceTerms = (event.targetAudience || []).flatMap(splitTerms);
+  const sponsorAudienceTerms = dedupeNormalized(splitTerms(targetAudience));
+  const eventAudienceTerms = dedupeNormalized(
+    (event.targetAudience || []).flatMap(splitTerms)
+  );
 
   return arrayOverlapScore(sponsorAudienceTerms, eventAudienceTerms);
 }
 
 function scoreLocationMatch(preferredLocations: string[], eventLocation: string) {
-  const sponsorLocations = preferredLocations.map(normalize).filter(Boolean);
+  const sponsorLocations = dedupeNormalized(preferredLocations);
   const normalizedEventLocation = normalize(eventLocation);
 
   if (!normalizedEventLocation) return 0;
@@ -56,7 +99,8 @@ function scoreLocationMatch(preferredLocations: string[], eventLocation: string)
 
   const partial = sponsorLocations.some(
     (location) =>
-      normalizedEventLocation.includes(location) || location.includes(normalizedEventLocation)
+      normalizedEventLocation.includes(location) ||
+      location.includes(normalizedEventLocation)
   );
 
   if (partial) return 70;
@@ -72,10 +116,13 @@ function scoreLocationMatch(preferredLocations: string[], eventLocation: string)
 }
 
 function scoreBudgetMatch(eventBudget: number) {
-  if (!eventBudget || eventBudget <= 0) return 30;
-  if (eventBudget <= 50000) return 100;
-  if (eventBudget <= 100000) return 75;
-  if (eventBudget <= 200000) return 55;
+  const safeBudget =
+    typeof eventBudget === "number" && Number.isFinite(eventBudget) ? eventBudget : 0;
+
+  if (!safeBudget || safeBudget <= 0) return 30;
+  if (safeBudget <= 50000) return 100;
+  if (safeBudget <= 100000) return 75;
+  if (safeBudget <= 200000) return 55;
   return 35;
 }
 
@@ -83,8 +130,8 @@ function scoreDeliverablesMatch(
   sponsorInterests: string[] = [],
   eventDeliverables: string[] = []
 ) {
-  const normalizedSponsorInterests = sponsorInterests.map(normalize).filter(Boolean);
-  const normalizedEventDeliverables = eventDeliverables.map(normalize).filter(Boolean);
+  const normalizedSponsorInterests = dedupeNormalized(sponsorInterests);
+  const normalizedEventDeliverables = dedupeNormalized(eventDeliverables);
 
   if (!normalizedSponsorInterests.length || !normalizedEventDeliverables.length) {
     return 0;
@@ -94,10 +141,7 @@ function scoreDeliverablesMatch(
     normalizedEventDeliverables.includes(item)
   );
 
-  return Math.min(
-    100,
-    Math.round((overlap.length / normalizedSponsorInterests.length) * 100)
-  );
+  return clampScore((overlap.length / normalizedSponsorInterests.length) * 100);
 }
 
 function createBreakdown(
@@ -105,6 +149,8 @@ function createBreakdown(
   event: Event,
   weights?: MatchWeights
 ): MatchBreakdown {
+  const safeWeights = normalizeWeights(weights);
+
   return {
     categoryScore: scoreCategoryMatch(sponsor.preferredCategories || [], event),
     audienceScore: scoreAudienceMatch(sponsor.targetAudience || "", event),
@@ -117,17 +163,19 @@ function createBreakdown(
       sponsor.sponsorshipInterests || [],
       event.providedDeliverables || []
     ),
-    weights,
+    weights: safeWeights,
   };
 }
 
 function finalWeightedScore(breakdown: MatchBreakdown, weights: MatchWeights) {
-  return Math.round(
-    (breakdown.categoryScore * weights.category +
-      breakdown.audienceScore * weights.audience +
-      breakdown.locationScore * weights.location +
-      breakdown.budgetScore * weights.budget +
-      breakdown.deliverablesScore * weights.deliverables) /
+  const safeWeights = normalizeWeights(weights);
+
+  return clampScore(
+    (breakdown.categoryScore * safeWeights.category +
+      breakdown.audienceScore * safeWeights.audience +
+      breakdown.locationScore * safeWeights.location +
+      breakdown.budgetScore * safeWeights.budget +
+      breakdown.deliverablesScore * safeWeights.deliverables) /
       100
   );
 }
@@ -149,7 +197,7 @@ function buildReasons(breakdown: MatchBreakdown): string[] {
     reasons.push("This result is based on your current weight distribution.");
   }
 
-  return reasons;
+  return reasons.slice(0, 5);
 }
 
 function buildWeakPoints(breakdown: MatchBreakdown): string[] {
@@ -163,7 +211,7 @@ function buildWeakPoints(breakdown: MatchBreakdown): string[] {
     weakPoints.push("Deliverables fit is weaker");
   }
 
-  return weakPoints;
+  return weakPoints.slice(0, 5);
 }
 
 export const DEFAULT_MATCH_WEIGHTS: MatchWeights = {
@@ -180,10 +228,13 @@ export function matchSponsorToEvents(
   weights: MatchWeights = DEFAULT_MATCH_WEIGHTS,
   minScore = 0
 ): EventMatchResult[] {
-  return events
+  const safeWeights = normalizeWeights(weights);
+  const safeMinScore = clampScore(minScore);
+
+  return (Array.isArray(events) ? events : [])
     .map((event) => {
-      const breakdown = createBreakdown(sponsor, event, weights);
-      const score = finalWeightedScore(breakdown, weights);
+      const breakdown = createBreakdown(sponsor, event, safeWeights);
+      const score = finalWeightedScore(breakdown, safeWeights);
 
       return {
         event,
@@ -193,7 +244,7 @@ export function matchSponsorToEvents(
         weakPoints: buildWeakPoints(breakdown),
       };
     })
-    .filter((item) => item.score >= minScore)
+    .filter((item) => item.score >= safeMinScore)
     .sort((a, b) => b.score - a.score);
 }
 
@@ -203,10 +254,13 @@ export function matchEventToSponsors(
   weights: MatchWeights = DEFAULT_MATCH_WEIGHTS,
   minScore = 0
 ): SponsorMatchResult[] {
-  return sponsors
+  const safeWeights = normalizeWeights(weights);
+  const safeMinScore = clampScore(minScore);
+
+  return (Array.isArray(sponsors) ? sponsors : [])
     .map((sponsor) => {
-      const breakdown = createBreakdown(sponsor, event, weights);
-      const score = finalWeightedScore(breakdown, weights);
+      const breakdown = createBreakdown(sponsor, event, safeWeights);
+      const score = finalWeightedScore(breakdown, safeWeights);
 
       return {
         sponsor,
@@ -216,6 +270,6 @@ export function matchEventToSponsors(
         weakPoints: buildWeakPoints(breakdown),
       };
     })
-    .filter((item) => item.score >= minScore)
+    .filter((item) => item.score >= safeMinScore)
     .sort((a, b) => b.score - a.score);
 }
