@@ -10,12 +10,10 @@ interface VerificationEmailArgs {
   verificationLink: string;
 }
 
-// ✅ Basic email validation
 function isValidEmail(email: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
 
-// ✅ Prevent HTML injection
 function escapeHtml(value: string) {
   return value
     .replace(/&/g, "&amp;")
@@ -24,7 +22,6 @@ function escapeHtml(value: string) {
     .replace(/"/g, "&quot;");
 }
 
-// ✅ Safe fetch with timeout
 async function safeFetch(url: string, options: RequestInit, timeout = 10000) {
   const controller = new AbortController();
   const id = setTimeout(() => controller.abort(), timeout);
@@ -51,7 +48,8 @@ async function sendEmail({
 }) {
   const apiKey = process.env.RESEND_API_KEY;
   const from =
-    process.env.EMAIL_FROM || "Sponexus <no-reply@sponexus.in>";
+    process.env.EMAIL_FROM || "Sponexus <no-reply@sponexus.app>";
+  const replyTo = process.env.EMAIL_REPLY_TO;
 
   if (!apiKey) {
     throw new Error("Missing RESEND_API_KEY environment variable");
@@ -59,6 +57,17 @@ async function sendEmail({
 
   if (!isValidEmail(to)) {
     throw new Error("Invalid recipient email");
+  }
+
+  const payload: Record<string, unknown> = {
+    from,
+    to,
+    subject,
+    html,
+  };
+
+  if (replyTo && isValidEmail(replyTo)) {
+    payload.reply_to = replyTo;
   }
 
   const response = await safeFetch(
@@ -69,14 +78,9 @@ async function sendEmail({
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        from,
-        to,
-        subject,
-        html,
-      }),
+      body: JSON.stringify(payload),
     },
-    10000 // 10 sec timeout
+    10000
   );
 
   if (!response.ok) {
