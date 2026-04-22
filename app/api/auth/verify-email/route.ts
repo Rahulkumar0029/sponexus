@@ -50,9 +50,7 @@ export async function POST(request: NextRequest) {
       emailVerificationToken: hashedToken,
       emailVerificationExpires: { $gt: new Date() },
       isDeleted: false,
-    }).select(
-      "+emailVerificationToken +emailVerificationExpires isEmailVerified accountStatus"
-    );
+    }).select("isEmailVerified accountStatus");
 
     if (!user) {
       return buildNoStoreResponse(
@@ -87,12 +85,19 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    user.isEmailVerified = true;
-    user.emailVerificationToken = null;
-    user.emailVerificationExpires = null;
-    user.lastActiveAt = new Date();
-
-    await user.save();
+    await User.updateOne(
+      { _id: user._id },
+      {
+        $set: {
+          isEmailVerified: true,
+          lastActiveAt: new Date(),
+        },
+        $unset: {
+          emailVerificationToken: 1,
+          emailVerificationExpires: 1,
+        },
+      }
+    );
 
     return buildNoStoreResponse(
       {
@@ -102,12 +107,25 @@ export async function POST(request: NextRequest) {
       200
     );
   } catch (error) {
-    console.error("Verify email error:", error);
+    console.error("===== VERIFY EMAIL ERROR =====");
+
+    if (error instanceof Error) {
+      console.error("Message:", error.message);
+      console.error("Stack:", error.stack);
+    } else {
+      console.error("Unknown error:", error);
+    }
 
     return buildNoStoreResponse(
       {
         success: false,
         message: "Email verification failed",
+        error:
+          process.env.NODE_ENV === "development"
+            ? error instanceof Error
+              ? error.message
+              : "Unknown error"
+            : undefined,
       },
       500
     );
