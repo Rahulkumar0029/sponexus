@@ -14,6 +14,14 @@ const ALLOWED_OWNER_STATUSES = [
   "CANCELLED",
 ] as const;
 
+function buildNoStoreResponse(body: Record<string, unknown>, status: number) {
+  const response = NextResponse.json(body, { status });
+  response.headers.set("Cache-Control", "no-store");
+  response.headers.set("Pragma", "no-cache");
+  response.headers.set("Expires", "0");
+  return response;
+}
+
 export async function GET(request: NextRequest) {
   try {
     await connectDB();
@@ -21,16 +29,16 @@ export async function GET(request: NextRequest) {
     const currentUser = await getCurrentUser();
 
     if (!currentUser) {
-      return NextResponse.json(
+      return buildNoStoreResponse(
         { success: false, message: "Authentication required" },
-        { status: 401 }
+        401
       );
     }
 
     if (currentUser.role !== "ORGANIZER") {
-      return NextResponse.json(
+      return buildNoStoreResponse(
         { success: false, message: "Only organizers can access their events" },
-        { status: 403 }
+        403
       );
     }
 
@@ -41,7 +49,8 @@ export async function GET(request: NextRequest) {
     const limit = parseInt(searchParams.get("limit") || "10", 10);
 
     const safePage = Number.isNaN(page) || page < 1 ? 1 : page;
-    const safeLimit = Number.isNaN(limit) || limit < 1 ? 10 : limit;
+    const safeLimit =
+      Number.isNaN(limit) || limit < 1 ? 10 : Math.min(limit, 50);
 
     const query: Record<string, any> = {
       organizerId: currentUser._id,
@@ -57,18 +66,20 @@ export async function GET(request: NextRequest) {
       query.status = status;
     }
 
-    const events = await EventModel.find(query)
-      .select(
-        "_id title description location startDate endDate status budget attendeeCount createdAt updatedAt coverImage"
-      )
-      .sort({ updatedAt: -1, startDate: 1, createdAt: -1 })
-      .skip((safePage - 1) * safeLimit)
-      .limit(safeLimit)
-      .lean();
+    const [events, total] = await Promise.all([
+      EventModel.find(query)
+        .select(
+          "_id title description location startDate endDate status budget attendeeCount createdAt updatedAt coverImage"
+        )
+        .sort({ updatedAt: -1, startDate: 1, createdAt: -1 })
+        .skip((safePage - 1) * safeLimit)
+        .limit(safeLimit)
+        .lean(),
 
-    const total = await EventModel.countDocuments(query);
+      EventModel.countDocuments(query),
+    ]);
 
-    return NextResponse.json(
+    return buildNoStoreResponse(
       {
         success: true,
         events,
@@ -79,14 +90,14 @@ export async function GET(request: NextRequest) {
           pages: Math.ceil(total / safeLimit),
         },
       },
-      { status: 200 }
+      200
     );
   } catch (error) {
     console.error("GET /api/events/my error:", error);
 
-    return NextResponse.json(
+    return buildNoStoreResponse(
       { success: false, message: "Failed to fetch organizer events" },
-      { status: 500 }
+      500
     );
   }
 }

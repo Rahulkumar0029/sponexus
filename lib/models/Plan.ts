@@ -1,107 +1,120 @@
-import mongoose, { Document, Model, Schema } from "mongoose";
+import mongoose, { Document, Model, Schema, Types } from "mongoose";
 
-export type PlanRole = "ORGANIZER" | "SPONSOR";
-export type PlanInterval = "MONTHLY" | "YEARLY";
+export type PlanRole = "ORGANIZER" | "SPONSOR" | "BOTH";
+export type PlanInterval = "CUSTOM" | "MONTHLY" | "YEARLY";
 
 export interface IPlan extends Document {
   code: string;
   role: PlanRole;
+
   name: string;
   description?: string;
 
   price: number;
   currency: "INR";
+
   interval: PlanInterval;
   durationInDays: number;
+  extraDays?: number;
 
-  postingLimit: number | null;
+  postingLimitPerDay: number | null;
+  dealRequestLimitPerDay: number | null;
 
   canPublish: boolean;
   canContact: boolean;
   canUseMatch: boolean;
   canRevealContact: boolean;
 
+  budgetMin?: number | null;
+  budgetMax?: number | null;
+
   isActive: boolean;
+  isArchived: boolean;
+  isVisible: boolean;
+
+  visibleToRoles: PlanRole[];
+  visibleToLoggedOut: boolean;
+
   sortOrder: number;
+
+  metadata?: Record<string, unknown>;
+
+  createdBy?: Types.ObjectId | null;
+  updatedBy?: Types.ObjectId | null;
 
   createdAt: Date;
   updatedAt: Date;
 }
 
-const MAX_CODE_LENGTH = 50;
-const MAX_NAME_LENGTH = 120;
-const MAX_DESCRIPTION_LENGTH = 1000;
-const MAX_PRICE = 100000000;
-const MAX_DURATION_DAYS = 3650;
-
 const planSchema = new Schema<IPlan>(
   {
     code: {
       type: String,
-      required: [true, "Plan code is required"],
+      required: true,
       unique: true,
       trim: true,
       uppercase: true,
-      maxlength: MAX_CODE_LENGTH,
     },
 
     role: {
       type: String,
-      enum: ["ORGANIZER", "SPONSOR"],
-      required: [true, "Plan role is required"],
+      enum: ["ORGANIZER", "SPONSOR", "BOTH"],
+      required: true,
       index: true,
     },
 
     name: {
       type: String,
-      required: [true, "Plan name is required"],
+      required: true,
       trim: true,
-      maxlength: MAX_NAME_LENGTH,
     },
 
     description: {
       type: String,
-      trim: true,
       default: "",
-      maxlength: MAX_DESCRIPTION_LENGTH,
+      trim: true,
     },
 
     price: {
       type: Number,
-      required: [true, "Plan price is required"],
-      min: [0, "Plan price cannot be negative"],
-      max: [MAX_PRICE, `Plan price cannot exceed ${MAX_PRICE}`],
-      validate: {
-        validator: Number.isFinite,
-        message: "Plan price must be a valid number",
-      },
+      required: true,
+      min: 0,
     },
 
     currency: {
       type: String,
       enum: ["INR"],
       default: "INR",
-      required: true,
     },
 
     interval: {
       type: String,
-      enum: ["MONTHLY", "YEARLY"],
-      required: [true, "Plan interval is required"],
-      index: true,
+      enum: ["CUSTOM", "MONTHLY", "YEARLY"],
+      default: "CUSTOM",
     },
 
     durationInDays: {
       type: Number,
-      required: [true, "Plan duration is required"],
-      min: [1, "Plan duration must be at least 1 day"],
-      max: [MAX_DURATION_DAYS, `Plan duration cannot exceed ${MAX_DURATION_DAYS} days`],
+      required: true,
+      min: 1,
     },
 
-    postingLimit: {
+    extraDays: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
+    postingLimitPerDay: {
       type: Number,
       default: null,
-      min: [1, "Posting limit must be at least 1 when provided"],
+      min: 0,
+    },
+
+    dealRequestLimitPerDay: {
+      type: Number,
+      default: null,
+      min: 0,
     },
 
     canPublish: {
@@ -124,57 +137,98 @@ const planSchema = new Schema<IPlan>(
       default: true,
     },
 
+    budgetMin: {
+      type: Number,
+      default: null,
+      min: 0,
+    },
+
+    budgetMax: {
+      type: Number,
+      default: null,
+      min: 0,
+    },
+
     isActive: {
       type: Boolean,
       default: true,
       index: true,
     },
 
+    isArchived: {
+      type: Boolean,
+      default: false,
+      index: true,
+    },
+
+    isVisible: {
+      type: Boolean,
+      default: true,
+    },
+
+    visibleToRoles: {
+      type: [String],
+      enum: ["ORGANIZER", "SPONSOR", "BOTH"],
+      default: ["BOTH"],
+    },
+
+    visibleToLoggedOut: {
+      type: Boolean,
+      default: true,
+    },
+
     sortOrder: {
       type: Number,
       default: 0,
+      min: 0,
+    },
+
+    metadata: {
+      type: Schema.Types.Mixed,
+      default: {},
+    },
+
+    createdBy: {
+      type: Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+      index: true,
+    },
+
+    updatedBy: {
+      type: Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+      index: true,
     },
   },
   {
     timestamps: true,
-    minimize: true,
   }
 );
 
 planSchema.pre("validate", function (next) {
-  if (typeof this.code === "string") {
-    this.code = this.code.trim().toUpperCase();
-  }
-
-  if (typeof this.name === "string") {
-    this.name = this.name.trim();
-  }
-
+  if (typeof this.code === "string") this.code = this.code.trim().toUpperCase();
+  if (typeof this.name === "string") this.name = this.name.trim();
   if (typeof this.description === "string") {
     this.description = this.description.trim();
   }
 
   if (
-    this.interval === "MONTHLY" &&
-    this.durationInDays > 31
+    this.budgetMin != null &&
+    this.budgetMax != null &&
+    this.budgetMin > this.budgetMax
   ) {
-    return next(new Error("MONTHLY plans cannot exceed 31 days"));
-  }
-
-  if (
-    this.interval === "YEARLY" &&
-    this.durationInDays < 300
-  ) {
-    return next(new Error("YEARLY plans must be at least 300 days"));
+    return next(new Error("budgetMin cannot be greater than budgetMax"));
   }
 
   next();
 });
 
-planSchema.index({ role: 1, interval: 1, isActive: 1 });
-planSchema.index({ code: 1, isActive: 1 });
-planSchema.index({ isActive: 1, sortOrder: 1, price: 1 });
-planSchema.index({ role: 1, isActive: 1, sortOrder: 1 });
+planSchema.index({ code: 1 });
+planSchema.index({ role: 1, isActive: 1 });
+planSchema.index({ isActive: 1, isArchived: 1, sortOrder: 1 });
+planSchema.index({ visibleToRoles: 1, isVisible: 1 });
 
 const Plan: Model<IPlan> =
   mongoose.models.Plan || mongoose.model<IPlan>("Plan", planSchema);

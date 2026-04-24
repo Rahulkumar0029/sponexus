@@ -8,7 +8,7 @@ type PlanCardProps = {
   isCurrent?: boolean;
   isLoading?: boolean;
   adminBypass?: boolean;
-  onSelect?: (planCode: string) => void;
+  onSelect?: (planId: string) => void;
 };
 
 function formatPrice(price: number) {
@@ -16,7 +16,7 @@ function formatPrice(price: number) {
     style: "currency",
     currency: "INR",
     maximumFractionDigits: 0,
-  }).format(price);
+  }).format(price || 0);
 }
 
 type FeatureTagProps = {
@@ -38,6 +38,73 @@ function FeatureTag({ label, active = true }: FeatureTagProps) {
   );
 }
 
+function getIntervalLabel(plan: PlanDTO) {
+  if (plan.interval === "YEARLY") return "YEARLY";
+  if (plan.interval === "MONTHLY") return "MONTHLY";
+  return `${plan.durationInDays} DAYS`;
+}
+
+function getCtaLabel(plan: PlanDTO) {
+  if (plan.interval === "YEARLY") return "Choose Yearly Plan";
+  if (plan.interval === "MONTHLY") return "Choose Monthly Plan";
+  return "Choose Plan";
+}
+
+function getPlanVisibleBenefits(plan: PlanDTO) {
+  const items: { label: string; active: boolean }[] = [];
+
+  const postingLimitPerDay =
+    typeof plan.postingLimitPerDay === "number"
+      ? plan.postingLimitPerDay
+      : null;
+
+  const dealRequestLimitPerDay =
+    typeof plan.dealRequestLimitPerDay === "number"
+      ? plan.dealRequestLimitPerDay
+      : null;
+
+  items.push({
+    label:
+      postingLimitPerDay === null
+        ? "Unlimited posting"
+        : `${postingLimitPerDay} posts/day`,
+    active: true,
+  });
+
+  if (plan.canPublish) {
+    items.push({ label: "Publishing access", active: true });
+  }
+
+  if (plan.canContact) {
+    items.push({ label: "Direct contact actions", active: true });
+  }
+
+  if (plan.canUseMatch) {
+    items.push({ label: "Smart match tools", active: true });
+  }
+
+  if (plan.canRevealContact) {
+    items.push({ label: "Contact reveal access", active: true });
+  }
+
+  items.push({
+    label:
+      dealRequestLimitPerDay === null
+        ? "Unlimited deal requests"
+        : `${dealRequestLimitPerDay} requests/day`,
+    active: true,
+  });
+
+  if (typeof plan.extraDays === "number" && plan.extraDays > 0) {
+    items.push({
+      label: `+${plan.extraDays} bonus days`,
+      active: true,
+    });
+  }
+
+  return items.slice(0, 6);
+}
+
 export function PlanCard({
   plan,
   isCurrent = false,
@@ -45,6 +112,8 @@ export function PlanCard({
   adminBypass = false,
   onSelect,
 }: PlanCardProps) {
+  const visibleBenefits = getPlanVisibleBenefits(plan);
+
   return (
     <div
       className={`rounded-2xl border p-5 transition-all ${
@@ -81,25 +150,19 @@ export function PlanCard({
             {formatPrice(plan.price)}
           </p>
           <p className="mt-1 text-xs uppercase tracking-[0.24em] text-[#94A3B8]">
-            {plan.interval}
+            {getIntervalLabel(plan)}
           </p>
         </div>
       </div>
 
       <div className="mt-5 grid gap-3 sm:grid-cols-2">
-        <FeatureTag label="Unlimited posting" active={plan.postingLimit === null} />
-        <FeatureTag label="Publish access" active={plan.canPublish} />
-        <FeatureTag label="Direct contact actions" active={plan.canContact} />
-        <FeatureTag label="Match tools" active={plan.canUseMatch} />
-        <FeatureTag label="Contact reveal support" active={plan.canRevealContact} />
-        <FeatureTag
-          label={
-            plan.interval === "YEARLY"
-              ? "11 months price benefit"
-              : "Flexible monthly access"
-          }
-          active
-        />
+        {visibleBenefits.map((feature) => (
+          <FeatureTag
+            key={feature.label}
+            label={feature.label}
+            active={feature.active}
+          />
+        ))}
       </div>
 
       <div className="mt-5">
@@ -107,7 +170,7 @@ export function PlanCard({
           variant={isCurrent || adminBypass ? "secondary" : "primary"}
           className="w-full"
           disabled={isCurrent || isLoading || adminBypass}
-          onClick={() => onSelect?.(plan.code)}
+          onClick={() => onSelect?.(plan._id)}
         >
           {adminBypass
             ? "Admin access enabled"
@@ -115,7 +178,7 @@ export function PlanCard({
             ? "Already Active"
             : isLoading
             ? "Processing..."
-            : `Choose ${plan.interval === "YEARLY" ? "Yearly" : "Monthly"} Plan`}
+            : getCtaLabel(plan)}
         </Button>
       </div>
     </div>

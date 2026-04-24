@@ -6,10 +6,7 @@ import { connectDB } from "@/lib/db";
 import { verifyAccessToken } from "@/lib/auth";
 import User from "@/lib/models/User";
 
-function buildNoStoreResponse(
-  body: Record<string, unknown>,
-  status: number
-) {
+function buildNoStoreResponse(body: Record<string, unknown>, status: number) {
   const response = NextResponse.json(body, { status });
   response.headers.set("Cache-Control", "no-store");
   response.headers.set("Pragma", "no-cache");
@@ -70,7 +67,7 @@ export async function GET(request: NextRequest) {
     }
 
     const user = await User.findById(payload.userId).select(
-      "_id name email role adminRole accountStatus firstName lastName companyName avatar bio phone organizationName eventFocus organizerTargetAudience organizerLocation isEmailVerified isProfileComplete createdAt updatedAt isDeleted"
+      "_id name email role adminRole accountStatus firstName lastName companyName avatar bio phone organizationName eventFocus organizerTargetAudience organizerLocation isEmailVerified isProfileComplete emailVerifiedAt emailVerificationValidUntil createdAt updatedAt isDeleted"
     );
 
     if (!user || user.isDeleted) {
@@ -100,6 +97,16 @@ export async function GET(request: NextRequest) {
       return clearAuthCookies(response);
     }
 
+    let isVerificationExpired = false;
+
+    if (
+      user.isEmailVerified &&
+      user.emailVerificationValidUntil &&
+      new Date(user.emailVerificationValidUntil).getTime() < Date.now()
+    ) {
+      isVerificationExpired = true;
+    }
+
     const response = buildNoStoreResponse(
       {
         success: true,
@@ -121,6 +128,10 @@ export async function GET(request: NextRequest) {
           organizerTargetAudience: user.organizerTargetAudience || "",
           organizerLocation: user.organizerLocation || "",
           isEmailVerified: user.isEmailVerified,
+          isVerificationExpired,
+          emailVerifiedAt: user.emailVerifiedAt || null,
+          emailVerificationValidUntil:
+            user.emailVerificationValidUntil || null,
           isProfileComplete: user.isProfileComplete,
           createdAt: user.createdAt,
           updatedAt: user.updatedAt,

@@ -10,6 +10,12 @@ interface VerificationEmailArgs {
   verificationLink: string;
 }
 
+interface EmailChangeVerificationArgs {
+  to: string;
+  name: string;
+  verificationLink: string;
+}
+
 function isValidEmail(email: string) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 }
@@ -47,8 +53,7 @@ async function sendEmail({
   html: string;
 }) {
   const apiKey = process.env.RESEND_API_KEY;
-  const from =
-    process.env.EMAIL_FROM || "Sponexus <no-reply@sponexus.app>";
+  const from = process.env.EMAIL_FROM || "Sponexus <no-reply@sponexus.app>";
   const replyTo = process.env.EMAIL_REPLY_TO;
 
   if (!apiKey) {
@@ -139,6 +144,33 @@ export async function sendVerificationEmail({
           </a>
         </p>
         <p>This link will expire in 24 hours.</p>
+      </div>
+    `,
+  });
+}
+
+export async function sendEmailChangeVerificationEmail({
+  to,
+  name,
+  verificationLink,
+}: EmailChangeVerificationArgs) {
+  const safeName = escapeHtml(name);
+
+  return sendEmail({
+    to,
+    subject: "Confirm your new Sponexus email",
+    html: `
+      <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #111827;">
+        <h2>Confirm your new email</h2>
+        <p>Hi ${safeName},</p>
+        <p>You requested to change your Sponexus account email.</p>
+        <p>
+          <a href="${verificationLink}" style="display:inline-block;padding:12px 20px;background:#FF7A18;color:#000;text-decoration:none;border-radius:8px;font-weight:600;">
+            Confirm New Email
+          </a>
+        </p>
+        <p>This link will expire in 24 hours.</p>
+        <p>If you did not request this, please ignore this email.</p>
       </div>
     `,
   });

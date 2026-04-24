@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 
 import { connectDB } from "@/lib/db";
-import { hashToken } from "@/lib/auth";
+import { generateAccessToken, hashToken } from "@/lib/auth";
 import User from "@/lib/models/User";
 
 const MAX_TOKEN_LENGTH = 512;
@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
       emailVerificationToken: hashedToken,
       emailVerificationExpires: { $gt: new Date() },
       isDeleted: false,
-    }).select("isEmailVerified accountStatus");
+    }).select("_id email role adminRole name firstName lastName companyName avatar bio phone organizationName eventFocus organizerTargetAudience organizerLocation isEmailVerified isProfileComplete accountStatus createdAt updatedAt");
 
     if (!user) {
       return buildNoStoreResponse(
@@ -85,27 +85,79 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    await User.updateOne(
-      { _id: user._id },
-      {
-        $set: {
-          isEmailVerified: true,
-          lastActiveAt: new Date(),
-        },
-        $unset: {
-          emailVerificationToken: 1,
-          emailVerificationExpires: 1,
-        },
-      }
-    );
+        const now = new Date();
+    const validUntil = new Date(now);
+    validUntil.setMonth(validUntil.getMonth() + 3);
 
-    return buildNoStoreResponse(
+    user.isEmailVerified = true;
+    user.emailVerifiedAt = now;
+    user.emailVerificationValidUntil = validUntil;
+    user.lastActiveAt = now;
+    user.lastLoginAt = now;
+    user.emailVerificationToken = null;
+    user.emailVerificationExpires = null;
+
+    await user.save();
+
+    const accessToken = generateAccessToken({
+      userId: String(user._id),
+      email: user.email,
+      role: user.role,
+      adminRole: user.adminRole,
+    });
+
+    const safeUser = {
+      _id: String(user._id),
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      adminRole: user.adminRole || "NONE",
+      firstName: user.firstName,
+      lastName: user.lastName,
+      companyName: user.companyName || "",
+      avatar: user.avatar || "",
+      bio: user.bio || "",
+      phone: user.phone || "",
+      organizationName: user.organizationName || "",
+      eventFocus: user.eventFocus || "",
+      organizerTargetAudience: user.organizerTargetAudience || "",
+      organizerLocation: user.organizerLocation || "",
+      isEmailVerified: user.isEmailVerified,
+      isProfileComplete: user.isProfileComplete,
+      accountStatus: user.accountStatus,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt,
+    };
+
+    const response = buildNoStoreResponse(
       {
         success: true,
         message: "Email verified successfully",
+        user: safeUser,
       },
       200
     );
+
+    response.cookies.set("auth-token", accessToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/",
+      maxAge: 60 * 60 * 24 * 7,
+      priority: "high",
+    });
+
+    response.cookies.set("user-role", user.role, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/",
+      maxAge: 60 * 60 * 24 * 7,
+      priority: "medium",
+    });
+
+    return response;
+
   } catch (error) {
     console.error("===== VERIFY EMAIL ERROR =====");
 

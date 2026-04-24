@@ -1,3 +1,10 @@
+import {
+  handleIdempotency,
+  generateRequestHash,
+  storeIdempotencyResponse,
+} from "@/lib/payments/idempotency";
+
+import mongoose from "mongoose";
 import { NextRequest, NextResponse } from "next/server";
 
 import { connectDB } from "@/lib/db";
@@ -6,30 +13,27 @@ import User from "@/lib/models/User";
 import Plan from "@/lib/models/Plan";
 import Subscription from "@/lib/models/Subscription";
 import PaymentTransaction from "@/lib/models/PaymentTransaction";
-import {
-  PAYMENT_GATEWAY,
-  PAYMENT_STATUS,
-  SUBSCRIPTION_SOURCE,
-  SUBSCRIPTION_STATUS,
-} from "@/lib/subscription/constants";
 import { isAdminBypass } from "@/lib/subscription/isAdminBypass";
 import {
-  sendSubscriptionActivatedEmail,
-  sendSubscriptionRenewedEmail,
-} from "@/lib/email/subscription";
+  buildCheckoutAttemptId,
+  buildReceipt,
+  buildPlanSnapshot,
+  isPlanAllowedForRole,
+  sanitizePlan,
+  sanitizePayment,
+  sanitizeSubscription,
+} from "@/lib/payments/helpers";
+import {
+  reserveCouponRedemption,
+  releaseCouponRedemption,
+  validateCoupon,
+} from "@/lib/payments/coupon";
+import { safeLogAudit } from "@/lib/audit/log";
+import { createRazorpayOrder } from "@/lib/payments/razorpay";
 
-const MAX_PLAN_CODE_LENGTH = 50;
+export const runtime = "nodejs";
 
-function addDays(baseDate: Date, days: number) {
-  const date = new Date(baseDate);
-  date.setDate(date.getDate() + days);
-  return date;
-}
-
-function buildNoStoreResponse(
-  body: Record<string, unknown>,
-  status: number
-) {
+function buildNoStoreResponse(body: Record<string, unknown>, status: number) {
   const response = NextResponse.json(body, { status });
   response.headers.set("Cache-Control", "no-store");
   response.headers.set("Pragma", "no-cache");
@@ -37,59 +41,10 @@ function buildNoStoreResponse(
   return response;
 }
 
-function sanitizePlan(plan: any) {
-  return {
-    _id: String(plan._id),
-    code: plan.code,
-    name: plan.name,
-    role: plan.role,
-    price: plan.price,
-    currency: plan.currency,
-    durationInDays: plan.durationInDays,
-    isActive: plan.isActive,
-  };
-}
-
-function sanitizePayment(payment: any) {
-  return {
-    _id: String(payment._id),
-    userId: String(payment.userId),
-    subscriptionId: payment.subscriptionId ? String(payment.subscriptionId) : null,
-    planId: payment.planId ? String(payment.planId) : null,
-    role: payment.role,
-    amount: payment.amount,
-    currency: payment.currency,
-    status: payment.status,
-    gateway: payment.gateway,
-    method: payment.method,
-    paidAt: payment.paidAt || null,
-    createdAt: payment.createdAt || null,
-    updatedAt: payment.updatedAt || null,
-  };
-}
-
-function sanitizeSubscription(subscription: any) {
-  return {
-    _id: String(subscription._id),
-    userId: String(subscription.userId),
-    role: subscription.role,
-    planId: subscription.planId ? String(subscription.planId) : null,
-    status: subscription.status,
-    startDate: subscription.startDate || null,
-    endDate: subscription.endDate || null,
-    graceEndDate: subscription.graceEndDate || null,
-    autoRenew: Boolean(subscription.autoRenew),
-    renewalCount: subscription.renewalCount || 0,
-    source: subscription.source,
-    lastPaymentId: subscription.lastPaymentId
-      ? String(subscription.lastPaymentId)
-      : null,
-    createdAt: subscription.createdAt || null,
-    updatedAt: subscription.updatedAt || null,
-  };
-}
-
 export async function POST(request: NextRequest) {
+  let idemRecord: any = null;
+  let reservedPayment: any = null;
+
   try {
     await connectDB();
 
@@ -112,22 +67,43 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const rawPlanCode = typeof body.planCode === "string" ? body.planCode.trim() : "";
-    const planCode = rawPlanCode.toUpperCase();
 
-    if (!planCode) {
+    const rawPlanId =
+      typeof body.planId === "string" ? body.planId.trim() : "";
+
+    const rawCouponCode =
+      typeof body.couponCode === "string" ? body.couponCode.trim() : "";
+
+    if (!rawPlanId || !mongoose.Types.ObjectId.isValid(rawPlanId)) {
       return buildNoStoreResponse(
-        { success: false, message: "Valid plan code is required." },
+        { success: false, message: "Valid planId is required." },
         400
       );
     }
 
-    if (planCode.length > MAX_PLAN_CODE_LENGTH) {
+    const idempotencyKey = request.headers.get("x-idempotency-key") || "";
+
+    if (!idempotencyKey) {
       return buildNoStoreResponse(
-        { success: false, message: "Plan code is too long." },
+        { success: false, message: "Missing idempotency key." },
         400
       );
     }
+
+    const requestHash = generateRequestHash(body);
+
+    const idem = await handleIdempotency({
+      key: idempotencyKey,
+      userId: decoded.userId,
+      endpoint: "subscription-renew",
+      requestHash,
+    });
+
+    if (idem.isReplay) {
+      return buildNoStoreResponse(idem.response, idem.statusCode);
+    }
+
+    idemRecord = idem.record ?? null;
 
     const user = await User.findById(decoded.userId).select(
       "_id email role adminRole firstName name companyName accountStatus"
@@ -164,9 +140,13 @@ export async function POST(request: NextRequest) {
     }
 
     const plan = await Plan.findOne({
-      code: planCode,
+      _id: rawPlanId,
       isActive: true,
-    }).select("_id code name role price currency durationInDays isActive");
+      isArchived: false,
+      isVisible: true,
+    }).select(
+      "_id code name role price currency durationInDays extraDays postingLimitPerDay dealRequestLimitPerDay canPublish canContact canUseMatch canRevealContact budgetMin budgetMax isActive isArchived isVisible"
+    );
 
     if (!plan) {
       return buildNoStoreResponse(
@@ -175,7 +155,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (plan.role !== user.role) {
+    if (!isPlanAllowedForRole(plan.role, user.role)) {
       return buildNoStoreResponse(
         {
           success: false,
@@ -200,129 +180,299 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const allowManualRenewal =
-      process.env.NODE_ENV !== "production" &&
-      process.env.ALLOW_MANUAL_SUBSCRIPTION_CHECKOUT === "true";
+    const existingOpenTransaction = await PaymentTransaction.findOne({
+      userId: user._id,
+      role: user.role,
+      planId: plan._id,
+      transactionType: "RENEWAL",
+      renewalOfSubscriptionId: existingSubscription._id,
+      status: { $in: ["CREATED", "PENDING"] },
+    }).sort({ createdAt: -1 });
 
-    if (!allowManualRenewal) {
-      const pendingPayment = await PaymentTransaction.create({
-        userId: user._id,
-        subscriptionId: existingSubscription._id,
-        planId: plan._id,
-        role: user.role,
-        amount: plan.price,
-        currency: plan.currency,
-        status: PAYMENT_STATUS.PENDING,
-        gateway: PAYMENT_GATEWAY.MANUAL,
-        method: "manual-renewal-request",
-        paidAt: null,
-        notes:
-          "Pending renewal request created. Subscription renewal must happen only after verified payment confirmation.",
-      });
-
-      return buildNoStoreResponse(
-        {
-          success: true,
-          message:
-            "Renewal request created. Subscription will renew only after verified payment confirmation.",
-          requiresVerification: true,
-          payment: sanitizePayment(pendingPayment),
-          subscription: sanitizeSubscription(existingSubscription),
-          plan: sanitizePlan(plan),
+    if (existingOpenTransaction) {
+      const existingResponse = {
+        success: true,
+        message: "An existing renewal checkout attempt is already pending.",
+        requiresPayment: true,
+        payment: sanitizePayment(existingOpenTransaction),
+        subscription: sanitizeSubscription(existingSubscription),
+        plan: sanitizePlan(plan),
+        gateway: {
+          provider: "RAZORPAY",
+          orderCreated: Boolean(existingOpenTransaction.gatewayOrderId),
+          order: existingOpenTransaction.gatewayOrderId
+            ? {
+                id: existingOpenTransaction.gatewayOrderId,
+                amount: Math.round(
+                  Number(existingOpenTransaction.amount || 0) * 100
+                ),
+                currency: existingOpenTransaction.currency,
+                receipt: existingOpenTransaction.receipt ?? null,
+                status: existingOpenTransaction.gatewayStatus ?? null,
+              }
+            : null,
         },
-        202
-      );
+      };
+
+      if (idemRecord) {
+        await storeIdempotencyResponse({
+          record: idemRecord,
+          response: existingResponse,
+          statusCode: 200,
+        });
+      }
+
+      return buildNoStoreResponse(existingResponse, 200);
     }
 
-    const now = new Date();
+    let amountBeforeDiscount = Number(plan.price);
+    let couponCode: string | null = null;
+    let couponDiscountAmount: number | null = null;
+    let finalAmount = Number(plan.price);
+    let validatedCoupon: Awaited<ReturnType<typeof validateCoupon>> | null =
+      null;
+
+    if (rawCouponCode) {
+      validatedCoupon = await validateCoupon({
+        code: rawCouponCode,
+        userId: user._id,
+        role: user.role,
+        planId: plan._id,
+        baseAmount: Number(plan.price),
+      });
+
+      if (!validatedCoupon.valid) {
+        await safeLogAudit({
+          actorId: user._id,
+          action: "SUBSCRIPTION_RENEWAL_COUPON_REJECTED",
+          entityType: "PLAN",
+          entityId: plan._id,
+          severity: "WARN",
+          request,
+          metadata: {
+            userRole: user.role,
+            couponCodeAttempted: rawCouponCode.toUpperCase(),
+            reason: validatedCoupon.message,
+            subscriptionId: String(existingSubscription._id),
+            planCode: plan.code,
+            planName: plan.name,
+            baseAmount: Number(plan.price),
+          },
+        });
+
+        return buildNoStoreResponse(
+          {
+            success: false,
+            message: validatedCoupon.message,
+          },
+          400
+        );
+      }
+
+      amountBeforeDiscount = validatedCoupon.amountBeforeDiscount;
+      couponDiscountAmount = validatedCoupon.discountAmount;
+      finalAmount = validatedCoupon.finalAmount;
+      couponCode = validatedCoupon.coupon.code;
+    }
+
+    const checkoutAttemptId = buildCheckoutAttemptId("ren");
+    const receipt = buildReceipt("rcpt");
+    const planSnapshot = buildPlanSnapshot(plan);
 
     const payment = await PaymentTransaction.create({
       userId: user._id,
       subscriptionId: existingSubscription._id,
+      renewalOfSubscriptionId: existingSubscription._id,
       planId: plan._id,
+      planSnapshot,
       role: user.role,
-      amount: plan.price,
+      transactionType: "RENEWAL",
+      checkoutAttemptId,
+      receipt,
+      amountBeforeDiscount,
+      couponCode,
+      couponDiscountAmount,
+      amount: finalAmount,
       currency: plan.currency,
-      status: PAYMENT_STATUS.SUCCESS,
-      gateway: PAYMENT_GATEWAY.MANUAL,
-      method: "manual-renewal",
-      paidAt: now,
-      notes: "Manual subscription renewal recorded in non-production test mode.",
+      status: "CREATED",
+      gateway: "RAZORPAY",
+      method: "subscription-renew-init",
+      gatewayOrderId: null,
+      gatewayPaymentId: null,
+      gatewaySignature: null,
+      gatewayStatus: null,
+      verificationSource: null,
+      verifiedAt: null,
+      paidAt: null,
+      processedAt: null,
+      webhookReceivedAt: null,
+      webhookConfirmedAt: null,
+      isWebhookConfirmed: false,
+      fraudFlagged: false,
+      notes:
+        "Renewal checkout attempt created. Subscription renewal must happen only after verified payment.",
     });
 
-    const wasFirstActivation =
-      (existingSubscription.renewalCount || 0) === 0 &&
-      !existingSubscription.lastPaymentId;
+    reservedPayment = payment;
 
-    const renewalBaseDate =
-      existingSubscription.endDate &&
-      new Date(existingSubscription.endDate) > now
-        ? new Date(existingSubscription.endDate)
-        : now;
+    if (validatedCoupon?.valid) {
+      const couponType = validatedCoupon.coupon.type;
+      const couponValue = validatedCoupon.coupon.value;
 
-    existingSubscription.planId = plan._id;
-    existingSubscription.status = SUBSCRIPTION_STATUS.ACTIVE;
-    existingSubscription.startDate = now;
-    existingSubscription.endDate = addDays(
-      renewalBaseDate,
-      plan.durationInDays
-    );
-    existingSubscription.graceEndDate = null;
-    existingSubscription.autoRenew = false;
-    existingSubscription.renewalCount =
-      (existingSubscription.renewalCount || 0) + 1;
-    existingSubscription.source = SUBSCRIPTION_SOURCE.MANUAL;
-    existingSubscription.lastPaymentId = payment._id;
-    existingSubscription.notes =
-      "Subscription renewed through renew route in non-production test mode.";
-
-    const subscription = await existingSubscription.save();
-
-    payment.subscriptionId = subscription._id;
-    await payment.save();
-
-    const displayName =
-      user.firstName?.trim() ||
-      user.name?.trim() ||
-      user.companyName?.trim() ||
-      "User";
-
-    try {
-      if (wasFirstActivation) {
-        await sendSubscriptionActivatedEmail({
-          to: user.email,
-          name: displayName,
-          planName: plan.name,
-          amount: plan.price,
-          startDate: subscription.startDate,
-          endDate: subscription.endDate,
-        });
-      } else {
-        await sendSubscriptionRenewedEmail({
-          to: user.email,
-          name: displayName,
-          planName: plan.name,
-          amount: plan.price,
-          startDate: subscription.startDate,
-          endDate: subscription.endDate,
-        });
+      if (
+        !couponType ||
+        (couponType !== "PERCENTAGE" && couponType !== "FLAT") ||
+        typeof couponValue !== "number"
+      ) {
+        return buildNoStoreResponse(
+          {
+            success: false,
+            message: "Coupon configuration is invalid.",
+          },
+          400
+        );
       }
-    } catch (emailError) {
-      console.error("Subscription renewal email send error:", emailError);
+
+      await reserveCouponRedemption({
+        couponId: validatedCoupon.coupon._id,
+        paymentTransactionId: payment._id,
+        userId: user._id,
+        planId: plan._id,
+        role: user.role,
+        codeSnapshot: validatedCoupon.coupon.code,
+        discountType: couponType,
+        discountValue: couponValue,
+        amountBeforeDiscount: validatedCoupon.amountBeforeDiscount,
+        discountAmount: validatedCoupon.discountAmount,
+        finalAmount: validatedCoupon.finalAmount,
+      });
     }
 
-    return buildNoStoreResponse(
-      {
-        success: true,
-        message: "Subscription renewed successfully.",
-        payment: sanitizePayment(payment),
-        subscription: sanitizeSubscription(subscription),
-        plan: sanitizePlan(plan),
+    let razorpayOrder: any;
+
+    try {
+      razorpayOrder = await createRazorpayOrder({
+        amountInRupees: finalAmount,
+        receipt,
+        notes: {
+          userId: String(user._id),
+          planId: String(plan._id),
+          checkoutAttemptId,
+          renewalOfSubscriptionId: String(existingSubscription._id),
+        },
+      });
+    } catch (razorpayError) {
+      if (couponCode && reservedPayment?._id) {
+        try {
+          await releaseCouponRedemption({
+            paymentTransactionId: reservedPayment._id,
+            notes:
+              "Coupon reservation released because Razorpay renewal order creation failed.",
+          });
+        } catch (releaseError) {
+          console.error(
+            "Coupon release after Razorpay renewal order failure error:",
+            releaseError
+          );
+        }
+      }
+
+      payment.status = "MANUAL_REVIEW";
+      payment.failureCode = "RAZORPAY_RENEWAL_ORDER_CREATE_FAILED";
+      payment.failureReason = "Failed to create Razorpay renewal order.";
+      payment.gatewayStatus = "order_create_failed";
+      payment.notes = "Renewal failed during Razorpay order creation.";
+      payment.processedAt = new Date();
+      await payment.save();
+
+      throw razorpayError;
+    }
+
+    payment.gatewayOrderId = razorpayOrder.id;
+    payment.gatewayStatus = razorpayOrder.status || "created";
+    payment.gatewayResponse = razorpayOrder;
+    payment.status = "PENDING";
+    payment.notes = "Renewal checkout + Razorpay order created successfully.";
+    await payment.save();
+
+    await safeLogAudit({
+      actorId: user._id,
+      action: "SUBSCRIPTION_RENEWAL_CHECKOUT_CREATED",
+      entityType: "PAYMENT",
+      entityId: payment._id,
+      severity: "INFO",
+      request,
+      metadata: {
+        role: user.role,
+        subscriptionId: String(existingSubscription._id),
+        planId: String(plan._id),
+        planCode: plan.code,
+        planName: plan.name,
+        checkoutAttemptId,
+        receipt,
+        amountBeforeDiscount,
+        couponCode,
+        couponDiscountAmount,
+        finalAmount,
+        gateway: "RAZORPAY",
+        gatewayOrderId: razorpayOrder.id,
       },
-      200
-    );
+    });
+
+    const responseBody = {
+      success: true,
+      message: "Renewal checkout + Razorpay order created successfully.",
+      requiresPayment: true,
+      payment: sanitizePayment(payment),
+      subscription: sanitizeSubscription(existingSubscription),
+      plan: sanitizePlan(plan),
+      checkout: {
+        checkoutAttemptId,
+        receipt,
+        transactionType: payment.transactionType,
+      },
+      coupon: couponCode
+        ? {
+            code: couponCode,
+            discountAmount: couponDiscountAmount,
+            amountBeforeDiscount,
+            finalAmount,
+          }
+        : null,
+      gateway: {
+        provider: "RAZORPAY",
+        orderCreated: true,
+        order: {
+          id: razorpayOrder.id,
+          amount: razorpayOrder.amount,
+          currency: razorpayOrder.currency,
+          receipt: razorpayOrder.receipt,
+          status: razorpayOrder.status,
+        },
+      },
+      nextStep: "Open Razorpay checkout and complete payment verification.",
+    };
+
+    if (idemRecord) {
+      await storeIdempotencyResponse({
+        record: idemRecord,
+        response: responseBody,
+        statusCode: 201,
+      });
+    }
+
+    return buildNoStoreResponse(responseBody, 201);
   } catch (error) {
     console.error("POST /api/subscriptions/renew error:", error);
+
+    if (idemRecord) {
+      try {
+        idemRecord.locked = false;
+        await idemRecord.save();
+      } catch (unlockError) {
+        console.error("Idempotency unlock error:", unlockError);
+      }
+    }
 
     return buildNoStoreResponse(
       {

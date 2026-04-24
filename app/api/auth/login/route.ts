@@ -9,10 +9,7 @@ const LOCK_TIME_MS = 15 * 60 * 1000;
 const MAX_EMAIL_LENGTH = 320;
 const MAX_PASSWORD_LENGTH = 200;
 
-function buildNoStoreResponse(
-  body: Record<string, unknown>,
-  status: number
-) {
+function buildNoStoreResponse(body: Record<string, unknown>, status: number) {
   const response = NextResponse.json(body, { status });
   response.headers.set("Cache-Control", "no-store");
   response.headers.set("Pragma", "no-cache");
@@ -32,44 +29,32 @@ export async function POST(request: NextRequest) {
 
     if (!email || !password) {
       return buildNoStoreResponse(
-        {
-          success: false,
-          message: "Email and password are required",
-        },
+        { success: false, message: "Email and password are required" },
         400
       );
     }
 
     if (email.length > MAX_EMAIL_LENGTH) {
       return buildNoStoreResponse(
-        {
-          success: false,
-          message: "Email is too long",
-        },
+        { success: false, message: "Email is too long" },
         400
       );
     }
 
     if (password.length > MAX_PASSWORD_LENGTH) {
       return buildNoStoreResponse(
-        {
-          success: false,
-          message: "Password is too long",
-        },
+        { success: false, message: "Password is too long" },
         400
       );
     }
 
     const user = await User.findOne({ email, isDeleted: false }).select(
-      "+password failedLoginAttempts lockUntil accountStatus adminRole role email name firstName lastName companyName avatar bio phone organizationName eventFocus organizerTargetAudience organizerLocation isEmailVerified isProfileComplete createdAt updatedAt lastLoginAt lastActiveAt"
+      "+password failedLoginAttempts lockUntil accountStatus adminRole role email name firstName lastName companyName avatar bio phone organizationName eventFocus organizerTargetAudience organizerLocation isEmailVerified isProfileComplete createdAt updatedAt lastLoginAt lastActiveAt emailVerificationValidUntil emailVerifiedAt"
     );
 
     if (!user || !user.password) {
       return buildNoStoreResponse(
-        {
-          success: false,
-          message: "Invalid credentials",
-        },
+        { success: false, message: "Invalid credentials" },
         401
       );
     }
@@ -127,10 +112,7 @@ export async function POST(request: NextRequest) {
       await user.save();
 
       return buildNoStoreResponse(
-        {
-          success: false,
-          message: "Invalid credentials",
-        },
+        { success: false, message: "Invalid credentials" },
         401
       );
     }
@@ -140,6 +122,16 @@ export async function POST(request: NextRequest) {
     user.lastLoginAt = new Date();
     user.lastActiveAt = new Date();
     await user.save();
+
+    let isVerificationExpired = false;
+
+    if (
+      user.isEmailVerified &&
+      user.emailVerificationValidUntil &&
+      new Date(user.emailVerificationValidUntil).getTime() < Date.now()
+    ) {
+      isVerificationExpired = true;
+    }
 
     const token = generateAccessToken({
       userId: String(user._id),
@@ -165,6 +157,7 @@ export async function POST(request: NextRequest) {
       organizerTargetAudience: user.organizerTargetAudience || "",
       organizerLocation: user.organizerLocation || "",
       isEmailVerified: user.isEmailVerified,
+      isVerificationExpired,
       isProfileComplete: user.isProfileComplete,
       accountStatus: user.accountStatus,
       createdAt: user.createdAt,

@@ -48,6 +48,14 @@ const MAX_PUBLIC_ID_LENGTH = 300;
 const MAX_BUDGET = 100000000;
 const MAX_ATTENDEE_COUNT = 1000000;
 
+function buildNoStoreResponse(body: Record<string, unknown>, status: number) {
+  const response = NextResponse.json(body, { status });
+  response.headers.set("Cache-Control", "no-store");
+  response.headers.set("Pragma", "no-cache");
+  response.headers.set("Expires", "0");
+  return response;
+}
+
 function normalizeString(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
 }
@@ -79,6 +87,7 @@ function normalizeStringArray(value: unknown, maxItemLength = 100): string[] {
 
 function normalizeDeliverables(value: unknown): EventDeliverable[] {
   const items = normalizeStringArray(value, 80);
+
   return items.filter((item): item is EventDeliverable =>
     ALLOWED_DELIVERABLES.includes(item as EventDeliverable)
   );
@@ -127,16 +136,16 @@ export async function POST(request: NextRequest) {
     const currentUser = await getCurrentUser();
 
     if (!currentUser) {
-      return NextResponse.json(
+      return buildNoStoreResponse(
         { success: false, message: "Unauthorized" },
-        { status: 401 }
+        401
       );
     }
 
     if (currentUser.role !== "ORGANIZER") {
-      return NextResponse.json(
+      return buildNoStoreResponse(
         { success: false, message: "Only organizers can create events" },
-        { status: 403 }
+        403
       );
     }
 
@@ -179,39 +188,39 @@ export async function POST(request: NextRequest) {
       !startDate ||
       !endDate
     ) {
-      return NextResponse.json(
+      return buildNoStoreResponse(
         { success: false, message: "Missing required fields" },
-        { status: 400 }
+        400
       );
     }
 
     if (!isSafeLength(safeTitle, MAX_TITLE_LENGTH)) {
-      return NextResponse.json(
+      return buildNoStoreResponse(
         {
           success: false,
           message: `Title cannot exceed ${MAX_TITLE_LENGTH} characters`,
         },
-        { status: 400 }
+        400
       );
     }
 
     if (!isSafeLength(safeDescription, MAX_DESCRIPTION_LENGTH)) {
-      return NextResponse.json(
+      return buildNoStoreResponse(
         {
           success: false,
           message: `Description cannot exceed ${MAX_DESCRIPTION_LENGTH} characters`,
         },
-        { status: 400 }
+        400
       );
     }
 
     if (!isSafeLength(safeLocation, MAX_LOCATION_LENGTH)) {
-      return NextResponse.json(
+      return buildNoStoreResponse(
         {
           success: false,
           message: `Location cannot exceed ${MAX_LOCATION_LENGTH} characters`,
         },
-        { status: 400 }
+        400
       );
     }
 
@@ -224,17 +233,18 @@ export async function POST(request: NextRequest) {
     const safeVenueImages = normalizeMediaArray(venueImages);
     const safePastEventMedia = normalizeMediaArray(pastEventMedia);
 
-    if (Array.isArray(categories) && safeCategories.length !== new Set(
-      categories
-        .map((item) => normalizeString(item))
-        .filter(Boolean)
-    ).size) {
-      return NextResponse.json(
+    if (
+      Array.isArray(categories) &&
+      safeCategories.length !==
+        new Set(categories.map((item) => normalizeString(item)).filter(Boolean))
+          .size
+    ) {
+      return buildNoStoreResponse(
         {
           success: false,
           message: "One or more categories are invalid or too long",
         },
-        { status: 400 }
+        400
       );
     }
 
@@ -242,17 +252,15 @@ export async function POST(request: NextRequest) {
       Array.isArray(targetAudience) &&
       safeTargetAudience.length !==
         new Set(
-          targetAudience
-            .map((item) => normalizeString(item))
-            .filter(Boolean)
+          targetAudience.map((item) => normalizeString(item)).filter(Boolean)
         ).size
     ) {
-      return NextResponse.json(
+      return buildNoStoreResponse(
         {
           success: false,
           message: "One or more targetAudience values are invalid or too long",
         },
-        { status: 400 }
+        400
       );
     }
 
@@ -265,59 +273,59 @@ export async function POST(request: NextRequest) {
             .filter(Boolean)
         ).size
     ) {
-      return NextResponse.json(
+      return buildNoStoreResponse(
         {
           success: false,
           message: "One or more providedDeliverables values are invalid",
         },
-        { status: 400 }
+        400
       );
     }
 
     if (safeCategories.length === 0) {
-      return NextResponse.json(
+      return buildNoStoreResponse(
         { success: false, message: "At least one category is required" },
-        { status: 400 }
+        400
       );
     }
 
     if (safeCategories.length > MAX_ARRAY_ITEMS) {
-      return NextResponse.json(
+      return buildNoStoreResponse(
         {
           success: false,
           message: `Categories cannot exceed ${MAX_ARRAY_ITEMS} items`,
         },
-        { status: 400 }
+        400
       );
     }
 
     if (safeTargetAudience.length > MAX_ARRAY_ITEMS) {
-      return NextResponse.json(
+      return buildNoStoreResponse(
         {
           success: false,
           message: `Target audience cannot exceed ${MAX_ARRAY_ITEMS} items`,
         },
-        { status: 400 }
+        400
       );
     }
 
     if (safeProvidedDeliverables.length > MAX_ARRAY_ITEMS) {
-      return NextResponse.json(
+      return buildNoStoreResponse(
         {
           success: false,
           message: `Provided deliverables cannot exceed ${MAX_ARRAY_ITEMS} items`,
         },
-        { status: 400 }
+        400
       );
     }
 
     if (Array.isArray(venueImages) && safeVenueImages.length !== venueImages.length) {
-      return NextResponse.json(
+      return buildNoStoreResponse(
         {
           success: false,
           message: "One or more venueImages items are invalid",
         },
-        { status: 400 }
+        400
       );
     }
 
@@ -325,12 +333,12 @@ export async function POST(request: NextRequest) {
       Array.isArray(pastEventMedia) &&
       safePastEventMedia.length !== pastEventMedia.length
     ) {
-      return NextResponse.json(
+      return buildNoStoreResponse(
         {
           success: false,
           message: "One or more pastEventMedia items are invalid",
         },
-        { status: 400 }
+        400
       );
     }
 
@@ -342,12 +350,13 @@ export async function POST(request: NextRequest) {
       parsedBudget < 0 ||
       parsedBudget > MAX_BUDGET
     ) {
-      return NextResponse.json(
+      return buildNoStoreResponse(
         {
           success: false,
-          message: "Budget must be a valid non-negative number within allowed range",
+          message:
+            "Budget must be a valid non-negative number within allowed range",
         },
-        { status: 400 }
+        400
       );
     }
 
@@ -356,12 +365,13 @@ export async function POST(request: NextRequest) {
       parsedAttendeeCount < 1 ||
       parsedAttendeeCount > MAX_ATTENDEE_COUNT
     ) {
-      return NextResponse.json(
+      return buildNoStoreResponse(
         {
           success: false,
-          message: "Attendee count must be a valid whole number within allowed range",
+          message:
+            "Attendee count must be a valid whole number within allowed range",
         },
-        { status: 400 }
+        400
       );
     }
 
@@ -372,16 +382,16 @@ export async function POST(request: NextRequest) {
       Number.isNaN(parsedStartDate.getTime()) ||
       Number.isNaN(parsedEndDate.getTime())
     ) {
-      return NextResponse.json(
+      return buildNoStoreResponse(
         { success: false, message: "Invalid event dates" },
-        { status: 400 }
+        400
       );
     }
 
     if (parsedEndDate < parsedStartDate) {
-      return NextResponse.json(
+      return buildNoStoreResponse(
         { success: false, message: "End date cannot be before start date" },
-        { status: 400 }
+        400
       );
     }
 
@@ -436,7 +446,7 @@ export async function POST(request: NextRequest) {
       status: finalStatus,
     });
 
-    return NextResponse.json(
+    return buildNoStoreResponse(
       {
         success: true,
         message:
@@ -449,14 +459,14 @@ export async function POST(request: NextRequest) {
         requiresUpgrade:
           safeRequestedStatus === "PUBLISHED" && finalStatus !== "PUBLISHED",
       },
-      { status: 201 }
+      201
     );
   } catch (error) {
     console.error("Event creation error:", error);
 
-    return NextResponse.json(
+    return buildNoStoreResponse(
       { success: false, message: "Event creation failed" },
-      { status: 500 }
+      500
     );
   }
 }

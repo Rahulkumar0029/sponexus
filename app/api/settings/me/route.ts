@@ -7,10 +7,7 @@ import User from "@/lib/models/User";
 import Sponsor from "@/lib/models/Sponsor";
 import { getCurrentUser } from "@/lib/current-user";
 
-function buildNoStoreResponse(
-  body: Record<string, unknown>,
-  status: number
-) {
+function buildNoStoreResponse(body: Record<string, unknown>, status: number) {
   const response = NextResponse.json(body, { status });
   response.headers.set("Cache-Control", "no-store");
   response.headers.set("Pragma", "no-cache");
@@ -33,33 +30,38 @@ export async function GET() {
 
     const user = await User.findById(currentUser._id)
       .select(
-        "-password -emailVerificationToken -resetPasswordToken -resetPasswordExpires -emailVerificationExpires"
+        "_id name email role adminRole accountStatus firstName lastName companyName avatar bio phone organizationName organizerLocation isEmailVerified isProfileComplete emailVerifiedAt emailVerificationValidUntil createdAt updatedAt isDeleted"
       )
       .lean();
 
-    if (!user) {
+    if (!user || user.isDeleted) {
       return buildNoStoreResponse(
         { success: false, message: "User not found" },
         404
       );
     }
 
+    const isVerificationExpired = Boolean(
+      user.isEmailVerified &&
+        user.emailVerificationValidUntil &&
+        new Date(user.emailVerificationValidUntil).getTime() < Date.now()
+    );
+
     let sponsorProfile = null;
 
     if (user.role === "SPONSOR") {
       sponsorProfile = await Sponsor.findOne({
         userId: user._id,
-      })
-        .select(
-          "-officialEmail -phone"
-        )
-        .lean();
+      }).lean();
     }
 
     return buildNoStoreResponse(
       {
         success: true,
-        user,
+        user: {
+          ...user,
+          isVerificationExpired,
+        },
         sponsorProfile,
       },
       200

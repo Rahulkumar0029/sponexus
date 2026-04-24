@@ -1,32 +1,11 @@
 // ================================
-// PLAN CODES
+// ROLES
 // ================================
 
-export const PLAN_CODES = {
-  ORGANIZER_MONTHLY: "ORG_MONTHLY",
-  ORGANIZER_YEARLY: "ORG_YEARLY",
-  SPONSOR_MONTHLY: "SPN_MONTHLY",
-  SPONSOR_YEARLY: "SPN_YEARLY",
-} as const;
-
-// ================================
-// PLAN PRICING (SOURCE OF TRUTH)
-// ================================
-
-export const PLAN_PRICING = {
-  [PLAN_CODES.ORGANIZER_MONTHLY]: 199,
-  [PLAN_CODES.SPONSOR_MONTHLY]: 499,
-  [PLAN_CODES.ORGANIZER_YEARLY]: 199 * 11,
-  [PLAN_CODES.SPONSOR_YEARLY]: 499 * 11,
-} as const;
-
-// ================================
-// PLAN DURATION
-// ================================
-
-export const PLAN_DURATION_DAYS = {
-  MONTHLY: 30,
-  YEARLY: 365,
+export const ROLES = {
+  ORGANIZER: "ORGANIZER",
+  SPONSOR: "SPONSOR",
+  BOTH: "BOTH",
 } as const;
 
 // ================================
@@ -34,15 +13,6 @@ export const PLAN_DURATION_DAYS = {
 // ================================
 
 export const GRACE_PERIOD_DAYS = 3;
-
-// ================================
-// ROLES
-// ================================
-
-export const ROLES = {
-  ORGANIZER: "ORGANIZER",
-  SPONSOR: "SPONSOR",
-} as const;
 
 // ================================
 // SUBSCRIPTION STATUS
@@ -61,11 +31,16 @@ export const SUBSCRIPTION_STATUS = {
 // ================================
 
 export const PAYMENT_STATUS = {
+  CREATED: "CREATED",
   PENDING: "PENDING",
+  VERIFIED: "VERIFIED",
   SUCCESS: "SUCCESS",
   FAILED: "FAILED",
   REFUNDED: "REFUNDED",
+  CANCELLED: "CANCELLED",
+  EXPIRED: "EXPIRED",
   MANUAL_REVIEW: "MANUAL_REVIEW",
+  FLAGGED: "FLAGGED",
 } as const;
 
 // ================================
@@ -79,6 +54,26 @@ export const PAYMENT_GATEWAY = {
 } as const;
 
 // ================================
+// PAYMENT TRANSACTION TYPE
+// ================================
+
+export const PAYMENT_TRANSACTION_TYPE = {
+  NEW_SUBSCRIPTION: "NEW_SUBSCRIPTION",
+  RENEWAL: "RENEWAL",
+  MANUAL_ADJUSTMENT: "MANUAL_ADJUSTMENT",
+} as const;
+
+// ================================
+// PAYMENT VERIFICATION SOURCE
+// ================================
+
+export const PAYMENT_VERIFICATION_SOURCE = {
+  FRONTEND_VERIFY: "FRONTEND_VERIFY",
+  WEBHOOK: "WEBHOOK",
+  ADMIN: "ADMIN",
+} as const;
+
+// ================================
 // SUBSCRIPTION SOURCE
 // ================================
 
@@ -89,7 +84,16 @@ export const SUBSCRIPTION_SOURCE = {
 } as const;
 
 // ================================
-// USER ACTIONS (IMPORTANT)
+// COUPON TYPES
+// ================================
+
+export const COUPON_TYPE = {
+  PERCENTAGE: "PERCENTAGE",
+  FLAT: "FLAT",
+} as const;
+
+// ================================
+// USER ACTIONS
 // ================================
 
 export const ACTIONS = {
@@ -101,20 +105,14 @@ export const ACTIONS = {
 } as const;
 
 // ================================
-// TYPES
+// PAYMENT ADMIN ACCESS
 // ================================
 
-export type AppRole = (typeof ROLES)[keyof typeof ROLES];
-export type PlanCode = (typeof PLAN_CODES)[keyof typeof PLAN_CODES];
-export type SubscriptionStatusType =
-  (typeof SUBSCRIPTION_STATUS)[keyof typeof SUBSCRIPTION_STATUS];
-export type PaymentStatusType =
-  (typeof PAYMENT_STATUS)[keyof typeof PAYMENT_STATUS];
-export type PaymentGatewayType =
-  (typeof PAYMENT_GATEWAY)[keyof typeof PAYMENT_GATEWAY];
-export type SubscriptionSourceType =
-  (typeof SUBSCRIPTION_SOURCE)[keyof typeof SUBSCRIPTION_SOURCE];
-export type ActionType = (typeof ACTIONS)[keyof typeof ACTIONS];
+export const PAYMENT_ADMIN_ACCESS = {
+  OTP_EXPIRY_MINUTES: 10,
+  SESSION_EXPIRY_MINUTES: 60,
+  MAX_OTP_ATTEMPTS: 5,
+} as const;
 
 // ================================
 // EMAIL SETTINGS
@@ -126,7 +124,7 @@ export const EMAIL = {
 } as const;
 
 // ================================
-// UI MESSAGES
+// UI / BUSINESS MESSAGES
 // ================================
 
 export const SUBSCRIPTION_MESSAGES = {
@@ -157,45 +155,44 @@ export const SUBSCRIPTION_MESSAGES = {
 } as const;
 
 // ================================
-// PLAN FEATURE MATRIX
+// TYPES
 // ================================
 
-export const PLAN_FEATURES = {
-  [PLAN_CODES.ORGANIZER_MONTHLY]: {
-    role: ROLES.ORGANIZER,
-    canPublish: true,
-    canContact: true,
-    canUseMatch: true,
-    canRevealContact: true,
-  },
-  [PLAN_CODES.ORGANIZER_YEARLY]: {
-    role: ROLES.ORGANIZER,
-    canPublish: true,
-    canContact: true,
-    canUseMatch: true,
-    canRevealContact: true,
-  },
-  [PLAN_CODES.SPONSOR_MONTHLY]: {
-    role: ROLES.SPONSOR,
-    canPublish: true,
-    canContact: true,
-    canUseMatch: true,
-    canRevealContact: true,
-  },
-  [PLAN_CODES.SPONSOR_YEARLY]: {
-    role: ROLES.SPONSOR,
-    canPublish: true,
-    canContact: true,
-    canUseMatch: true,
-    canRevealContact: true,
-  },
-} as const;
+export type AppRole = (typeof ROLES)[keyof typeof ROLES];
+export type UserAppRole = Exclude<AppRole, "BOTH">;
+
+export type SubscriptionStatusType =
+  (typeof SUBSCRIPTION_STATUS)[keyof typeof SUBSCRIPTION_STATUS];
+
+export type PaymentStatusType =
+  (typeof PAYMENT_STATUS)[keyof typeof PAYMENT_STATUS];
+
+export type PaymentGatewayType =
+  (typeof PAYMENT_GATEWAY)[keyof typeof PAYMENT_GATEWAY];
+
+export type PaymentTransactionType =
+  (typeof PAYMENT_TRANSACTION_TYPE)[keyof typeof PAYMENT_TRANSACTION_TYPE];
+
+export type PaymentVerificationSourceType =
+  (typeof PAYMENT_VERIFICATION_SOURCE)[keyof typeof PAYMENT_VERIFICATION_SOURCE];
+
+export type SubscriptionSourceType =
+  (typeof SUBSCRIPTION_SOURCE)[keyof typeof SUBSCRIPTION_SOURCE];
+
+export type CouponType =
+  (typeof COUPON_TYPE)[keyof typeof COUPON_TYPE];
+
+export type ActionType = (typeof ACTIONS)[keyof typeof ACTIONS];
 
 // ================================
 // HELPERS
 // ================================
 
 export function isValidRole(value: unknown): value is AppRole {
+  return Object.values(ROLES).includes(value as AppRole);
+}
+
+export function isValidUserRole(value: unknown): value is UserAppRole {
   return value === ROLES.ORGANIZER || value === ROLES.SPONSOR;
 }
 
@@ -219,12 +216,32 @@ export function isValidPaymentGateway(
   return Object.values(PAYMENT_GATEWAY).includes(value as PaymentGatewayType);
 }
 
+export function isValidPaymentTransactionType(
+  value: unknown
+): value is PaymentTransactionType {
+  return Object.values(PAYMENT_TRANSACTION_TYPE).includes(
+    value as PaymentTransactionType
+  );
+}
+
+export function isValidPaymentVerificationSource(
+  value: unknown
+): value is PaymentVerificationSourceType {
+  return Object.values(PAYMENT_VERIFICATION_SOURCE).includes(
+    value as PaymentVerificationSourceType
+  );
+}
+
 export function isValidSubscriptionSource(
   value: unknown
 ): value is SubscriptionSourceType {
   return Object.values(SUBSCRIPTION_SOURCE).includes(
     value as SubscriptionSourceType
   );
+}
+
+export function isValidCouponType(value: unknown): value is CouponType {
+  return Object.values(COUPON_TYPE).includes(value as CouponType);
 }
 
 export function isValidAction(value: unknown): value is ActionType {

@@ -1,264 +1,649 @@
 import { NextRequest, NextResponse } from "next/server";
 
-import { connectDB } from "@/lib/db";
 import { verifyAccessToken } from "@/lib/auth";
-import User from "@/lib/models/User";
-import Plan from "@/lib/models/Plan";
-import Subscription from "@/lib/models/Subscription";
+import { connectDB } from "@/lib/db";
 import PaymentTransaction from "@/lib/models/PaymentTransaction";
+import User from "@/lib/models/User";
 import {
-  PAYMENT_GATEWAY,
+  sanitizePayment,
+  sanitizeSubscription,
+} from "@/lib/payments/helpers";
+import { verifyRazorpayPaymentSignature } from "@/lib/payments/razorpay";
+import {
+  completeCouponRedemption,
+  failCouponRedemption,
+} from "@/lib/payments/coupon";
+import {
+  finalizeSuccessfulPayment,
+  markPaymentFailed,
+} from "@/lib/payments/verify";
+import {
   PAYMENT_STATUS,
-  SUBSCRIPTION_SOURCE,
-  SUBSCRIPTION_STATUS,
+  PAYMENT_VERIFICATION_SOURCE,
 } from "@/lib/subscription/constants";
-import { isAdminBypass } from "@/lib/subscription/isAdminBypass";
-import { addDays, getSubscriptionRenewalBaseDate } from "@/lib/subscription/date";
 import {
   sendSubscriptionActivatedEmail,
   sendSubscriptionRenewedEmail,
 } from "@/lib/email/subscription";
+import { safeLogAudit } from "@/lib/audit/log";
+import { detectAndRecordSuspiciousPattern } from "@/lib/security/suspicious-patterns";
 
-export const dynamic = "force-dynamic";
+/* ===============================
+   RESPONSE
+=================================*/
+function buildNoStoreResponse(
+  body: Record<string, unknown>,
+  status: number
+) {
+  const response = NextResponse.json(body, { status });
+  response.headers.set("Cache-Control", "no-store");
+  response.headers.set("Pragma", "no-cache");
+  response.headers.set("Expires", "0");
+  return response;
+}
 
+/* ===============================
+   VERIFY PAYMENT
+=================================*/
 export async function POST(request: NextRequest) {
   try {
     await connectDB();
 
-    const token =
-      request.cookies.get("token")?.value ||
-      request.cookies.get("auth-token")?.value ||
-      request.cookies.get("accessToken")?.value;
+    const token = request.cookies.get("auth-token")?.value;
 
     if (!token) {
-      return NextResponse.json(
-        { success: false, message: "Authentication required." },
-        { status: 401 }
+      return buildNoStoreResponse(
+        {
+          success: false,
+          message: "Authentication required.",
+        },
+        401
       );
     }
 
     const decoded = verifyAccessToken(token);
 
-    if (!decoded?.userId) {
-      return NextResponse.json(
-        { success: false, message: "Invalid or expired session." },
-        { status: 401 }
+    if (!decoded?.userId || !decoded?.email) {
+      return buildNoStoreResponse(
+        {
+          success: false,
+          message: "Invalid or expired session.",
+        },
+        401
       );
     }
 
     const body = await request.json();
 
-    const {
-      planCode,
-      gateway = PAYMENT_GATEWAY.MANUAL,
-      gatewayOrderId,
-      gatewayPaymentId,
-      gatewaySignature,
-      paymentStatus,
-      invoiceNumber,
-      notes,
-    }: {
-      planCode?: string;
-      gateway?: string;
-      gatewayOrderId?: string;
-      gatewayPaymentId?: string;
-      gatewaySignature?: string;
-      paymentStatus?: string;
-      invoiceNumber?: string;
-      notes?: string;
-    } = body || {};
+    const checkoutAttemptId =
+      typeof body.checkoutAttemptId === "string"
+        ? body.checkoutAttemptId.trim()
+        : "";
 
-    if (!planCode || typeof planCode !== "string") {
-      return NextResponse.json(
-        { success: false, message: "Valid plan code is required." },
-        { status: 400 }
-      );
-    }
+    const razorpayOrderId =
+      typeof body.razorpay_order_id === "string"
+        ? body.razorpay_order_id.trim()
+        : "";
 
-    const user = await User.findById(decoded.userId);
+    const razorpayPaymentId =
+      typeof body.razorpay_payment_id === "string"
+        ? body.razorpay_payment_id.trim()
+        : "";
 
-    if (!user) {
-      return NextResponse.json(
-        { success: false, message: "User not found." },
-        { status: 404 }
-      );
-    }
+    const razorpaySignature =
+      typeof body.razorpay_signature === "string"
+        ? body.razorpay_signature.trim()
+        : "";
 
-    if (isAdminBypass(user)) {
-      return NextResponse.json(
-        { success: false, message: "Admins do not need payment verification." },
-        { status: 400 }
-      );
-    }
+    if (
+      !checkoutAttemptId ||
+      !razorpayOrderId ||
+      !razorpayPaymentId ||
+      !razorpaySignature
+    ) {
+      await safeLogAudit({
+        actorId: decoded.userId,
+        action: "PAYMENT_VERIFY_FAILED",
+        entityType: "SYSTEM",
+        entityId: null,
+        severity: "WARN",
+        request,
+        metadata: {
+          reason: "MISSING_REQUIRED_FIELDS",
+          checkoutAttemptId: checkoutAttemptId || null,
+          hasOrderId: Boolean(razorpayOrderId),
+          hasPaymentId: Boolean(razorpayPaymentId),
+          hasSignature: Boolean(razorpaySignature),
+        },
+      });
 
-    const plan = await Plan.findOne({
-      code: planCode.trim().toUpperCase(),
-      isActive: true,
-    });
+      await detectAndRecordSuspiciousPattern({
+        request,
+        userId: decoded.userId,
+        title: "Missing payment verification fields",
+        reason: "Required Razorpay verification fields missing.",
+        securityEventType: "PAYMENT_VERIFY_FAILED",
+        entityType: "SYSTEM",
+        recentVerifyCount: 1,
+        metadata: {
+          checkoutAttemptId: checkoutAttemptId || null,
+          hasOrderId: Boolean(razorpayOrderId),
+          hasPaymentId: Boolean(razorpayPaymentId),
+          hasSignature: Boolean(razorpaySignature),
+        },
+      });
 
-    if (!plan) {
-      return NextResponse.json(
-        { success: false, message: "Selected plan not found or inactive." },
-        { status: 404 }
-      );
-    }
-
-    if (plan.role !== user.role) {
-      return NextResponse.json(
-        { success: false, message: "This plan does not match your account role." },
-        { status: 400 }
-      );
-    }
-
-    const normalizedGateway =
-      gateway === PAYMENT_GATEWAY.RAZORPAY ||
-      gateway === PAYMENT_GATEWAY.CASHFREE
-        ? gateway
-        : PAYMENT_GATEWAY.MANUAL;
-
-    const normalizedPaymentStatus =
-      paymentStatus === PAYMENT_STATUS.SUCCESS
-        ? PAYMENT_STATUS.SUCCESS
-        : paymentStatus === PAYMENT_STATUS.FAILED
-        ? PAYMENT_STATUS.FAILED
-        : paymentStatus === PAYMENT_STATUS.PENDING
-        ? PAYMENT_STATUS.PENDING
-        : PAYMENT_STATUS.SUCCESS;
-
-    const existingSubscription = await Subscription.findOne({
-      userId: user._id,
-      role: user.role,
-    }).sort({ endDate: -1, createdAt: -1 });
-
-    const payment = await PaymentTransaction.create({
-      userId: user._id,
-      subscriptionId: existingSubscription?._id || null,
-      planId: plan._id,
-      role: user.role,
-      amount: plan.price,
-      currency: plan.currency,
-      status: normalizedPaymentStatus,
-      gateway: normalizedGateway,
-      gatewayOrderId: gatewayOrderId || "",
-      gatewayPaymentId: gatewayPaymentId || "",
-      gatewaySignature: gatewaySignature || "",
-      invoiceNumber: invoiceNumber || "",
-      notes:
-        typeof notes === "string" && notes.trim()
-          ? notes.trim()
-          : "Payment verification recorded by system.",
-      paidAt: normalizedPaymentStatus === PAYMENT_STATUS.SUCCESS ? new Date() : null,
-      method:
-        normalizedGateway === PAYMENT_GATEWAY.MANUAL
-          ? "manual-verification"
-          : "gateway-verification",
-    });
-
-    if (normalizedPaymentStatus !== PAYMENT_STATUS.SUCCESS) {
-      return NextResponse.json(
+      return buildNoStoreResponse(
         {
           success: false,
-          message: "Payment verification failed or is pending.",
-          payment,
+          message:
+            "checkoutAttemptId, razorpay_order_id, razorpay_payment_id and razorpay_signature are required.",
         },
-        { status: 400 }
+        400
       );
     }
 
-    let subscription;
-    let isRenewal = false;
+    const payment = await PaymentTransaction.findOne({
+      checkoutAttemptId,
+      userId: decoded.userId,
+    }).select(
+      "+gatewaySignature +gatewayResponse +failureReason +refundReason +notes"
+    );
 
-    if (existingSubscription) {
-      isRenewal = true;
+    if (!payment) {
+      await safeLogAudit({
+        actorId: decoded.userId,
+        action: "PAYMENT_VERIFY_FAILED",
+        entityType: "SYSTEM",
+        entityId: null,
+        severity: "WARN",
+        request,
+        metadata: {
+          reason: "PAYMENT_ATTEMPT_NOT_FOUND",
+          checkoutAttemptId,
+          razorpayOrderId,
+          razorpayPaymentId,
+        },
+      });
 
-      const renewalBaseDate = getSubscriptionRenewalBaseDate(
-        existingSubscription.endDate
+      await detectAndRecordSuspiciousPattern({
+        request,
+        userId: decoded.userId,
+        title: "Invalid checkout attempt",
+        reason: "Payment attempt not found during verification.",
+        securityEventType: "PAYMENT_VERIFY_FAILED",
+        entityType: "SYSTEM",
+        recentVerifyCount: 2,
+        metadata: {
+          checkoutAttemptId,
+          razorpayOrderId,
+          razorpayPaymentId,
+        },
+      });
+
+      return buildNoStoreResponse(
+        {
+          success: false,
+          message: "Payment attempt not found.",
+        },
+        404
       );
+    }
 
-      existingSubscription.planId = plan._id;
-      existingSubscription.status = SUBSCRIPTION_STATUS.ACTIVE;
-      existingSubscription.startDate = new Date();
-      existingSubscription.endDate = addDays(
-        renewalBaseDate,
-        plan.durationInDays
+    if (payment.status === PAYMENT_STATUS.SUCCESS && payment.subscriptionId) {
+      const { subscription } = await finalizeSuccessfulPayment({
+        payment,
+        verificationSource: PAYMENT_VERIFICATION_SOURCE.FRONTEND_VERIFY,
+        razorpayPaymentId,
+        razorpaySignature,
+        gatewayStatus: "paid",
+        webhookConfirmed: false,
+      });
+
+      if (payment.couponCode) {
+        await completeCouponRedemption({
+          paymentTransactionId: payment._id,
+          notes:
+            "Coupon redemption already linked to successful payment verification.",
+        });
+      }
+
+      await safeLogAudit({
+        actorId: payment.userId,
+        action: "PAYMENT_VERIFIED_ALREADY_PROCESSED",
+        entityType: "PAYMENT",
+        entityId: payment._id,
+        severity: "INFO",
+        request,
+        metadata: {
+          checkoutAttemptId: payment.checkoutAttemptId,
+          razorpayOrderId,
+          razorpayPaymentId,
+          transactionType: payment.transactionType,
+          subscriptionId: payment.subscriptionId
+            ? String(payment.subscriptionId)
+            : null,
+        },
+      });
+
+      return buildNoStoreResponse(
+        {
+          success: true,
+          message: "Payment already verified and processed.",
+          payment: sanitizePayment(payment),
+          subscription: subscription ? sanitizeSubscription(subscription) : null,
+          subscriptionActivated: true,
+          alreadyProcessed: true,
+        },
+        200
       );
-      existingSubscription.graceEndDate = null;
-      existingSubscription.autoRenew = false;
-      existingSubscription.renewalCount =
-        (existingSubscription.renewalCount || 0) + 1;
-      existingSubscription.source = SUBSCRIPTION_SOURCE.GATEWAY;
-      existingSubscription.lastPaymentId = payment._id;
-      existingSubscription.notes = "Subscription verified through payment route.";
+    }
 
-      subscription = await existingSubscription.save();
-    } else {
-      const startDate = new Date();
-      const endDate = addDays(startDate, plan.durationInDays);
+    if (!payment.gatewayOrderId) {
+      if (payment.couponCode) {
+        await failCouponRedemption({
+          paymentTransactionId: payment._id,
+          failureReason: "Missing Razorpay order for payment verification.",
+          notes:
+            "Coupon redemption failed because no Razorpay order was linked.",
+        });
+      }
 
-      subscription = await Subscription.create({
-        userId: user._id,
-        role: user.role,
-        planId: plan._id,
-        status: SUBSCRIPTION_STATUS.ACTIVE,
-        startDate,
-        endDate,
-        graceEndDate: null,
-        autoRenew: false,
-        renewalCount: 0,
-        source: SUBSCRIPTION_SOURCE.GATEWAY,
-        lastPaymentId: payment._id,
-        notes: "Subscription created through payment verification route.",
+      await safeLogAudit({
+        actorId: payment.userId,
+        action: "PAYMENT_VERIFY_FAILED",
+        entityType: "PAYMENT",
+        entityId: payment._id,
+        severity: "WARN",
+        request,
+        metadata: {
+          reason: "MISSING_GATEWAY_ORDER_ID",
+          checkoutAttemptId: payment.checkoutAttemptId,
+          razorpayOrderId,
+          razorpayPaymentId,
+          couponCode: payment.couponCode || null,
+        },
+      });
+
+      const fraud = await detectAndRecordSuspiciousPattern({
+        request,
+        userId: payment.userId,
+        paymentId: payment._id,
+        title: "Missing gateway order ID",
+        reason: "Payment verification attempted without gatewayOrderId.",
+        securityEventType: "PAYMENT_VERIFY_FAILED",
+        entityType: "PAYMENT",
+        entityId: payment._id,
+        missingGatewayOrder: true,
+        metadata: {
+          checkoutAttemptId: payment.checkoutAttemptId,
+          razorpayOrderId,
+          razorpayPaymentId,
+          couponCode: payment.couponCode || null,
+        },
+      });
+
+      if (fraud.hardBlock) {
+        return buildNoStoreResponse(
+          {
+            success: false,
+            message: "Suspicious activity detected.",
+          },
+          403
+        );
+      }
+
+      return buildNoStoreResponse(
+        {
+          success: false,
+          message: "No Razorpay order is linked to this payment attempt.",
+        },
+        400
+      );
+    }
+
+    if (payment.gatewayOrderId !== razorpayOrderId) {
+      await markPaymentFailed({
+        payment,
+        status: "FAILED",
+        verificationSource: PAYMENT_VERIFICATION_SOURCE.FRONTEND_VERIFY,
+        failureCode: "ORDER_MISMATCH",
+        failureReason: "Gateway order mismatch during payment verification.",
+        notes: "Payment verification failed due to gateway order mismatch.",
+        gatewayStatus: "order_mismatch",
+        razorpayPaymentId,
+        razorpaySignature,
+      });
+
+      if (payment.couponCode) {
+        await failCouponRedemption({
+          paymentTransactionId: payment._id,
+          failureReason: "Gateway order mismatch during payment verification.",
+          notes:
+            "Coupon redemption failed because verify request had mismatched order id.",
+        });
+      }
+
+      await safeLogAudit({
+        actorId: payment.userId,
+        action: "PAYMENT_VERIFY_FAILED",
+        entityType: "PAYMENT",
+        entityId: payment._id,
+        severity: "WARN",
+        request,
+        metadata: {
+          reason: "ORDER_MISMATCH",
+          expectedGatewayOrderId: payment.gatewayOrderId,
+          receivedGatewayOrderId: razorpayOrderId,
+          razorpayPaymentId,
+          couponCode: payment.couponCode || null,
+        },
+      });
+
+      const fraud = await detectAndRecordSuspiciousPattern({
+        request,
+        userId: payment.userId,
+        paymentId: payment._id,
+        title: "Order mismatch detected",
+        reason: "Razorpay order ID mismatch during verification.",
+        securityEventType: "PAYMENT_ORDER_MISMATCH",
+        entityType: "PAYMENT",
+        entityId: payment._id,
+        orderMismatch: true,
+        metadata: {
+          expectedGatewayOrderId: payment.gatewayOrderId,
+          receivedGatewayOrderId: razorpayOrderId,
+          razorpayPaymentId,
+          couponCode: payment.couponCode || null,
+        },
+      });
+
+      if (fraud.hardBlock) {
+        return buildNoStoreResponse(
+          {
+            success: false,
+            message: "Suspicious activity detected.",
+          },
+          403
+        );
+      }
+
+      return buildNoStoreResponse(
+        {
+          success: false,
+          message: "Gateway order mismatch.",
+        },
+        400
+      );
+    }
+
+    const duplicatePaymentId = await PaymentTransaction.findOne({
+      gatewayPaymentId: razorpayPaymentId,
+      _id: { $ne: payment._id },
+    }).select("_id");
+
+    if (duplicatePaymentId) {
+      await markPaymentFailed({
+        payment,
+        status: "FLAGGED",
+        verificationSource: PAYMENT_VERIFICATION_SOURCE.FRONTEND_VERIFY,
+        failureCode: "DUPLICATE_PAYMENT_ID",
+        failureReason: "Duplicate Razorpay payment id detected.",
+        notes:
+          "Payment verification blocked due to duplicate gateway payment id.",
+        gatewayStatus: "duplicate_payment_id",
+        razorpayPaymentId,
+        razorpaySignature,
+      });
+
+      if (payment.couponCode) {
+        await failCouponRedemption({
+          paymentTransactionId: payment._id,
+          failureReason: "Duplicate Razorpay payment id detected.",
+          notes:
+            "Coupon redemption failed because payment was flagged as duplicate.",
+        });
+      }
+
+      await safeLogAudit({
+        actorId: payment.userId,
+        action: "PAYMENT_DUPLICATE_BLOCKED",
+        entityType: "PAYMENT",
+        entityId: payment._id,
+        severity: "CRITICAL",
+        request,
+        metadata: {
+          reason: "DUPLICATE_GATEWAY_PAYMENT_ID",
+          duplicatePaymentRecordId: String(duplicatePaymentId._id),
+          razorpayPaymentId,
+          razorpayOrderId,
+          couponCode: payment.couponCode || null,
+        },
+      });
+
+      const fraud = await detectAndRecordSuspiciousPattern({
+        request,
+        userId: payment.userId,
+        paymentId: payment._id,
+        title: "Duplicate payment ID detected",
+        reason: "Same Razorpay payment ID used multiple times.",
+        securityEventType: "PAYMENT_DUPLICATE_DETECTED",
+        entityType: "PAYMENT",
+        entityId: payment._id,
+        duplicatePaymentDetected: true,
+        recentVerifyCount: 3,
+        metadata: {
+          duplicatePaymentRecordId: String(duplicatePaymentId._id),
+          razorpayPaymentId,
+          razorpayOrderId,
+          couponCode: payment.couponCode || null,
+        },
+      });
+
+      if (fraud.hardBlock) {
+        return buildNoStoreResponse(
+          {
+            success: false,
+            message: "Fraud detected. Blocked.",
+          },
+          403
+        );
+      }
+
+      return buildNoStoreResponse(
+        {
+          success: false,
+          message: "Duplicate payment detected. Review required.",
+        },
+        409
+      );
+    }
+
+    const isValidSignature = verifyRazorpayPaymentSignature({
+      razorpayOrderId,
+      razorpayPaymentId,
+      razorpaySignature,
+    });
+
+    if (!isValidSignature) {
+      await markPaymentFailed({
+        payment,
+        status: "FAILED",
+        verificationSource: PAYMENT_VERIFICATION_SOURCE.FRONTEND_VERIFY,
+        failureCode: "INVALID_SIGNATURE",
+        failureReason: "Invalid Razorpay signature.",
+        notes: "Payment verification failed due to invalid signature.",
+        gatewayStatus: "invalid_signature",
+        razorpayPaymentId,
+        razorpaySignature,
+      });
+
+      if (payment.couponCode) {
+        await failCouponRedemption({
+          paymentTransactionId: payment._id,
+          failureReason: "Invalid Razorpay signature.",
+          notes:
+            "Coupon redemption failed because payment signature verification failed.",
+        });
+      }
+
+      await safeLogAudit({
+        actorId: payment.userId,
+        action: "PAYMENT_SIGNATURE_INVALID",
+        entityType: "PAYMENT",
+        entityId: payment._id,
+        severity: "CRITICAL",
+        request,
+        metadata: {
+          razorpayOrderId,
+          razorpayPaymentId,
+          checkoutAttemptId: payment.checkoutAttemptId,
+          couponCode: payment.couponCode || null,
+        },
+      });
+
+      const fraud = await detectAndRecordSuspiciousPattern({
+        request,
+        userId: payment.userId,
+        paymentId: payment._id,
+        title: "Invalid payment signature",
+        reason: "Razorpay signature verification failed.",
+        securityEventType: "PAYMENT_INVALID_SIGNATURE",
+        entityType: "PAYMENT",
+        entityId: payment._id,
+        invalidSignature: true,
+        recentFailureCount: 2,
+        metadata: {
+          razorpayOrderId,
+          razorpayPaymentId,
+          checkoutAttemptId: payment.checkoutAttemptId,
+          couponCode: payment.couponCode || null,
+        },
+      });
+
+      if (fraud.hardBlock) {
+        return buildNoStoreResponse(
+          {
+            success: false,
+            message: "Fraudulent request blocked.",
+          },
+          403
+        );
+      }
+
+      return buildNoStoreResponse(
+        {
+          success: false,
+          message: "Payment signature verification failed.",
+        },
+        400
+      );
+    }
+
+    const result = await finalizeSuccessfulPayment({
+      payment,
+      verificationSource: PAYMENT_VERIFICATION_SOURCE.FRONTEND_VERIFY,
+      razorpayPaymentId,
+      razorpaySignature,
+      gatewayStatus: "paid",
+      webhookConfirmed: false,
+    });
+
+    if (payment.couponCode) {
+      await completeCouponRedemption({
+        paymentTransactionId: payment._id,
+        notes:
+          "Coupon redemption completed after successful payment verification.",
       });
     }
 
-    payment.subscriptionId = subscription._id;
-    await payment.save();
+    await safeLogAudit({
+      actorId: payment.userId,
+      action: "PAYMENT_VERIFIED",
+      entityType: "PAYMENT",
+      entityId: payment._id,
+      severity: "INFO",
+      request,
+      metadata: {
+        checkoutAttemptId: payment.checkoutAttemptId,
+        razorpayOrderId,
+        razorpayPaymentId,
+        transactionType: payment.transactionType,
+        isRenewal: result.isRenewal,
+        alreadyProcessed: result.alreadyProcessed,
+        subscriptionId: result.subscription?._id
+          ? String(result.subscription._id)
+          : null,
+        couponCode: payment.couponCode || null,
+        finalAmount: payment.amount,
+      },
+    });
 
-    const displayName =
-      user.firstName?.trim() ||
-      user.name?.trim() ||
-      user.companyName?.trim() ||
-      "User";
+    const user = await User.findById(payment.userId).select(
+      "_id email firstName name companyName"
+    );
 
-    try {
-      if (isRenewal) {
-        await sendSubscriptionRenewedEmail({
-          to: user.email,
-          name: displayName,
-          planName: plan.name,
-          amount: plan.price,
-          startDate: subscription.startDate,
-          endDate: subscription.endDate,
-        });
-      } else {
-        await sendSubscriptionActivatedEmail({
-          to: user.email,
-          name: displayName,
-          planName: plan.name,
-          amount: plan.price,
-          startDate: subscription.startDate,
-          endDate: subscription.endDate,
-        });
+    if (
+      user?.email &&
+      payment.planSnapshot?.name &&
+      result.subscription &&
+      !result.alreadyProcessed
+    ) {
+      const displayName =
+        user.firstName?.trim() ||
+        user.name?.trim() ||
+        user.companyName?.trim() ||
+        "User";
+
+      try {
+        if (result.isRenewal) {
+          await sendSubscriptionRenewedEmail({
+            to: user.email,
+            name: displayName,
+            planName: payment.planSnapshot.name,
+            amount: payment.amount,
+            startDate: result.subscription.startDate,
+            endDate: result.subscription.endDate,
+          });
+        } else {
+          await sendSubscriptionActivatedEmail({
+            to: user.email,
+            name: displayName,
+            planName: payment.planSnapshot.name,
+            amount: payment.amount,
+            startDate: result.subscription.startDate,
+            endDate: result.subscription.endDate,
+          });
+        }
+      } catch (emailError) {
+        console.error("Subscription payment email send error:", emailError);
       }
-    } catch (emailError) {
-      console.error("Payment verification email send error:", emailError);
     }
 
-    return NextResponse.json({
-      success: true,
-      message: isRenewal
-        ? "Payment verified and subscription renewed successfully."
-        : "Payment verified and subscription activated successfully.",
-      payment,
-      subscription,
-      plan,
-    });
+    return buildNoStoreResponse(
+      {
+        success: true,
+        message: result.isRenewal
+          ? "Subscription renewed successfully."
+          : "Subscription activated successfully.",
+        payment: sanitizePayment(result.payment),
+        subscription: result.subscription
+          ? sanitizeSubscription(result.subscription)
+          : null,
+        subscriptionActivated: true,
+        alreadyProcessed: result.alreadyProcessed,
+      },
+      200
+    );
   } catch (error) {
     console.error("POST /api/payments/verify error:", error);
 
-    return NextResponse.json(
-      { success: false, message: "Failed to verify payment." },
-      { status: 500 }
+    return buildNoStoreResponse(
+      {
+        success: false,
+        message: "Failed to verify payment.",
+      },
+      500
     );
   }
 }

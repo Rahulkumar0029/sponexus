@@ -6,11 +6,9 @@ import { sendVerificationEmail } from "@/lib/email";
 import User from "@/lib/models/User";
 
 const MAX_EMAIL_LENGTH = 320;
+const VERIFICATION_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
 
-function buildNoStoreResponse(
-  body: Record<string, unknown>,
-  status: number
-) {
+function buildNoStoreResponse(body: Record<string, unknown>, status: number) {
   const response = NextResponse.json(body, { status });
   response.headers.set("Cache-Control", "no-store");
   response.headers.set("Pragma", "no-cache");
@@ -26,24 +24,19 @@ export async function POST(request: NextRequest) {
     const email =
       typeof body.email === "string" ? body.email.trim().toLowerCase() : "";
 
+    const force =
+      typeof body.force === "boolean" ? body.force : false;
+
     if (!email) {
       return buildNoStoreResponse(
-        {
-          success: false,
-          message: "Email is required",
-          error: "Email is required",
-        },
+        { success: false, message: "Email is required", error: "Email is required" },
         400
       );
     }
 
     if (email.length > MAX_EMAIL_LENGTH) {
       return buildNoStoreResponse(
-        {
-          success: false,
-          message: "Email is too long",
-          error: "Email is too long",
-        },
+        { success: false, message: "Email is too long", error: "Email is too long" },
         400
       );
     }
@@ -101,7 +94,9 @@ export async function POST(request: NextRequest) {
     const user = await User.findOne({
       email,
       isDeleted: false,
-    }).select("firstName name email isEmailVerified accountStatus");
+    }).select(
+      "firstName name email isEmailVerified emailVerificationValidUntil accountStatus"
+    );
 
     if (!user) {
       return buildNoStoreResponse(
@@ -126,7 +121,12 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (user.isEmailVerified) {
+    const isVerificationStillValid =
+      user.isEmailVerified &&
+      user.emailVerificationValidUntil &&
+      new Date(user.emailVerificationValidUntil).getTime() > Date.now();
+
+    if (isVerificationStillValid && !force) {
       return buildNoStoreResponse(
         {
           success: false,
@@ -139,7 +139,7 @@ export async function POST(request: NextRequest) {
 
     const rawVerificationToken = generateRandomToken(32);
     const hashedVerificationToken = hashToken(rawVerificationToken);
-    const verificationExpires = new Date(Date.now() + 24 * 60 * 60 * 1000);
+    const verificationExpires = new Date(Date.now() + VERIFICATION_TOKEN_TTL_MS);
 
     await User.updateOne(
       { _id: user._id },

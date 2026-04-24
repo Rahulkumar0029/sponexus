@@ -34,9 +34,15 @@ export interface IUser extends Document {
 
   isEmailVerified: boolean;
   isProfileComplete: boolean;
+  emailVerifiedAt?: Date | null;
+  emailVerificationValidUntil?: Date | null;
 
   emailVerificationToken?: string | null;
   emailVerificationExpires?: Date | null;
+
+  pendingEmail?: string | null;
+  emailChangeToken?: string | null;
+  emailChangeExpires?: Date | null;
 
   resetPasswordToken?: string | null;
   resetPasswordExpires?: Date | null;
@@ -170,6 +176,17 @@ const userSchema = new Schema<IUser>(
       index: true,
     },
 
+    emailVerifiedAt: {
+      type: Date,
+      default: null,
+    },
+
+    emailVerificationValidUntil: {
+      type: Date,
+      default: null,
+      index: true,
+    },
+
     isProfileComplete: {
       type: Boolean,
       default: false,
@@ -183,6 +200,27 @@ const userSchema = new Schema<IUser>(
     },
 
     emailVerificationExpires: {
+      type: Date,
+      default: null,
+      select: false,
+    },
+
+    pendingEmail: {
+      type: String,
+      lowercase: true,
+      trim: true,
+      default: null,
+      maxlength: 320,
+      select: false,
+    },
+
+    emailChangeToken: {
+      type: String,
+      default: null,
+      select: false,
+    },
+
+    emailChangeExpires: {
       type: Date,
       default: null,
       select: false,
@@ -292,6 +330,8 @@ const userSchema = new Schema<IUser>(
         delete ret.password;
         delete ret.emailVerificationToken;
         delete ret.emailVerificationExpires;
+        delete ret.emailChangeToken;
+        delete ret.emailChangeExpires;
         delete ret.resetPasswordToken;
         delete ret.resetPasswordExpires;
         delete ret.failedLoginAttempts;
@@ -310,6 +350,8 @@ const userSchema = new Schema<IUser>(
         delete ret.password;
         delete ret.emailVerificationToken;
         delete ret.emailVerificationExpires;
+        delete ret.emailChangeToken;
+        delete ret.emailChangeExpires;
         delete ret.resetPasswordToken;
         delete ret.resetPasswordExpires;
         delete ret.failedLoginAttempts;
@@ -331,39 +373,23 @@ userSchema.pre("validate", function (next) {
     this.email = this.email.trim().toLowerCase();
   }
 
+  if (typeof this.pendingEmail === "string") {
+    this.pendingEmail = this.pendingEmail.trim().toLowerCase();
+  }
+
   if (this.firstName || this.lastName) {
     this.firstName = (this.firstName || "").trim();
     this.lastName = (this.lastName || "").trim();
     this.name = `${this.firstName} ${this.lastName}`.trim();
   }
 
-  if (typeof this.companyName === "string") {
-    this.companyName = this.companyName.trim();
-  }
-
-  if (typeof this.phone === "string") {
-    this.phone = this.phone.trim();
-  }
-
-  if (typeof this.bio === "string") {
-    this.bio = this.bio.trim();
-  }
-
-  if (typeof this.organizationName === "string") {
-    this.organizationName = this.organizationName.trim();
-  }
-
-  if (typeof this.eventFocus === "string") {
-    this.eventFocus = this.eventFocus.trim();
-  }
-
-  if (typeof this.organizerTargetAudience === "string") {
-    this.organizerTargetAudience = this.organizerTargetAudience.trim();
-  }
-
-  if (typeof this.organizerLocation === "string") {
-    this.organizerLocation = this.organizerLocation.trim();
-  }
+  if (typeof this.companyName === "string") this.companyName = this.companyName.trim();
+  if (typeof this.phone === "string") this.phone = this.phone.trim();
+  if (typeof this.bio === "string") this.bio = this.bio.trim();
+  if (typeof this.organizationName === "string") this.organizationName = this.organizationName.trim();
+  if (typeof this.eventFocus === "string") this.eventFocus = this.eventFocus.trim();
+  if (typeof this.organizerTargetAudience === "string") this.organizerTargetAudience = this.organizerTargetAudience.trim();
+  if (typeof this.organizerLocation === "string") this.organizerLocation = this.organizerLocation.trim();
 
   next();
 });
@@ -371,7 +397,6 @@ userSchema.pre("validate", function (next) {
 userSchema.index({ role: 1, createdAt: -1 });
 userSchema.index({ adminRole: 1, accountStatus: 1 });
 userSchema.index({ isDeleted: 1, accountStatus: 1 });
-userSchema.index({ email: 1 }, { unique: true });
 
 const User: Model<IUser> =
   mongoose.models.User || mongoose.model<IUser>("User", userSchema);

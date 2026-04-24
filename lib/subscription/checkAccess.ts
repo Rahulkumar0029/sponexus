@@ -8,6 +8,9 @@ import {
 import { SUBSCRIPTION_STATUS } from "@/lib/subscription/constants";
 import { isAdminBypass } from "@/lib/subscription/isAdminBypass";
 
+type SupportedRole = "ORGANIZER" | "SPONSOR";
+type PlanRole = "ORGANIZER" | "SPONSOR" | "BOTH";
+
 type CheckSubscriptionAccessInput = {
   userId: string;
   role?: string | null;
@@ -19,6 +22,24 @@ type CheckSubscriptionAccessResult = {
   message?: string;
   adminBypass?: boolean;
   hasActiveSubscription?: boolean;
+  subscriptionId?: string | null;
+  planId?: string | null;
+  reason?:
+    | "ADMIN_BYPASS"
+    | "USER_NOT_FOUND"
+    | "ACCOUNT_RESTRICTED"
+    | "INVALID_ROLE"
+    | "ROLE_MISMATCH"
+    | "NO_SUBSCRIPTION"
+    | "SUBSCRIPTION_INACTIVE"
+    | "SUBSCRIPTION_EXPIRED"
+    | "GRACE_ENDED"
+    | "PLAN_MISSING"
+    | "PLAN_INACTIVE"
+    | "PLAN_ARCHIVED"
+    | "PLAN_ROLE_MISMATCH"
+    | "ACTION_NOT_ALLOWED"
+    | "OK";
 };
 
 function getUpgradeMessage(action: PermissionAction) {
@@ -45,6 +66,18 @@ function getUpgradeMessage(action: PermissionAction) {
   return "This feature is not available on your current plan.";
 }
 
+function isSupportedRole(role: unknown): role is SupportedRole {
+  return role === "ORGANIZER" || role === "SPONSOR";
+}
+
+function isPlanAllowedForRole(planRole: PlanRole, userRole: SupportedRole) {
+  return planRole === "BOTH" || planRole === userRole;
+}
+
+function isPlanRole(role: unknown): role is PlanRole {
+  return role === "ORGANIZER" || role === "SPONSOR" || role === "BOTH";
+}
+
 export async function checkSubscriptionAccess({
   userId,
   role,
@@ -54,19 +87,15 @@ export async function checkSubscriptionAccess({
     "_id role adminRole accountStatus isDeleted"
   );
 
-  if (!user) {
-    return {
-      allowed: false,
-      message: "User not found.",
-    };
-  }
-
-  if (user.isDeleted) {
+  if (!user || user.isDeleted) {
     return {
       allowed: false,
       message: "User not found.",
       adminBypass: false,
       hasActiveSubscription: false,
+      subscriptionId: null,
+      planId: null,
+      reason: "USER_NOT_FOUND",
     };
   }
 
@@ -79,29 +108,35 @@ export async function checkSubscriptionAccess({
       message: "Account access restricted.",
       adminBypass: false,
       hasActiveSubscription: false,
+      subscriptionId: null,
+      planId: null,
+      reason: "ACCOUNT_RESTRICTED",
     };
   }
 
-  const adminBypass = isAdminBypass(user);
-
-  if (adminBypass) {
+  if (isAdminBypass(user)) {
     return {
       allowed: true,
       message: "Admin bypass active.",
       adminBypass: true,
       hasActiveSubscription: true,
+      subscriptionId: null,
+      planId: null,
+      reason: "ADMIN_BYPASS",
     };
   }
 
-  const effectiveRole =
-    role === "ORGANIZER" || role === "SPONSOR" ? role : user.role;
+  const effectiveRole = isSupportedRole(role) ? role : user.role;
 
-  if (effectiveRole !== "ORGANIZER" && effectiveRole !== "SPONSOR") {
+  if (!isSupportedRole(effectiveRole)) {
     return {
       allowed: false,
       message: "Invalid subscription role.",
       adminBypass: false,
       hasActiveSubscription: false,
+      subscriptionId: null,
+      planId: null,
+      reason: "INVALID_ROLE",
     };
   }
 
@@ -111,6 +146,9 @@ export async function checkSubscriptionAccess({
       message: "Role mismatch for subscription access.",
       adminBypass: false,
       hasActiveSubscription: false,
+      subscriptionId: null,
+      planId: null,
+      reason: "ROLE_MISMATCH",
     };
   }
 
@@ -128,6 +166,24 @@ export async function checkSubscriptionAccess({
       message: "No active subscription found.",
       adminBypass: false,
       hasActiveSubscription: false,
+      subscriptionId: null,
+      planId: null,
+      reason: "NO_SUBSCRIPTION",
+    };
+  }
+
+  const subscriptionId = String(subscription._id);
+  const planId = subscription.planId ? String(subscription.planId) : null;
+
+  if (subscription.isActive === false) {
+    return {
+      allowed: false,
+      message: "Your subscription is inactive.",
+      adminBypass: false,
+      hasActiveSubscription: false,
+      subscriptionId,
+      planId,
+      reason: "SUBSCRIPTION_INACTIVE",
     };
   }
 
@@ -143,6 +199,9 @@ export async function checkSubscriptionAccess({
       message: "Your subscription has expired.",
       adminBypass: false,
       hasActiveSubscription: false,
+      subscriptionId,
+      planId,
+      reason: "SUBSCRIPTION_EXPIRED",
     };
   }
 
@@ -155,37 +214,115 @@ export async function checkSubscriptionAccess({
       message: "Your subscription grace period has ended.",
       adminBypass: false,
       hasActiveSubscription: false,
+      subscriptionId,
+      planId,
+      reason: "GRACE_ENDED",
     };
   }
 
-  const plan = await Plan.findById(subscription.planId).select(
-    "_id role isActive canPublish canContact canUseMatch canRevealContact"
-  );
+  const snapshot = subscription.planSnapshot || null;
 
-  if (!plan) {
-    return {
-      allowed: false,
-      message: "Active plan not found.",
-      adminBypass: false,
-      hasActiveSubscription: true,
+  let entitlementSource:
+    | {
+        role: PlanRole;
+        canPublish: boolean;
+        canContact: boolean;
+        canUseMatch: boolean;
+        canRevealContact: boolean;
+      }
+    | null = null;
+
+  if (snapshot) {
+    if (!isPlanRole(snapshot.role)) {
+      return {
+        allowed: false,
+        message: "Plan role mismatch.",
+        adminBypass: false,
+        hasActiveSubscription: true,
+        subscriptionId,
+        planId,
+        reason: "PLAN_ROLE_MISMATCH",
+      };
+    }
+
+    if (!isPlanAllowedForRole(snapshot.role, effectiveRole)) {
+      return {
+        allowed: false,
+        message: "Plan role mismatch.",
+        adminBypass: false,
+        hasActiveSubscription: true,
+        subscriptionId,
+        planId,
+        reason: "PLAN_ROLE_MISMATCH",
+      };
+    }
+
+    entitlementSource = {
+      role: snapshot.role,
+      canPublish: Boolean(snapshot.canPublish),
+      canContact: Boolean(snapshot.canContact),
+      canUseMatch: Boolean(snapshot.canUseMatch),
+      canRevealContact: Boolean(snapshot.canRevealContact),
     };
-  }
+  } else {
+    const livePlan = await Plan.findById(subscription.planId).select(
+      "_id role isActive isArchived canPublish canContact canUseMatch canRevealContact"
+    );
 
-  if (!plan.isActive) {
-    return {
-      allowed: false,
-      message: "Your current plan is inactive.",
-      adminBypass: false,
-      hasActiveSubscription: true,
-    };
-  }
+    if (!livePlan) {
+      return {
+        allowed: false,
+        message: "Active plan not found.",
+        adminBypass: false,
+        hasActiveSubscription: true,
+        subscriptionId,
+        planId,
+        reason: "PLAN_MISSING",
+      };
+    }
 
-  if (plan.role !== effectiveRole) {
-    return {
-      allowed: false,
-      message: "Plan role mismatch.",
-      adminBypass: false,
-      hasActiveSubscription: true,
+    if (!livePlan.isActive) {
+      return {
+        allowed: false,
+        message: "Your current plan is inactive.",
+        adminBypass: false,
+        hasActiveSubscription: true,
+        subscriptionId,
+        planId,
+        reason: "PLAN_INACTIVE",
+      };
+    }
+
+    if (livePlan.isArchived) {
+      return {
+        allowed: false,
+        message: "Your current plan is no longer available.",
+        adminBypass: false,
+        hasActiveSubscription: true,
+        subscriptionId,
+        planId,
+        reason: "PLAN_ARCHIVED",
+      };
+    }
+
+    if (!isPlanAllowedForRole(livePlan.role, effectiveRole)) {
+      return {
+        allowed: false,
+        message: "Plan role mismatch.",
+        adminBypass: false,
+        hasActiveSubscription: true,
+        subscriptionId,
+        planId,
+        reason: "PLAN_ROLE_MISMATCH",
+      };
+    }
+
+    entitlementSource = {
+      role: livePlan.role,
+      canPublish: Boolean(livePlan.canPublish),
+      canContact: Boolean(livePlan.canContact),
+      canUseMatch: Boolean(livePlan.canUseMatch),
+      canRevealContact: Boolean(livePlan.canRevealContact),
     };
   }
 
@@ -194,10 +331,10 @@ export async function checkSubscriptionAccess({
     hasActiveSubscription: true,
     adminBypass: false,
     plan: {
-      canPublish: Boolean(plan.canPublish),
-      canContact: Boolean(plan.canContact),
-      canUseMatch: Boolean(plan.canUseMatch),
-      canRevealContact: Boolean(plan.canRevealContact),
+      canPublish: entitlementSource.canPublish,
+      canContact: entitlementSource.canContact,
+      canUseMatch: entitlementSource.canUseMatch,
+      canRevealContact: entitlementSource.canRevealContact,
     },
   });
 
@@ -207,6 +344,9 @@ export async function checkSubscriptionAccess({
       message: getUpgradeMessage(action),
       adminBypass: false,
       hasActiveSubscription: true,
+      subscriptionId,
+      planId,
+      reason: "ACTION_NOT_ALLOWED",
     };
   }
 
@@ -215,5 +355,8 @@ export async function checkSubscriptionAccess({
     message: "Access granted.",
     adminBypass: false,
     hasActiveSubscription: true,
+    subscriptionId,
+    planId,
+    reason: "OK",
   };
 }

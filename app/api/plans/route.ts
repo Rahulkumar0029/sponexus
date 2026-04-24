@@ -1,8 +1,8 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 
 import { connectDB } from "@/lib/db";
+import { verifyAccessToken } from "@/lib/auth";
 import Plan from "@/lib/models/Plan";
-import { PLAN_CODES, PLAN_PRICING } from "@/lib/subscription/constants";
 
 function buildNoStoreResponse(
   body: Record<string, unknown>,
@@ -21,124 +21,89 @@ function sanitizePlan(plan: any) {
     code: plan.code,
     role: plan.role,
     name: plan.name,
-    description: plan.description,
+    description: plan.description ?? "",
     price: plan.price,
     currency: plan.currency,
     interval: plan.interval,
     durationInDays: plan.durationInDays,
-    postingLimit: plan.postingLimit,
+    extraDays: plan.extraDays ?? 0,
+
+    postingLimitPerDay: plan.postingLimitPerDay ?? null,
+    dealRequestLimitPerDay: plan.dealRequestLimitPerDay ?? null,
+
     canPublish: Boolean(plan.canPublish),
     canContact: Boolean(plan.canContact),
     canUseMatch: Boolean(plan.canUseMatch),
     canRevealContact: Boolean(plan.canRevealContact),
+
+    budgetMin: plan.budgetMin ?? null,
+    budgetMax: plan.budgetMax ?? null,
+
     isActive: Boolean(plan.isActive),
+    isArchived: Boolean(plan.isArchived),
+    isVisible: Boolean(plan.isVisible),
+    visibleToRoles: Array.isArray(plan.visibleToRoles) ? plan.visibleToRoles : [],
+    visibleToLoggedOut: Boolean(plan.visibleToLoggedOut),
+
     sortOrder: typeof plan.sortOrder === "number" ? plan.sortOrder : 0,
+    metadata: plan.metadata ?? {},
+
     createdAt: plan.createdAt || null,
     updatedAt: plan.updatedAt || null,
   };
 }
 
-export async function GET() {
+function isAllowedRole(role: string | null): role is "ORGANIZER" | "SPONSOR" {
+  return role === "ORGANIZER" || role === "SPONSOR";
+}
+
+export async function GET(request: NextRequest) {
   try {
     await connectDB();
 
-    let plans = await Plan.find({ isActive: true })
+    const searchParams = request.nextUrl.searchParams;
+    const requestedRoleRaw = searchParams.get("role");
+    const requestedRole = requestedRoleRaw?.trim().toUpperCase() ?? null;
+
+    if (requestedRole && !isAllowedRole(requestedRole)) {
+      return buildNoStoreResponse(
+        {
+          success: false,
+          message: "Invalid role filter.",
+        },
+        400
+      );
+    }
+
+    const token = request.cookies.get("auth-token")?.value;
+    const decoded = token ? verifyAccessToken(token) : null;
+    const isAuthenticated = Boolean(decoded?.userId);
+
+    const query: Record<string, any> = {
+      isActive: true,
+      isArchived: false,
+      isVisible: true,
+    };
+
+    if (!isAuthenticated) {
+      query.visibleToLoggedOut = true;
+    }
+
+    if (requestedRole) {
+      query.role = { $in: [requestedRole, "BOTH"] };
+    }
+
+    const plans = await Plan.find(query)
       .sort({ sortOrder: 1, price: 1, createdAt: 1 })
       .select(
-        "_id code role name description price currency interval durationInDays postingLimit canPublish canContact canUseMatch canRevealContact isActive sortOrder createdAt updatedAt"
+        "_id code role name description price currency interval durationInDays extraDays postingLimitPerDay dealRequestLimitPerDay canPublish canContact canUseMatch canRevealContact budgetMin budgetMax isActive isArchived isVisible visibleToRoles visibleToLoggedOut sortOrder metadata createdAt updatedAt"
       )
       .lean();
-
-    if (!plans || plans.length === 0) {
-      const defaultPlans = [
-        {
-          code: PLAN_CODES.ORGANIZER_MONTHLY,
-          role: "ORGANIZER",
-          name: "Organizer Pro Monthly",
-          description:
-            "Publish unlimited events, appear in sponsor discovery, and unlock organizer-side paid actions.",
-          price: PLAN_PRICING[PLAN_CODES.ORGANIZER_MONTHLY],
-          currency: "INR",
-          interval: "MONTHLY",
-          durationInDays: 30,
-          postingLimit: null,
-          canPublish: true,
-          canContact: true,
-          canUseMatch: true,
-          canRevealContact: true,
-          isActive: true,
-          sortOrder: 1,
-        },
-        {
-          code: PLAN_CODES.SPONSOR_MONTHLY,
-          role: "SPONSOR",
-          name: "Sponsor Pro Monthly",
-          description:
-            "Publish unlimited sponsor posts, contact organizers, and unlock sponsor-side paid actions.",
-          price: PLAN_PRICING[PLAN_CODES.SPONSOR_MONTHLY],
-          currency: "INR",
-          interval: "MONTHLY",
-          durationInDays: 30,
-          postingLimit: null,
-          canPublish: true,
-          canContact: true,
-          canUseMatch: true,
-          canRevealContact: true,
-          isActive: true,
-          sortOrder: 2,
-        },
-        {
-          code: PLAN_CODES.ORGANIZER_YEARLY,
-          role: "ORGANIZER",
-          name: "Organizer Pro Yearly",
-          description:
-            "Yearly access for organizers with 12 months value at 11 months pricing.",
-          price: PLAN_PRICING[PLAN_CODES.ORGANIZER_YEARLY],
-          currency: "INR",
-          interval: "YEARLY",
-          durationInDays: 365,
-          postingLimit: null,
-          canPublish: true,
-          canContact: true,
-          canUseMatch: true,
-          canRevealContact: true,
-          isActive: true,
-          sortOrder: 3,
-        },
-        {
-          code: PLAN_CODES.SPONSOR_YEARLY,
-          role: "SPONSOR",
-          name: "Sponsor Pro Yearly",
-          description:
-            "Yearly access for sponsors with 12 months value at 11 months pricing.",
-          price: PLAN_PRICING[PLAN_CODES.SPONSOR_YEARLY],
-          currency: "INR",
-          interval: "YEARLY",
-          durationInDays: 365,
-          postingLimit: null,
-          canPublish: true,
-          canContact: true,
-          canUseMatch: true,
-          canRevealContact: true,
-          isActive: true,
-          sortOrder: 4,
-        },
-      ];
-
-      await Plan.insertMany(defaultPlans, { ordered: false });
-
-      plans = await Plan.find({ isActive: true })
-        .sort({ sortOrder: 1, price: 1, createdAt: 1 })
-        .select(
-          "_id code role name description price currency interval durationInDays postingLimit canPublish canContact canUseMatch canRevealContact isActive sortOrder createdAt updatedAt"
-        )
-        .lean();
-    }
 
     return buildNoStoreResponse(
       {
         success: true,
-        plans: plans.map((plan) => sanitizePlan(plan)),
+        data: plans.map((plan) => sanitizePlan(plan)),
       },
       200
     );

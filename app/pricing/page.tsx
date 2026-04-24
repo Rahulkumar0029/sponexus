@@ -6,22 +6,31 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '@/hooks/useAuth';
 import { PlanCard } from '@/components/subscription/PlanCard';
 
+declare global {
+  interface Window {
+    Razorpay?: any;
+  }
+}
+
 type Plan = {
   _id: string;
   code: string;
-  role: 'ORGANIZER' | 'SPONSOR';
+  role: 'ORGANIZER' | 'SPONSOR' | 'BOTH';
   name: string;
   description?: string;
   price: number;
   currency: 'INR';
-  interval: 'MONTHLY' | 'YEARLY';
+  interval: 'CUSTOM' | 'MONTHLY' | 'YEARLY';
   durationInDays: number;
-  postingLimit: number | null;
+  extraDays?: number;
+  postingLimitPerDay?: number | null;
+  dealRequestLimitPerDay?: number | null;
   canPublish: boolean;
   canContact: boolean;
   canUseMatch: boolean;
   canRevealContact: boolean;
   isActive: boolean;
+  isVisible?: boolean;
   sortOrder: number;
 };
 
@@ -42,6 +51,7 @@ type MySubscriptionResponse = {
 
 type PlansResponse = {
   success: boolean;
+  data?: Plan[];
   plans?: Plan[];
   message?: string;
 };
@@ -56,6 +66,28 @@ function formatDate(date?: string) {
     day: '2-digit',
     month: 'short',
     year: 'numeric',
+  });
+}
+
+function createIdempotencyKey() {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+    return crypto.randomUUID();
+  }
+
+  return `checkout_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+}
+
+function loadRazorpayScript() {
+  return new Promise<boolean>((resolve) => {
+    if (typeof window === 'undefined') return resolve(false);
+
+    if (window.Razorpay) return resolve(true);
+
+    const script = document.createElement('script');
+    script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+    script.onload = () => resolve(true);
+    script.onerror = () => resolve(false);
+    document.body.appendChild(script);
   });
 }
 
@@ -108,7 +140,13 @@ export default function PricingPage() {
           throw new Error(plansJson.message || 'Failed to load plans');
         }
 
-        setPlans(plansJson.plans || []);
+        const nextPlans = Array.isArray(plansJson.data)
+          ? plansJson.data
+          : Array.isArray(plansJson.plans)
+          ? plansJson.plans
+          : [];
+
+        setPlans(nextPlans);
         setSubscriptionData(subJson);
       } catch (err: any) {
         if (!mounted) return;
@@ -129,34 +167,19 @@ export default function PricingPage() {
 
   const groupedPlans = useMemo(() => {
     return {
-      organizers: plans.filter((plan) => plan.role === 'ORGANIZER'),
-      sponsors: plans.filter((plan) => plan.role === 'SPONSOR'),
+      organizers: plans.filter(
+        (plan) => plan.role === 'ORGANIZER' || plan.role === 'BOTH'
+      ),
+      sponsors: plans.filter(
+        (plan) => plan.role === 'SPONSOR' || plan.role === 'BOTH'
+      ),
     };
   }, [plans]);
 
   const visiblePlanSections = useMemo(() => {
     if (authLoading) return [];
 
-    if (!isAuthenticated || !user) {
-      return [
-        {
-          key: 'organizers',
-          title: 'For Organizers',
-          subtitle:
-            'Publish events, appear in sponsor discovery, and unlock organizer-side actions.',
-          plans: groupedPlans.organizers,
-        },
-        {
-          key: 'sponsors',
-          title: 'For Sponsors',
-          subtitle:
-            'Publish sponsor opportunities, contact organizers, and unlock sponsor-side actions.',
-          plans: groupedPlans.sponsors,
-        },
-      ];
-    }
-
-    if (isAdmin) {
+    if (!isAuthenticated || !user || isAdmin) {
       return [
         {
           key: 'organizers',
@@ -209,39 +232,116 @@ export default function PricingPage() {
     groupedPlans.sponsors,
   ]);
 
-  async function handleCheckout(planCode: string) {
+  async function refreshSubscription() {
+    const refreshed = await fetch('/api/subscriptions/my', {
+      method: 'GET',
+      credentials: 'include',
+      cache: 'no-store',
+    });
+
+    const refreshedJson = await refreshed.json();
+    setSubscriptionData(refreshedJson);
+    router.refresh();
+  }
+
+  async function handleCheckout(planId: string) {
     try {
-      setCheckoutLoading(planCode);
+      setCheckoutLoading(planId);
       setError(null);
 
-      const res = await fetch('/api/subscriptions/checkout', {
+      const scriptLoaded = await loadRazorpayScript();
+
+      if (!scriptLoaded || !window.Razorpay) {
+        throw new Error('Unable to load Razorpay checkout. Please try again.');
+      }
+
+      const checkoutRes = await fetch('/api/subscriptions/checkout', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'x-idempotency-key': createIdempotencyKey(),
         },
         credentials: 'include',
-        body: JSON.stringify({ planCode }),
+        body: JSON.stringify({ planId }),
       });
 
-      const data = await res.json();
+      const checkoutData = await checkoutRes.json();
 
-      if (!res.ok || !data.success) {
-        throw new Error(data?.message || 'Subscription checkout failed');
+      if (!checkoutRes.ok || !checkoutData.success) {
+        throw new Error(checkoutData?.message || 'Subscription checkout failed');
       }
 
-      const refreshed = await fetch('/api/subscriptions/my', {
-        method: 'GET',
-        credentials: 'include',
-        cache: 'no-store',
+      const order = checkoutData?.gateway?.order;
+      const checkoutAttemptId = checkoutData?.checkout?.checkoutAttemptId;
+      const keyId =
+        checkoutData?.gateway?.keyId ||
+        checkoutData?.razorpay?.key ||
+        process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID;
+
+      if (!order?.id || !checkoutAttemptId) {
+        throw new Error('Payment order details are missing.');
+      }
+
+      if (!keyId) {
+        throw new Error('Razorpay key is missing.');
+      }
+
+      const selectedPlan = plans.find((plan) => plan._id === planId);
+
+      const razorpay = new window.Razorpay({
+        key: keyId,
+        amount: order.amount,
+        currency: order.currency || 'INR',
+        name: 'Sponexus',
+        description: selectedPlan?.name || 'Sponexus Subscription',
+        order_id: order.id,
+        prefill: {
+          name:
+            user?.name ||
+            [user?.firstName, user?.lastName].filter(Boolean).join(' ') ||
+            '',
+          email: user?.email || '',
+        },
+        notes: {
+          checkoutAttemptId,
+          planId,
+        },
+        theme: {
+          color: '#FF7A18',
+        },
+        handler: async function (response: any) {
+          const verifyRes = await fetch('/api/payments/verify', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            credentials: 'include',
+            body: JSON.stringify({
+              checkoutAttemptId,
+              razorpay_order_id: response.razorpay_order_id,
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_signature: response.razorpay_signature,
+            }),
+          });
+
+          const verifyData = await verifyRes.json();
+
+          if (!verifyRes.ok || !verifyData.success) {
+            throw new Error(verifyData?.message || 'Payment verification failed');
+          }
+
+          await refreshSubscription();
+        },
+        modal: {
+          ondismiss: function () {
+            setCheckoutLoading(null);
+          },
+        },
       });
 
-      const refreshedJson = await refreshed.json();
-      setSubscriptionData(refreshedJson);
-
-      router.refresh();
+      razorpay.open();
     } catch (err: any) {
       setError(err?.message || 'Unable to activate subscription');
-    } finally {
       setCheckoutLoading(null);
     }
   }
@@ -254,6 +354,7 @@ export default function PricingPage() {
     <div className="min-h-screen bg-[#020617] text-white">
       <section className="relative overflow-hidden border-b border-white/10">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,122,24,0.18),transparent_35%),radial-gradient(circle_at_bottom_right,rgba(255,179,71,0.12),transparent_30%)]" />
+
         <div className="relative mx-auto max-w-7xl px-6 py-16 sm:px-8 lg:px-10 lg:py-20">
           <div className="mx-auto max-w-3xl text-center">
             <div className="mb-4 inline-flex rounded-full border border-white/10 bg-white/5 px-4 py-2 text-xs font-medium tracking-wide text-[#94A3B8] backdrop-blur-md">
@@ -289,18 +390,11 @@ export default function PricingPage() {
 
           <div className="mx-auto mt-10 max-w-4xl">
             <div className="grid gap-4 md:grid-cols-3">
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur-md">
-                <p className="text-xs uppercase tracking-[0.24em] text-[#94A3B8]">
-                  Free Access
-                </p>
-                <p className="mt-2 text-lg font-semibold text-white">
-                  Register & Explore
-                </p>
-                <p className="mt-2 text-sm leading-6 text-[#94A3B8]">
-                  Create your account, complete your profile, and browse platform
-                  opportunities.
-                </p>
-              </div>
+              <InfoCard
+                label="Free Access"
+                title="Register & Explore"
+                text="Create your account, complete your profile, and browse platform opportunities."
+              />
 
               <div className="rounded-2xl border border-[#FF7A18]/25 bg-[linear-gradient(180deg,rgba(255,122,24,0.12),rgba(255,122,24,0.04))] p-5 backdrop-blur-md">
                 <p className="text-xs uppercase tracking-[0.24em] text-[#FFB347]">
@@ -315,18 +409,11 @@ export default function PricingPage() {
                 </p>
               </div>
 
-              <div className="rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur-md">
-                <p className="text-xs uppercase tracking-[0.24em] text-[#94A3B8]">
-                  Trust Rule
-                </p>
-                <p className="mt-2 text-lg font-semibold text-white">
-                  Mutual Contact Reveal
-                </p>
-                <p className="mt-2 text-sm leading-6 text-[#94A3B8]">
-                  Contacts are revealed only after both sides accept, keeping the
-                  marketplace cleaner and safer.
-                </p>
-              </div>
+              <InfoCard
+                label="Trust Rule"
+                title="Mutual Contact Reveal"
+                text="Contacts are revealed only after both sides accept, keeping the marketplace cleaner and safer."
+              />
             </div>
           </div>
         </div>
@@ -394,28 +481,7 @@ export default function PricingPage() {
         </div>
 
         {loading || subscriptionLoading || authLoading ? (
-          <div className="grid gap-6 lg:grid-cols-2">
-            {[1, 2].map((section) => (
-              <div
-                key={section}
-                className="rounded-3xl border border-white/10 bg-white/5 p-6 backdrop-blur-md"
-              >
-                <div className="h-6 w-40 animate-pulse rounded bg-white/10" />
-                <div className="mt-6 grid gap-5">
-                  {[1, 2].map((card) => (
-                    <div
-                      key={card}
-                      className="rounded-2xl border border-white/10 bg-[#07152F] p-5"
-                    >
-                      <div className="h-5 w-32 animate-pulse rounded bg-white/10" />
-                      <div className="mt-4 h-8 w-24 animate-pulse rounded bg-white/10" />
-                      <div className="mt-4 h-16 animate-pulse rounded bg-white/10" />
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
+          <LoadingPlans />
         ) : (
           <div
             className={`grid gap-6 ${
@@ -439,45 +505,21 @@ export default function PricingPage() {
 
         <div className="mt-10 rounded-3xl border border-white/10 bg-white/5 p-6 backdrop-blur-md">
           <div className="grid gap-6 lg:grid-cols-3">
-            <div>
-              <p className="text-xs uppercase tracking-[0.24em] text-[#94A3B8]">
-                How Billing Works
-              </p>
-              <p className="mt-3 text-base font-semibold text-white">
-                Simple, transparent plan validity
-              </p>
-              <p className="mt-2 text-sm leading-6 text-[#94A3B8]">
-                Your plan starts from the payment date and stays active for the
-                selected duration. When the plan ends, your paid actions pause
-                until renewal.
-              </p>
-            </div>
-
-            <div>
-              <p className="text-xs uppercase tracking-[0.24em] text-[#94A3B8]">
-                After Expiry
-              </p>
-              <p className="mt-3 text-base font-semibold text-white">
-                Visibility pauses, data stays
-              </p>
-              <p className="mt-2 text-sm leading-6 text-[#94A3B8]">
-                Your profile remains, but paid listings and paid actions stop
-                until you renew. Existing account data is preserved.
-              </p>
-            </div>
-
-            <div>
-              <p className="text-xs uppercase tracking-[0.24em] text-[#94A3B8]">
-                Support
-              </p>
-              <p className="mt-3 text-base font-semibold text-white">
-                Billing help when needed
-              </p>
-              <p className="mt-2 text-sm leading-6 text-[#94A3B8]">
-                Subscription confirmations are sent from billing@sponexus.app
-                after activation or renewal.
-              </p>
-            </div>
+            <InfoBlock
+              label="How Billing Works"
+              title="Simple, transparent plan validity"
+              text="Your plan starts from the payment date and stays active for the selected duration. When the plan ends, your paid actions pause until renewal."
+            />
+            <InfoBlock
+              label="After Expiry"
+              title="Visibility pauses, data stays"
+              text="Your profile remains, but paid listings and paid actions stop until you renew. Existing account data is preserved."
+            />
+            <InfoBlock
+              label="Support"
+              title="Billing help when needed"
+              text="Subscription confirmations are sent from billing@sponexus.app after activation or renewal."
+            />
           </div>
         </div>
       </section>
@@ -499,7 +541,7 @@ function PlanSection({
   plans: Plan[];
   currentPlanCode: string | null;
   checkoutLoading: string | null;
-  onCheckout: (planCode: string) => Promise<void>;
+  onCheckout: (planId: string) => Promise<void>;
   adminBypass: boolean;
 }) {
   return (
@@ -518,9 +560,9 @@ function PlanSection({
             key={plan._id || plan.code}
             plan={plan}
             isCurrent={currentPlanCode === plan.code}
-            isLoading={checkoutLoading === plan.code}
+            isLoading={checkoutLoading === plan._id}
             adminBypass={adminBypass}
-            onSelect={onCheckout}
+            onSelect={() => onCheckout(plan._id)}
           />
         ))}
 
@@ -530,6 +572,73 @@ function PlanSection({
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function LoadingPlans() {
+  return (
+    <div className="grid gap-6 lg:grid-cols-2">
+      {[1, 2].map((section) => (
+        <div
+          key={section}
+          className="rounded-3xl border border-white/10 bg-white/5 p-6 backdrop-blur-md"
+        >
+          <div className="h-6 w-40 animate-pulse rounded bg-white/10" />
+          <div className="mt-6 grid gap-5">
+            {[1, 2].map((card) => (
+              <div
+                key={card}
+                className="rounded-2xl border border-white/10 bg-[#07152F] p-5"
+              >
+                <div className="h-5 w-32 animate-pulse rounded bg-white/10" />
+                <div className="mt-4 h-8 w-24 animate-pulse rounded bg-white/10" />
+                <div className="mt-4 h-16 animate-pulse rounded bg-white/10" />
+              </div>
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function InfoCard({
+  label,
+  title,
+  text,
+}: {
+  label: string;
+  title: string;
+  text: string;
+}) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur-md">
+      <p className="text-xs uppercase tracking-[0.24em] text-[#94A3B8]">
+        {label}
+      </p>
+      <p className="mt-2 text-lg font-semibold text-white">{title}</p>
+      <p className="mt-2 text-sm leading-6 text-[#94A3B8]">{text}</p>
+    </div>
+  );
+}
+
+function InfoBlock({
+  label,
+  title,
+  text,
+}: {
+  label: string;
+  title: string;
+  text: string;
+}) {
+  return (
+    <div>
+      <p className="text-xs uppercase tracking-[0.24em] text-[#94A3B8]">
+        {label}
+      </p>
+      <p className="mt-3 text-base font-semibold text-white">{title}</p>
+      <p className="mt-2 text-sm leading-6 text-[#94A3B8]">{text}</p>
     </div>
   );
 }
