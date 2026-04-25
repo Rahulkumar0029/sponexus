@@ -105,6 +105,7 @@ export default function PricingPage() {
   const [plans, setPlans] = useState<Plan[]>([]);
   const [loading, setLoading] = useState(true);
   const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null);
+  const [couponCode, setCouponCode] = useState('');
   const [subscriptionLoading, setSubscriptionLoading] = useState(true);
   const [subscriptionData, setSubscriptionData] =
     useState<MySubscriptionResponse | null>(null);
@@ -262,7 +263,10 @@ export default function PricingPage() {
           'x-idempotency-key': createIdempotencyKey(),
         },
         credentials: 'include',
-        body: JSON.stringify({ planId }),
+        body: JSON.stringify({
+  planId,
+  couponCode: couponCode.trim(),
+}),
       });
 
       const checkoutData = await checkoutRes.json();
@@ -272,11 +276,16 @@ export default function PricingPage() {
       }
 
       const order = checkoutData?.gateway?.order;
-      const checkoutAttemptId = checkoutData?.checkout?.checkoutAttemptId;
-      const keyId =
-        checkoutData?.gateway?.keyId ||
-        checkoutData?.razorpay?.key ||
-        process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID;
+
+const checkoutAttemptId =
+  checkoutData?.checkout?.checkoutAttemptId ||
+  checkoutData?.payment?.checkoutAttemptId;
+
+const keyId =
+  checkoutData?.gateway?.keyId ||
+  checkoutData?.gateway?.key ||
+  checkoutData?.razorpay?.key ||
+  process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID;
 
       if (!order?.id || !checkoutAttemptId) {
         throw new Error('Payment order details are missing.');
@@ -479,6 +488,37 @@ export default function PricingPage() {
               )}
           </div>
         </div>
+
+
+<div className="mb-8 rounded-2xl border border-white/10 bg-white/5 p-5 backdrop-blur-md">
+  <p className="text-xs uppercase tracking-[0.24em] text-[#94A3B8]">
+    Coupon Code
+  </p>
+
+  <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+    <input
+      value={couponCode}
+      onChange={(event) =>
+        setCouponCode(event.target.value.toUpperCase().trimStart())
+      }
+      placeholder="Enter coupon code"
+      className="w-full rounded-xl border border-white/10 bg-[#07152F] px-4 py-3 text-sm text-white outline-none placeholder:text-[#64748B] focus:border-[#FF7A18]/50"
+    />
+
+    <button
+      type="button"
+      onClick={() => setCouponCode('')}
+      className="rounded-xl border border-white/10 bg-white/5 px-5 py-3 text-sm font-semibold text-[#CBD5E1] transition hover:bg-white/10"
+    >
+      Clear
+    </button>
+  </div>
+
+  <p className="mt-3 text-xs text-[#94A3B8]">
+    Enter a valid Sponexus coupon before choosing a plan.
+  </p>
+</div>
+
 
         {loading || subscriptionLoading || authLoading ? (
           <LoadingPlans />

@@ -207,30 +207,37 @@ export async function POST(request: NextRequest) {
 
     if (existingOpenTransaction) {
       const existingResponse = {
-        success: true,
-        message: "An existing checkout attempt is already pending.",
-        requiresPayment: true,
-        payment: sanitizePayment(existingOpenTransaction),
-        subscription: latestSubscription
-          ? sanitizeSubscription(latestSubscription)
-          : null,
-        plan: sanitizePlan(plan),
-        gateway: {
-          provider: "RAZORPAY",
-          orderCreated: Boolean(existingOpenTransaction.gatewayOrderId),
-          order: existingOpenTransaction.gatewayOrderId
-            ? {
-                id: existingOpenTransaction.gatewayOrderId,
-                amount: Math.round(
-                  Number(existingOpenTransaction.amount || 0) * 100
-                ),
-                currency: existingOpenTransaction.currency,
-                receipt: existingOpenTransaction.receipt ?? null,
-                status: existingOpenTransaction.gatewayStatus ?? null,
-              }
-            : null,
-        },
-      };
+  success: true,
+  message: "An existing checkout attempt is already pending.",
+  requiresPayment: true,
+  payment: sanitizePayment(existingOpenTransaction),
+  subscription: latestSubscription
+    ? sanitizeSubscription(latestSubscription)
+    : null,
+  plan: sanitizePlan(plan),
+  checkout: {
+    checkoutAttemptId: existingOpenTransaction.checkoutAttemptId,
+    receipt: existingOpenTransaction.receipt,
+    transactionType: existingOpenTransaction.transactionType,
+  },
+  gateway: {
+    provider: "RAZORPAY",
+    keyId:
+      process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID ||
+      process.env.RAZORPAY_KEY_ID ||
+      "",
+    orderCreated: Boolean(existingOpenTransaction.gatewayOrderId),
+    order: existingOpenTransaction.gatewayOrderId
+      ? {
+          id: existingOpenTransaction.gatewayOrderId,
+          amount: Math.round(Number(existingOpenTransaction.amount || 0) * 100),
+          currency: existingOpenTransaction.currency,
+          receipt: existingOpenTransaction.receipt ?? null,
+          status: existingOpenTransaction.gatewayStatus ?? null,
+        }
+      : null,
+  },
+};
 
       if (idemRecord) {
         await storeIdempotencyResponse({
