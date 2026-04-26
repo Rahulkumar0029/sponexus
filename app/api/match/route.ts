@@ -10,7 +10,8 @@ import { matchSponsorToEvents, matchEventToSponsors } from "@/lib/matcher";
 import { Event } from "@/types/event";
 import { MatchWeights } from "@/types/match";
 import { Sponsor as SponsorType } from "@/types/sponsor";
-import { checkSubscriptionAccess } from "@/lib/subscription/checkAccess";
+import { checkUsageLimit } from "@/lib/subscription/checkUsageLimit";
+import { incrementUsage } from "@/lib/subscription/incrementUsage";
 import { ACTIONS } from "@/lib/subscription/constants";
 
 const DEFAULT_WEIGHTS: MatchWeights = {
@@ -216,23 +217,24 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const access = await checkSubscriptionAccess({
-      userId: String(user._id),
-      role: user.role,
-      action: ACTIONS.USE_MATCH,
-    });
+   const usage = await checkUsageLimit({
+  userId: String(user._id),
+  role: user.role,
+  action: ACTIONS.USE_MATCH,
+});
 
-    if (!access.allowed) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Upgrade required to use matching.",
-          code: "SUBSCRIPTION_REQUIRED",
-          matches: [],
-        },
-        { status: 403 }
-      );
-    }
+if (!usage.allowed) {
+  return NextResponse.json(
+    {
+      success: false,
+      message: usage.message || "Upgrade required to use matching.",
+      code: "SUBSCRIPTION_REQUIRED",
+      requiresUpgrade: true,
+      matches: [],
+    },
+    { status: 403 }
+  );
+}
 
     if (sponsorId || sponsorOwnerId) {
       if (user.role !== "SPONSOR") {
@@ -339,6 +341,14 @@ export async function POST(request: NextRequest) {
         MAX_MATCH_RESULTS
       );
 
+      await incrementUsage({
+  userId: String(user._id),
+  role: user.role,
+  action: ACTIONS.USE_MATCH,
+  subscriptionId: usage.subscriptionId || null,
+  planId: usage.planId || null,
+});
+
       return NextResponse.json(
         {
           success: true,
@@ -352,6 +362,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    
     if (eventId) {
       if (user.role !== "ORGANIZER") {
         return NextResponse.json(
@@ -434,6 +445,14 @@ export async function POST(request: NextRequest) {
         0,
         MAX_MATCH_RESULTS
       );
+
+      await incrementUsage({
+  userId: String(user._id),
+  role: user.role,
+  action: ACTIONS.USE_MATCH,
+  subscriptionId: usage.subscriptionId || null,
+  planId: usage.planId || null,
+});
 
       return NextResponse.json(
         {

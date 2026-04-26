@@ -7,10 +7,11 @@ import { verifyAccessToken } from "@/lib/auth";
 import { DealModel } from "@/lib/models/Deal";
 import User from "@/lib/models/User";
 import { EventModel } from "@/lib/models/Event";
-import Plan from "@/lib/models/Plan";
-import Subscription from "@/lib/models/Subscription";
-import { canUserAccessSubscriptionFeature } from "@/lib/subscription/access";
-import { ACTIONS, SUBSCRIPTION_STATUS } from "@/lib/subscription/constants";
+
+import { checkUsageLimit } from "@/lib/subscription/checkUsageLimit";
+import { incrementUsage } from "@/lib/subscription/incrementUsage";
+
+import { ACTIONS } from "@/lib/subscription/constants";
 
 const ALLOWED_DEAL_STATUSES = new Set([
   "pending",
@@ -137,27 +138,6 @@ async function getAuthenticatedUser() {
   return { user, error: null, status: 200 };
 }
 
-async function getActiveSubscriptionForRole(
-  userId: string,
-  role: "ORGANIZER" | "SPONSOR"
-) {
-  const subscription = await Subscription.findOne({
-    userId,
-    role,
-    status: {
-      $in: [SUBSCRIPTION_STATUS.ACTIVE, SUBSCRIPTION_STATUS.GRACE],
-    },
-  }).sort({ endDate: -1, createdAt: -1 });
-
-  if (!subscription) {
-    return { subscription: null, plan: null };
-  }
-
-  const plan = await Plan.findById(subscription.planId);
-
-  return { subscription, plan };
-}
-
 export async function POST(request: NextRequest) {
   try {
     await connectDB();
@@ -176,6 +156,29 @@ export async function POST(request: NextRequest) {
     if (currentUser.role !== "ORGANIZER" && currentUser.role !== "SPONSOR") {
       return NextResponse.json(
         { success: false, message: "Unsupported user role" },
+        { status: 403 }
+      );
+    }
+
+    const usage = await checkUsageLimit({
+  userId: String(currentUser._id),
+  role: currentUser.role,
+  action: ACTIONS.SEND_INTEREST,
+});
+
+    if (!usage.allowed) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: usage.message,
+          requiresUpgrade: true,
+          usage: {
+            dailyLimit: usage.dailyLimit,
+            monthlyLimit: usage.monthlyLimit,
+            dailyUsed: usage.dailyUsed,
+            monthlyUsed: usage.monthlyUsed,
+          },
+        },
         { status: 403 }
       );
     }
@@ -256,9 +259,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const deliverablesValidation = validateDeliverables(
-      body.deliverables ?? []
-    );
+    const deliverablesValidation = validateDeliverables(body.deliverables ?? []);
 
     if (!deliverablesValidation.valid) {
       return NextResponse.json(
@@ -341,60 +342,6 @@ export async function POST(request: NextRequest) {
         },
         { status: 403 }
       );
-    }
-
-    if (currentUser.role === "ORGANIZER") {
-      const { subscription, plan } = await getActiveSubscriptionForRole(
-        currentUserId,
-        "ORGANIZER"
-      );
-
-      const access = canUserAccessSubscriptionFeature({
-        user: currentUser as any,
-        subscription,
-        plan,
-        action: ACTIONS.SEND_INTEREST,
-      });
-
-      if (!access.allowed) {
-        return NextResponse.json(
-          {
-            success: false,
-            message:
-              access.message ||
-              "Upgrade your subscription to create and manage deals on Sponexus.",
-            requiresUpgrade: true,
-          },
-          { status: 403 }
-        );
-      }
-    }
-
-    if (currentUser.role === "SPONSOR") {
-      const { subscription, plan } = await getActiveSubscriptionForRole(
-        currentUserId,
-        "SPONSOR"
-      );
-
-      const access = canUserAccessSubscriptionFeature({
-        user: currentUser as any,
-        subscription,
-        plan,
-        action: ACTIONS.SEND_INTEREST,
-      });
-
-      if (!access.allowed) {
-        return NextResponse.json(
-          {
-            success: false,
-            message:
-              access.message ||
-              "Upgrade your subscription to create and manage deals on Sponexus.",
-            requiresUpgrade: true,
-          },
-          { status: 403 }
-        );
-      }
     }
 
     const [organizer, sponsor, event] = await Promise.all([
@@ -493,24 +440,6 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const duplicateDealBeforeCreate = await DealModel.findOne({
-      organizerId,
-      sponsorId,
-      eventId,
-      status: { $in: ["pending", "negotiating", "accepted"] },
-    }).select("_id status");
-
-    if (duplicateDealBeforeCreate) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            "An active deal already exists between this organizer, sponsor, and event",
-        },
-        { status: 409 }
-      );
-    }
-
     const deal = await DealModel.create({
       organizerId,
       sponsorId,
@@ -528,6 +457,14 @@ export async function POST(request: NextRequest) {
       status: "pending",
       paymentStatus: "unpaid",
     });
+
+   await incrementUsage({
+  userId: String(currentUser._id),
+  role: currentUser.role,
+  action: ACTIONS.SEND_INTEREST,
+  subscriptionId: usage.subscriptionId || null,
+  planId: usage.planId || null,
+});
 
     const populatedDeal = await DealModel.findById(deal._id)
       .populate("organizerId", "_id name email phone companyName")

@@ -10,6 +10,8 @@ type FraudSignal =
   | "RAPID_REPEAT_CREATE_ORDER"
   | "WEBHOOK_NO_MATCH"
   | "WEBHOOK_INVALID_SIGNATURE"
+  | "WEBHOOK_DUPLICATE_PAYMENT_ID"
+  | "WEBHOOK_ORDER_MISMATCH"
   | "AMOUNT_INVALID"
   | "COUPON_ABUSE_PATTERN";
 
@@ -36,6 +38,8 @@ type FraudInput = {
   rapidRepeatRenewal?: boolean;
   webhookNoMatch?: boolean;
   webhookInvalidSignature?: boolean;
+  webhookDuplicatePaymentId?: boolean;
+  webhookOrderMismatch?: boolean;
   invalidAmount?: boolean;
   couponAbusePattern?: boolean;
 };
@@ -52,6 +56,8 @@ const FRAUD_WEIGHTS: Record<FraudSignal, number> = {
   RAPID_REPEAT_CREATE_ORDER: 15,
   WEBHOOK_NO_MATCH: 20,
   WEBHOOK_INVALID_SIGNATURE: 50,
+  WEBHOOK_DUPLICATE_PAYMENT_ID: 45,
+  WEBHOOK_ORDER_MISMATCH: 40,
   AMOUNT_INVALID: 40,
   COUPON_ABUSE_PATTERN: 25,
 };
@@ -175,6 +181,24 @@ export function assessFraud(input: FraudInput): FraudAssessment {
       reasons,
       "WEBHOOK_INVALID_SIGNATURE",
       "Webhook signature verification failed."
+    );
+  }
+
+  if (input.webhookDuplicatePaymentId) {
+    pushSignal(
+      signals,
+      reasons,
+      "WEBHOOK_DUPLICATE_PAYMENT_ID",
+      "Duplicate payment id detected from webhook."
+    );
+  }
+
+  if (input.webhookOrderMismatch) {
+    pushSignal(
+      signals,
+      reasons,
+      "WEBHOOK_ORDER_MISMATCH",
+      "Webhook order id mismatch detected."
     );
   }
 

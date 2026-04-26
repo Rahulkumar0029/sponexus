@@ -4,6 +4,7 @@ import { verifyAccessToken } from "@/lib/auth";
 import { connectDB } from "@/lib/db";
 import PaymentTransaction from "@/lib/models/PaymentTransaction";
 import User from "@/lib/models/User";
+import { rateLimit, buildRateLimitKey } from "@/lib/security/rate-limit";
 import {
   sanitizePayment,
   sanitizeSubscription,
@@ -68,6 +69,36 @@ export async function POST(request: NextRequest) {
         401
       );
     }
+
+    const rl = await rateLimit({
+  key: buildRateLimitKey({
+    request,
+    userId: decoded.userId,
+    route: "payment-verify",
+  }),
+  limit: 8,
+  windowMs: 60 * 1000,
+});
+
+if (!rl.allowed) {
+  await detectAndRecordSuspiciousPattern({
+    request,
+    userId: decoded.userId,
+    title: "Payment verify rate limit exceeded",
+    reason: "Too many payment verification attempts in a short time.",
+    securityEventType: "PAYMENT_VERIFY_FAILED",
+    entityType: "PAYMENT",
+    recentVerifyCount: 8,
+  });
+
+  return buildNoStoreResponse(
+    {
+      success: false,
+      message: "Too many verification attempts. Try again later.",
+    },
+    429
+  );
+}
 
     const body = await request.json();
 
@@ -258,55 +289,103 @@ if (
   );
 }
 
-    if (payment.status === PAYMENT_STATUS.SUCCESS && payment.subscriptionId) {
-      const { subscription } = await finalizeSuccessfulPayment({
-        payment,
-        verificationSource: PAYMENT_VERIFICATION_SOURCE.FRONTEND_VERIFY,
-        razorpayPaymentId,
-        razorpaySignature,
-        gatewayStatus: "paid",
-        webhookConfirmed: false,
-      });
+ if (payment.status === PAYMENT_STATUS.SUCCESS && payment.subscriptionId) {
+ if (
+  payment.gatewayOrderId !== razorpayOrderId ||
+  payment.gatewayPaymentId !== razorpayPaymentId
+) {
+    await safeLogAudit({
+      actorId: payment.userId,
+      action: "PAYMENT_VERIFY_FAILED",
+      entityType: "PAYMENT",
+      entityId: payment._id,
+      severity: "CRITICAL",
+      request,
+      metadata: {
+        reason: "SUCCESS_PAYMENT_REPLAY_MISMATCH",
+        storedGatewayOrderId: payment.gatewayOrderId,
+        receivedGatewayOrderId: razorpayOrderId,
+        storedGatewayPaymentId: payment.gatewayPaymentId,
+        receivedGatewayPaymentId: razorpayPaymentId,
+        checkoutAttemptId: payment.checkoutAttemptId,
+      },
+    });
 
-      if (payment.couponCode) {
-        await completeCouponRedemption({
-          paymentTransactionId: payment._id,
-          notes:
-            "Coupon redemption already linked to successful payment verification.",
-        });
-      }
+    await detectAndRecordSuspiciousPattern({
+      request,
+      userId: payment.userId,
+      paymentId: payment._id,
+      title: "Payment replay mismatch blocked",
+      reason:
+        "Already successful payment was verified again with mismatched gateway data.",
+      securityEventType: "PAYMENT_VERIFY_FAILED",
+      entityType: "PAYMENT",
+      entityId: payment._id,
+      duplicatePaymentDetected: true,
+      metadata: {
+        storedGatewayOrderId: payment.gatewayOrderId,
+        receivedGatewayOrderId: razorpayOrderId,
+        storedGatewayPaymentId: payment.gatewayPaymentId,
+        receivedGatewayPaymentId: razorpayPaymentId,
+      },
+    });
 
-      await safeLogAudit({
-        actorId: payment.userId,
-        action: "PAYMENT_VERIFIED_ALREADY_PROCESSED",
-        entityType: "PAYMENT",
-        entityId: payment._id,
-        severity: "INFO",
-        request,
-        metadata: {
-          checkoutAttemptId: payment.checkoutAttemptId,
-          razorpayOrderId,
-          razorpayPaymentId,
-          transactionType: payment.transactionType,
-          subscriptionId: payment.subscriptionId
-            ? String(payment.subscriptionId)
-            : null,
-        },
-      });
+    return buildNoStoreResponse(
+      {
+        success: false,
+        message: "Payment replay blocked.",
+      },
+      409
+    );
+  }
 
-      return buildNoStoreResponse(
-        {
-          success: true,
-          message: "Payment already verified and processed.",
-          payment: sanitizePayment(payment),
-          subscription: subscription ? sanitizeSubscription(subscription) : null,
-          subscriptionActivated: true,
-          alreadyProcessed: true,
-        },
-        200
-      );
-    }
+  const { subscription } = await finalizeSuccessfulPayment({
+    payment,
+    verificationSource: PAYMENT_VERIFICATION_SOURCE.FRONTEND_VERIFY,
+    razorpayPaymentId,
+    razorpaySignature,
+    gatewayStatus: "paid",
+    webhookConfirmed: false,
+  });
 
+  if (payment.couponCode) {
+    await completeCouponRedemption({
+      paymentTransactionId: payment._id,
+      notes:
+        "Coupon redemption already linked to successful payment verification.",
+    });
+  }
+
+  await safeLogAudit({
+    actorId: payment.userId,
+    action: "PAYMENT_VERIFIED_ALREADY_PROCESSED",
+    entityType: "PAYMENT",
+    entityId: payment._id,
+    severity: "INFO",
+    request,
+    metadata: {
+      checkoutAttemptId: payment.checkoutAttemptId,
+      razorpayOrderId,
+      razorpayPaymentId,
+      transactionType: payment.transactionType,
+      subscriptionId: payment.subscriptionId
+        ? String(payment.subscriptionId)
+        : null,
+    },
+  });
+
+  return buildNoStoreResponse(
+    {
+      success: true,
+      message: "Payment already verified and processed.",
+      payment: sanitizePayment(payment),
+      subscription: subscription ? sanitizeSubscription(subscription) : null,
+      subscriptionActivated: true,
+      alreadyProcessed: true,
+    },
+    200
+  );
+}
     if (!payment.gatewayOrderId) {
       if (payment.couponCode) {
         await failCouponRedemption({

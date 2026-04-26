@@ -53,7 +53,6 @@ const couponSchema = new Schema<ICoupon>(
       trim: true,
       uppercase: true,
       maxlength: MAX_CODE_LENGTH,
-      index: true,
     },
 
     name: {
@@ -74,7 +73,6 @@ const couponSchema = new Schema<ICoupon>(
       type: String,
       enum: ["PERCENTAGE", "FLAT"],
       required: [true, "Coupon type is required"],
-      index: true,
     },
 
     value: {
@@ -119,26 +117,22 @@ const couponSchema = new Schema<ICoupon>(
       type: [String],
       enum: ["ORGANIZER", "SPONSOR", "BOTH"],
       default: ["BOTH"],
-      index: true,
     },
 
     applicablePlanIds: {
       type: [Schema.Types.ObjectId],
       ref: "Plan",
       default: [],
-      index: true,
     },
 
     startsAt: {
       type: Date,
       default: null,
-      index: true,
     },
 
     expiresAt: {
       type: Date,
       default: null,
-      index: true,
     },
 
     totalUsageLimit: {
@@ -182,27 +176,23 @@ const couponSchema = new Schema<ICoupon>(
     isActive: {
       type: Boolean,
       default: true,
-      index: true,
     },
 
     isArchived: {
       type: Boolean,
       default: false,
-      index: true,
     },
 
     createdBy: {
       type: Schema.Types.ObjectId,
       ref: "User",
       default: null,
-      index: true,
     },
 
     updatedBy: {
       type: Schema.Types.ObjectId,
       ref: "User",
       default: null,
-      index: true,
     },
 
     metadata: {

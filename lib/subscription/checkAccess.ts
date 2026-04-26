@@ -11,6 +11,14 @@ import { isAdminBypass } from "@/lib/subscription/isAdminBypass";
 type SupportedRole = "ORGANIZER" | "SPONSOR";
 type PlanRole = "ORGANIZER" | "SPONSOR" | "BOTH";
 
+type PlanFeatures = {
+  canPublishEvent?: boolean;
+  canPublishSponsorship?: boolean;
+  canUseMatch?: boolean;
+  canRevealContact?: boolean;
+  canSendDealRequest?: boolean;
+};
+
 type CheckSubscriptionAccessInput = {
   userId: string;
   role?: string | null;
@@ -76,6 +84,39 @@ function isPlanAllowedForRole(planRole: PlanRole, userRole: SupportedRole) {
 
 function isPlanRole(role: unknown): role is PlanRole {
   return role === "ORGANIZER" || role === "SPONSOR" || role === "BOTH";
+}
+
+function isExplicitFalse(value: unknown) {
+  return value === false;
+}
+
+function isActionAllowedByDynamicFeatures(
+  action: PermissionAction,
+  features?: PlanFeatures | null
+) {
+  if (!features) return true;
+
+  if (action === "PUBLISH_EVENT") {
+    return !isExplicitFalse(features.canPublishEvent);
+  }
+
+  if (action === "PUBLISH_SPONSORSHIP") {
+    return !isExplicitFalse(features.canPublishSponsorship);
+  }
+
+  if (action === "USE_MATCH") {
+    return !isExplicitFalse(features.canUseMatch);
+  }
+
+  if (action === "REVEAL_CONTACT") {
+    return !isExplicitFalse(features.canRevealContact);
+  }
+
+  if (action === "SEND_INTEREST") {
+    return !isExplicitFalse(features.canSendDealRequest);
+  }
+
+  return true;
 }
 
 export async function checkSubscriptionAccess({
@@ -222,18 +263,21 @@ export async function checkSubscriptionAccess({
 
   const snapshot = subscription.planSnapshot || null;
 
-  let entitlementSource:
-    | {
-        role: PlanRole;
-        canPublish: boolean;
-        canContact: boolean;
-        canUseMatch: boolean;
-        canRevealContact: boolean;
-      }
-    | null = null;
+  let entitlementSource: {
+    role: PlanRole;
+    canPublish: boolean;
+    canContact: boolean;
+    canUseMatch: boolean;
+    canRevealContact: boolean;
+    features?: PlanFeatures | null;
+  } | null = null;
 
   if (snapshot) {
-    if (!isPlanRole(snapshot.role)) {
+    const planSnapshot = snapshot as typeof snapshot & {
+      features?: PlanFeatures | null;
+    };
+
+    if (!isPlanRole(planSnapshot.role)) {
       return {
         allowed: false,
         message: "Plan role mismatch.",
@@ -245,7 +289,7 @@ export async function checkSubscriptionAccess({
       };
     }
 
-    if (!isPlanAllowedForRole(snapshot.role, effectiveRole)) {
+    if (!isPlanAllowedForRole(planSnapshot.role, effectiveRole)) {
       return {
         allowed: false,
         message: "Plan role mismatch.",
@@ -258,15 +302,16 @@ export async function checkSubscriptionAccess({
     }
 
     entitlementSource = {
-      role: snapshot.role,
-      canPublish: Boolean(snapshot.canPublish),
-      canContact: Boolean(snapshot.canContact),
-      canUseMatch: Boolean(snapshot.canUseMatch),
-      canRevealContact: Boolean(snapshot.canRevealContact),
+      role: planSnapshot.role,
+      canPublish: Boolean(planSnapshot.canPublish),
+      canContact: Boolean(planSnapshot.canContact),
+      canUseMatch: Boolean(planSnapshot.canUseMatch),
+      canRevealContact: Boolean(planSnapshot.canRevealContact),
+      features: planSnapshot.features || null,
     };
   } else {
     const livePlan = await Plan.findById(subscription.planId).select(
-      "_id role isActive isArchived canPublish canContact canUseMatch canRevealContact"
+      "_id role isActive isArchived canPublish canContact canUseMatch canRevealContact features"
     );
 
     if (!livePlan) {
@@ -323,10 +368,11 @@ export async function checkSubscriptionAccess({
       canContact: Boolean(livePlan.canContact),
       canUseMatch: Boolean(livePlan.canUseMatch),
       canRevealContact: Boolean(livePlan.canRevealContact),
+      features: livePlan.features || null,
     };
   }
 
-  const allowed = checkPermission(action, {
+  const allowedByOldPermission = checkPermission(action, {
     role: effectiveRole,
     hasActiveSubscription: true,
     adminBypass: false,
@@ -338,7 +384,24 @@ export async function checkSubscriptionAccess({
     },
   });
 
-  if (!allowed) {
+  if (!allowedByOldPermission) {
+    return {
+      allowed: false,
+      message: getUpgradeMessage(action),
+      adminBypass: false,
+      hasActiveSubscription: true,
+      subscriptionId,
+      planId,
+      reason: "ACTION_NOT_ALLOWED",
+    };
+  }
+
+  const allowedByDynamicFeatures = isActionAllowedByDynamicFeatures(
+  action,
+  entitlementSource.features
+);
+
+  if (!allowedByDynamicFeatures) {
     return {
       allowed: false,
       message: getUpgradeMessage(action),

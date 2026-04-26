@@ -48,6 +48,8 @@ function sanitizePlan(plan: any) {
 
     budgetMin: plan.budgetMin ?? null,
     budgetMax: plan.budgetMax ?? null,
+features: plan.features ?? {},
+limits: plan.limits ?? {},
 
     isActive: Boolean(plan.isActive),
     isArchived: Boolean(plan.isArchived),
@@ -304,6 +306,69 @@ export async function PATCH(
   if (body.canRevealContact !== undefined) {
     plan.canRevealContact = Boolean(body.canRevealContact);
   }
+if (body.features && typeof body.features === "object" && !Array.isArray(body.features)) {
+  plan.features = {
+    ...(plan.features || {}),
+    ...(body.features.canPublishEvent !== undefined && {
+      canPublishEvent: Boolean(body.features.canPublishEvent),
+    }),
+    ...(body.features.canPublishSponsorship !== undefined && {
+      canPublishSponsorship: Boolean(body.features.canPublishSponsorship),
+    }),
+    ...(body.features.canUseMatch !== undefined && {
+      canUseMatch: Boolean(body.features.canUseMatch),
+    }),
+    ...(body.features.canRevealContact !== undefined && {
+      canRevealContact: Boolean(body.features.canRevealContact),
+    }),
+    ...(body.features.canSendDealRequest !== undefined && {
+      canSendDealRequest: Boolean(body.features.canSendDealRequest),
+    }),
+  };
+}
+
+if (body.limits && typeof body.limits === "object" && !Array.isArray(body.limits)) {
+  const nextLimits = {
+    ...(plan.limits || {}),
+  };
+
+ const limitFields = [
+  "eventPostsPerDay",
+  "sponsorshipPostsPerDay",
+  "dealRequestsPerDay",
+  "contactRevealsPerDay",
+  "matchUsesPerDay",
+  "eventPostsPerMonth",
+  "sponsorshipPostsPerMonth",
+  "dealRequestsPerMonth",
+  "contactRevealsPerMonth",
+  "matchUsesPerMonth",
+  "maxPostBudgetAmount",
+  "maxVisibleBudgetAmount",
+] as const;
+
+  for (const field of limitFields) {
+    if (body.limits[field] !== undefined) {
+      nextLimits[field] = normalizeNullableNumber(body.limits[field]);
+    }
+  }
+
+  if (
+    nextLimits.maxPostBudgetAmount != null &&
+    nextLimits.maxVisibleBudgetAmount != null &&
+    nextLimits.maxPostBudgetAmount > nextLimits.maxVisibleBudgetAmount
+  ) {
+    return buildNoStoreResponse(
+      {
+        success: false,
+        message: "maxPostBudgetAmount cannot exceed maxVisibleBudgetAmount.",
+      },
+      400
+    );
+  }
+
+  plan.limits = nextLimits;
+}
 
   if (body.isActive !== undefined) plan.isActive = Boolean(body.isActive);
   if (body.isArchived !== undefined) plan.isArchived = Boolean(body.isArchived);

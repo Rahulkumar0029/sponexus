@@ -6,7 +6,8 @@ import Sponsorship from "@/lib/models/Sponsorship";
 import Sponsor from "@/lib/models/Sponsor";
 import User from "@/lib/models/User";
 import { getCurrentUser } from "@/lib/current-user";
-import { checkSubscriptionAccess } from "@/lib/subscription/checkAccess";
+import { checkUsageLimit } from "@/lib/subscription/checkUsageLimit";
+import { incrementUsage } from "@/lib/subscription/incrementUsage";
 import { ACTIONS } from "@/lib/subscription/constants";
 
 function clean(value: unknown): string {
@@ -76,25 +77,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json(
         { success: false, message: "Complete your sponsor profile first" },
         { status: 400 }
-      );
-    }
-
-    const access = await checkSubscriptionAccess({
-      userId: String(user._id),
-      role: user.role,
-      action: ACTIONS.PUBLISH_SPONSORSHIP,
-    });
-
-    if (!access.allowed) {
-      return NextResponse.json(
-        {
-          success: false,
-          message:
-            access.message ||
-            "Upgrade your subscription to create sponsorship posts on Sponexus.",
-          requiresUpgrade: true,
-        },
-        { status: 403 }
       );
     }
 
@@ -223,7 +205,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (customMessage && !isSafeLength(customMessage, MAX_CUSTOM_MESSAGE_LENGTH)) {
+    if (
+      customMessage &&
+      !isSafeLength(customMessage, MAX_CUSTOM_MESSAGE_LENGTH)
+    ) {
       return NextResponse.json(
         {
           success: false,
@@ -233,7 +218,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (contactPersonName && !isSafeLength(contactPersonName, MAX_CONTACT_PERSON_LENGTH)) {
+    if (
+      contactPersonName &&
+      !isSafeLength(contactPersonName, MAX_CONTACT_PERSON_LENGTH)
+    ) {
       return NextResponse.json(
         {
           success: false,
@@ -250,7 +238,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!isSafeLength(contactPhone, MAX_PHONE_LENGTH) || !isValidPhoneNumber(contactPhone)) {
+    if (
+      !isSafeLength(contactPhone, MAX_PHONE_LENGTH) ||
+      !isValidPhoneNumber(contactPhone)
+    ) {
       return NextResponse.json(
         {
           success: false,
@@ -289,6 +280,32 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const usage = await checkUsageLimit({
+      userId: String(user._id),
+      role: "SPONSOR",
+      action: ACTIONS.PUBLISH_SPONSORSHIP,
+      amount: budgetValue,
+    });
+
+    if (!usage.allowed) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            usage.message ||
+            "Upgrade your subscription to create sponsorship posts on Sponexus.",
+          requiresUpgrade: true,
+          usage: {
+            dailyLimit: usage.dailyLimit ?? null,
+            monthlyLimit: usage.monthlyLimit ?? null,
+            dailyUsed: usage.dailyUsed ?? null,
+            monthlyUsed: usage.monthlyUsed ?? null,
+          },
+        },
+        { status: 403 }
+      );
+    }
+
     if (!applicationDeadline) {
       return NextResponse.json(
         { success: false, message: "Application deadline is required" },
@@ -312,32 +329,33 @@ export async function POST(request: NextRequest) {
     const sponsorship = await Sponsorship.create({
       sponsorOwnerId: user._id,
       sponsorProfileId: sponsorProfile._id,
-
       sponsorshipTitle,
       sponsorshipType,
       budget: budgetValue,
-
       targetAudience: String(targetAudienceValue),
-
       category,
       city,
       locationPreference,
       campaignGoal,
-
       deliverablesExpected,
       customMessage,
-
       bannerRequirement: Boolean(body.bannerRequirement),
       stallRequirement: Boolean(body.stallRequirement),
       mikeAnnouncement: Boolean(body.mikeAnnouncement),
       socialMediaMention: Boolean(body.socialMediaMention),
       productDisplay: Boolean(body.productDisplay),
-
       contactPersonName,
       contactPhone,
-
       status: "active",
       expiresAt: selectedDate,
+    });
+
+    await incrementUsage({
+      userId: String(user._id),
+      role: "SPONSOR",
+      action: ACTIONS.PUBLISH_SPONSORSHIP,
+      subscriptionId: usage.subscriptionId || null,
+      planId: usage.planId || null,
     });
 
     return NextResponse.json(

@@ -1,3 +1,5 @@
+import { NextRequest } from "next/server";
+
 type RateLimitOptions = {
   key: string;            // unique identifier (IP / userId / route)
   limit: number;          // max requests
@@ -12,6 +14,9 @@ type RateLimitResult = {
 
 const globalStore = new Map<string, { count: number; resetAt: number }>();
 
+/* =========================================
+   MAIN RATE LIMIT FUNCTION
+========================================= */
 export async function rateLimit({
   key,
   limit,
@@ -55,3 +60,44 @@ export async function rateLimit({
     resetAt: existing.resetAt,
   };
 }
+
+/* =========================================
+   HELPER: GET USER IP (VERY IMPORTANT)
+========================================= */
+export function getClientIp(request: NextRequest): string {
+  return (
+    request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+    request.headers.get("x-real-ip") ||
+    "unknown-ip"
+  );
+}
+
+/* =========================================
+   HELPER: BUILD SAFE RATE LIMIT KEY
+========================================= */
+export function buildRateLimitKey(params: {
+  request: NextRequest;
+  route: string;
+  userId?: string;
+}) {
+  const ip = getClientIp(params.request);
+
+  if (params.userId) {
+    return `user:${params.userId}:${params.route}`;
+  }
+
+  return `ip:${ip}:${params.route}`;
+}
+
+/* =========================================
+   MEMORY CLEANUP (PREVENT MEMORY LEAK)
+========================================= */
+setInterval(() => {
+  const now = Date.now();
+
+  for (const [key, value] of globalStore.entries()) {
+    if (value.resetAt < now) {
+      globalStore.delete(key);
+    }
+  }
+}, 60 * 1000); // runs every 1 min

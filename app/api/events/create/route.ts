@@ -2,9 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { connectDB } from "@/lib/db";
 import { EventModel } from "@/lib/models/Event";
+import Subscription from "@/lib/models/Subscription";
 import { getCurrentUser } from "@/lib/current-user";
 import { checkSubscriptionAccess } from "@/lib/subscription/checkAccess";
 import { ACTIONS } from "@/lib/subscription/constants";
+import {
+  checkUsageLimit,
+  incrementUsage,
+} from "@/lib/subscription/enforceLimits";
 import { CreateEventInput, EventDeliverable } from "@/types/event";
 
 type UploadedMedia = {
@@ -108,7 +113,9 @@ function normalizeMediaArray(value: unknown): UploadedMedia[] {
 
       if (!url || !publicId || !media.type) return null;
       if (media.type !== "image" && media.type !== "video") return null;
-      if (!isValidHttpUrl(url) || !isSafeLength(url, MAX_URL_LENGTH)) return null;
+      if (!isValidHttpUrl(url) || !isSafeLength(url, MAX_URL_LENGTH)) {
+        return null;
+      }
       if (!isSafeLength(publicId, MAX_PUBLIC_ID_LENGTH)) return null;
       if (title && !isSafeLength(title, MAX_MEDIA_TITLE_LENGTH)) return null;
 
@@ -409,6 +416,8 @@ export async function POST(request: NextRequest) {
 
     let finalStatus: "DRAFT" | "PUBLISHED" = "DRAFT";
     let publishBlockedMessage = "";
+    let accessSubscriptionId: string | null = null;
+    let accessPlanId: string | null = null;
 
     if (safeRequestedStatus === "PUBLISHED") {
       const access = await checkSubscriptionAccess({
@@ -417,13 +426,47 @@ export async function POST(request: NextRequest) {
         action: ACTIONS.PUBLISH_EVENT,
       });
 
-      if (access.allowed) {
-        finalStatus = "PUBLISHED";
-      } else {
+      if (!access.allowed) {
         finalStatus = "DRAFT";
         publishBlockedMessage =
           access.message ||
           "Upgrade your subscription to publish events on Sponexus.";
+      } else {
+        accessSubscriptionId = access.subscriptionId || null;
+        accessPlanId = access.planId || null;
+
+        const subscription = access.subscriptionId
+          ? await Subscription.findById(access.subscriptionId).select(
+              "planSnapshot planId"
+            )
+          : null;
+
+        const limits = subscription?.planSnapshot?.limits || null;
+        const maxPostBudgetAmount = limits?.maxPostBudgetAmount ?? null;
+
+        if (
+          maxPostBudgetAmount != null &&
+          parsedBudget > maxPostBudgetAmount
+        ) {
+          finalStatus = "DRAFT";
+          publishBlockedMessage = `Your current plan allows event budget up to ₹${maxPostBudgetAmount}. Save as draft or upgrade your plan.`;
+        } else {
+          const usage = await checkUsageLimit({
+            userId: currentUser._id,
+            role: "ORGANIZER",
+            action: ACTIONS.PUBLISH_EVENT,
+            limits,
+            subscriptionId: accessSubscriptionId,
+            planId: accessPlanId,
+          });
+
+          if (!usage.allowed) {
+            finalStatus = "DRAFT";
+            publishBlockedMessage = usage.message;
+          } else {
+            finalStatus = "PUBLISHED";
+          }
+        }
       }
     }
 
@@ -445,6 +488,16 @@ export async function POST(request: NextRequest) {
       pastEventMedia: safePastEventMedia,
       status: finalStatus,
     });
+
+    if (finalStatus === "PUBLISHED") {
+      await incrementUsage({
+        userId: currentUser._id,
+        role: "ORGANIZER",
+        action: ACTIONS.PUBLISH_EVENT,
+        subscriptionId: accessSubscriptionId,
+        planId: accessPlanId,
+      });
+    }
 
     return buildNoStoreResponse(
       {

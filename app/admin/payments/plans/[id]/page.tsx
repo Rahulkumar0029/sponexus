@@ -23,6 +23,29 @@ type PlanResponse = {
   canContact: boolean;
   canUseMatch: boolean;
   canRevealContact: boolean;
+  features?: {
+  canPublishEvent?: boolean;
+  canPublishSponsorship?: boolean;
+  canUseMatch?: boolean;
+  canRevealContact?: boolean;
+  canSendDealRequest?: boolean;
+};
+
+limits?: {
+  eventPostsPerDay?: number | null;
+  sponsorshipPostsPerDay?: number | null;
+  dealRequestsPerDay?: number | null;
+  contactRevealsPerDay?: number | null;
+  eventPostsPerMonth?: number | null;
+  sponsorshipPostsPerMonth?: number | null;
+  dealRequestsPerMonth?: number | null;
+  matchUsesPerDay?: number | null;
+  matchUsesPerMonth?: number | null;
+  contactRevealsPerMonth?: number | null;
+  maxPostBudgetAmount?: number | null;
+  maxVisibleBudgetAmount?: number | null;
+};
+
   budgetMin?: number | null;
   budgetMax?: number | null;
   isActive: boolean;
@@ -48,6 +71,25 @@ type FormState = {
   canContact: boolean;
   canUseMatch: boolean;
   canRevealContact: boolean;
+  
+  canPublishEvent: boolean;
+canPublishSponsorship: boolean;
+canSendDealRequest: boolean;
+
+eventPostsPerDay: string;
+sponsorshipPostsPerDay: string;
+dealRequestsPerDay: string;
+contactRevealsPerDay: string;
+matchUsesPerDay: string;
+
+eventPostsPerMonth: string;
+sponsorshipPostsPerMonth: string;
+dealRequestsPerMonth: string;
+contactRevealsPerMonth: string;
+  matchUsesPerMonth: string;
+maxPostBudgetAmount: string;
+maxVisibleBudgetAmount: string;
+
   budgetMin: string;
   budgetMax: string;
   isActive: boolean;
@@ -86,6 +128,36 @@ function buildInitialForm(plan: PlanResponse): FormState {
     canContact: Boolean(plan.canContact),
     canUseMatch: Boolean(plan.canUseMatch),
     canRevealContact: Boolean(plan.canRevealContact),
+
+    canPublishEvent: plan.features?.canPublishEvent !== false,
+canPublishSponsorship: plan.features?.canPublishSponsorship !== false,
+canSendDealRequest: plan.features?.canSendDealRequest !== false,
+
+eventPostsPerDay:
+  plan.limits?.eventPostsPerDay == null ? '' : String(plan.limits.eventPostsPerDay),
+sponsorshipPostsPerDay:
+  plan.limits?.sponsorshipPostsPerDay == null ? '' : String(plan.limits.sponsorshipPostsPerDay),
+dealRequestsPerDay:
+  plan.limits?.dealRequestsPerDay == null ? '' : String(plan.limits.dealRequestsPerDay),
+contactRevealsPerDay:
+  plan.limits?.contactRevealsPerDay == null ? '' : String(plan.limits.contactRevealsPerDay),
+matchUsesPerDay:
+  plan.limits?.matchUsesPerDay == null ? '' : String(plan.limits.matchUsesPerDay),
+eventPostsPerMonth:
+  plan.limits?.eventPostsPerMonth == null ? '' : String(plan.limits.eventPostsPerMonth),
+sponsorshipPostsPerMonth:
+  plan.limits?.sponsorshipPostsPerMonth == null ? '' : String(plan.limits.sponsorshipPostsPerMonth),
+dealRequestsPerMonth:
+  plan.limits?.dealRequestsPerMonth == null ? '' : String(plan.limits.dealRequestsPerMonth),
+contactRevealsPerMonth:
+  plan.limits?.contactRevealsPerMonth == null ? '' : String(plan.limits.contactRevealsPerMonth),
+matchUsesPerMonth:
+  plan.limits?.matchUsesPerMonth == null ? '' : String(plan.limits.matchUsesPerMonth),
+maxPostBudgetAmount:
+  plan.limits?.maxPostBudgetAmount == null ? '' : String(plan.limits.maxPostBudgetAmount),
+maxVisibleBudgetAmount:
+  plan.limits?.maxVisibleBudgetAmount == null ? '' : String(plan.limits.maxVisibleBudgetAmount),
+
     budgetMin: plan.budgetMin == null ? '' : String(plan.budgetMin),
     budgetMax: plan.budgetMax == null ? '' : String(plan.budgetMax),
     isActive: Boolean(plan.isActive),
@@ -248,6 +320,28 @@ export default function EditPlanPage() {
         canContact: form.canContact,
         canUseMatch: form.canUseMatch,
         canRevealContact: form.canRevealContact,
+        features: {
+  canPublishEvent: form.canPublishEvent,
+  canPublishSponsorship: form.canPublishSponsorship,
+  canUseMatch: form.canUseMatch,
+  canRevealContact: form.canRevealContact,
+  canSendDealRequest: form.canSendDealRequest,
+},
+
+limits: {
+  eventPostsPerDay: normalizeNullableNumber(form.eventPostsPerDay),
+  sponsorshipPostsPerDay: normalizeNullableNumber(form.sponsorshipPostsPerDay),
+  dealRequestsPerDay: normalizeNullableNumber(form.dealRequestsPerDay),
+  contactRevealsPerDay: normalizeNullableNumber(form.contactRevealsPerDay),
+  matchUsesPerDay: normalizeNullableNumber(form.matchUsesPerDay),
+  eventPostsPerMonth: normalizeNullableNumber(form.eventPostsPerMonth),
+  sponsorshipPostsPerMonth: normalizeNullableNumber(form.sponsorshipPostsPerMonth),
+  dealRequestsPerMonth: normalizeNullableNumber(form.dealRequestsPerMonth),
+  contactRevealsPerMonth: normalizeNullableNumber(form.contactRevealsPerMonth),
+  matchUsesPerMonth: normalizeNullableNumber(form.matchUsesPerMonth),
+  maxPostBudgetAmount: normalizeNullableNumber(form.maxPostBudgetAmount),
+  maxVisibleBudgetAmount: normalizeNullableNumber(form.maxVisibleBudgetAmount),
+},
         budgetMin,
         budgetMax,
         isActive: form.isActive,
@@ -475,8 +569,34 @@ export default function EditPlanPage() {
                       updateField('canRevealContact', value)
                     }
                   />
+                  
                 </div>
               </section>
+
+<section className="rounded-3xl border border-white/10 bg-white/5 p-6 backdrop-blur-xl">
+  <h2 className="text-lg font-semibold">Dynamic Plan Controls</h2>
+
+  <div className="mt-5 grid grid-cols-1 gap-3 md:grid-cols-2">
+    <Toggle label="Can Publish Event" checked={form.canPublishEvent} onChange={(value) => updateField('canPublishEvent', value)} />
+    <Toggle label="Can Publish Sponsorship" checked={form.canPublishSponsorship} onChange={(value) => updateField('canPublishSponsorship', value)} />
+    <Toggle label="Can Send Deal Request" checked={form.canSendDealRequest} onChange={(value) => updateField('canSendDealRequest', value)} />
+  </div>
+
+  <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
+    <Field label="Event Posts Per Day"><input type="number" min="0" value={form.eventPostsPerDay} onChange={(e) => updateField('eventPostsPerDay', e.target.value)} className="input-admin" /></Field>
+    <Field label="Event Posts Per Month"><input type="number" min="0" value={form.eventPostsPerMonth} onChange={(e) => updateField('eventPostsPerMonth', e.target.value)} className="input-admin" /></Field>
+    <Field label="Sponsorship Posts Per Day"><input type="number" min="0" value={form.sponsorshipPostsPerDay} onChange={(e) => updateField('sponsorshipPostsPerDay', e.target.value)} className="input-admin" /></Field>
+    <Field label="Sponsorship Posts Per Month"><input type="number" min="0" value={form.sponsorshipPostsPerMonth} onChange={(e) => updateField('sponsorshipPostsPerMonth', e.target.value)} className="input-admin" /></Field>
+    <Field label="Deal Requests Per Day"><input type="number" min="0" value={form.dealRequestsPerDay} onChange={(e) => updateField('dealRequestsPerDay', e.target.value)} className="input-admin" /></Field>
+    <Field label="Deal Requests Per Month"><input type="number" min="0" value={form.dealRequestsPerMonth} onChange={(e) => updateField('dealRequestsPerMonth', e.target.value)} className="input-admin" /></Field>
+    <Field label="Contact Reveals Per Day"><input type="number" min="0" value={form.contactRevealsPerDay} onChange={(e) => updateField('contactRevealsPerDay', e.target.value)} className="input-admin" /></Field>
+    <Field label="Match Uses Per Day"><input type="number" min="0" value={form.matchUsesPerDay} onChange={(e) => updateField('matchUsesPerDay', e.target.value)} className="input-admin" /></Field>
+    <Field label="Match Uses Per Month"><input type="number" min="0" value={form.matchUsesPerMonth} onChange={(e) => updateField('matchUsesPerMonth', e.target.value)} className="input-admin" /></Field>
+    <Field label="Contact Reveals Per Month"><input type="number" min="0" value={form.contactRevealsPerMonth} onChange={(e) => updateField('contactRevealsPerMonth', e.target.value)} className="input-admin" /></Field>
+    <Field label="Max Post Budget Amount"><input type="number" min="0" value={form.maxPostBudgetAmount} onChange={(e) => updateField('maxPostBudgetAmount', e.target.value)} className="input-admin" /></Field>
+    <Field label="Max Visible Budget Amount"><input type="number" min="0" value={form.maxVisibleBudgetAmount} onChange={(e) => updateField('maxVisibleBudgetAmount', e.target.value)} className="input-admin" /></Field>
+  </div>
+</section>
 
               <section className="rounded-3xl border border-white/10 bg-white/5 p-6 backdrop-blur-xl">
                 <h2 className="text-lg font-semibold">Budget Rules</h2>

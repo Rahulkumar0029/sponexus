@@ -94,7 +94,6 @@ const contactRevealSchema = new Schema<IDealContactReveal>(
     fullyRevealed: {
       type: Boolean,
       default: false,
-      index: true,
     },
   },
   { _id: false }
@@ -106,19 +105,16 @@ const dealSchema = new Schema<IDeal>(
       type: Schema.Types.ObjectId,
       ref: "User",
       required: [true, "Organizer is required"],
-      index: true,
     },
     sponsorId: {
       type: Schema.Types.ObjectId,
       ref: "User",
       required: [true, "Sponsor is required"],
-      index: true,
     },
     eventId: {
       type: Schema.Types.ObjectId,
       ref: "Event",
       required: [true, "Event is required"],
-      index: true,
     },
 
     title: {
@@ -159,14 +155,12 @@ const dealSchema = new Schema<IDeal>(
         "disputed",
       ],
       default: "pending",
-      index: true,
     },
 
     paymentStatus: {
       type: String,
       enum: ["unpaid", "pending", "paid"],
       default: "unpaid",
-      index: true,
     },
 
     message: {
@@ -235,7 +229,6 @@ const dealSchema = new Schema<IDeal>(
     expiresAt: {
       type: Date,
       default: null,
-      index: true,
     },
 
     acceptedAt: {
@@ -272,7 +265,6 @@ const dealSchema = new Schema<IDeal>(
     isFrozen: {
       type: Boolean,
       default: false,
-      index: true,
     },
 
     frozenAt: {
@@ -300,7 +292,6 @@ const dealSchema = new Schema<IDeal>(
       type: String,
       enum: ["NONE", "UNDER_REVIEW", "RESOLVED"],
       default: "NONE",
-      index: true,
     },
 
     internalNotes: {
@@ -327,7 +318,6 @@ const dealSchema = new Schema<IDeal>(
     isDeleted: {
       type: Boolean,
       default: false,
-      index: true,
     },
 
     deletedAt: {
@@ -378,6 +368,7 @@ const dealSchema = new Schema<IDeal>(
 dealSchema.index({ organizerId: 1, status: 1, updatedAt: -1 });
 dealSchema.index({ sponsorId: 1, status: 1, updatedAt: -1 });
 dealSchema.index({ eventId: 1, status: 1 });
+dealSchema.index({ expiresAt: 1 });
 dealSchema.index({ createdAt: -1 });
 dealSchema.index({ updatedAt: -1 });
 dealSchema.index({ isFrozen: 1, adminReviewStatus: 1, isDeleted: 1 });
@@ -427,6 +418,10 @@ dealSchema.pre("validate", function (next) {
     ].slice(0, MAX_DELIVERABLES);
   }
 
+if (this.finalAmount !== null && this.finalAmount > this.proposedAmount) {
+  return next(new Error("Final amount cannot exceed proposed amount"));
+}
+
   next();
 });
 
@@ -453,6 +448,22 @@ dealSchema.pre("save", function (next) {
   if (this.status !== "disputed" && this.disputeReason) {
     this.disputeReason = "";
   }
+
+  if (this.status === "accepted" && !this.acceptedAt) {
+  this.acceptedAt = new Date();
+}
+
+if (this.status === "rejected" && !this.rejectedAt) {
+  this.rejectedAt = new Date();
+}
+
+if (this.status === "completed" && !this.completedAt) {
+  this.completedAt = new Date();
+}
+
+if (this.status === "cancelled" && !this.cancelledAt) {
+  this.cancelledAt = new Date();
+}
 
   if (
     this.contactReveal?.organizerRevealed &&

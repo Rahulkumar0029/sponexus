@@ -17,6 +17,7 @@ export interface IPlan extends Document {
   durationInDays: number;
   extraDays?: number;
 
+  // Existing fields — do not remove yet
   postingLimitPerDay: number | null;
   dealRequestLimitPerDay: number | null;
 
@@ -27,6 +28,32 @@ export interface IPlan extends Document {
 
   budgetMin?: number | null;
   budgetMax?: number | null;
+
+  // New company-grade dynamic plan control
+  features?: {
+    canPublishEvent?: boolean;
+    canPublishSponsorship?: boolean;
+    canUseMatch?: boolean;
+    canRevealContact?: boolean;
+    canSendDealRequest?: boolean;
+  };
+
+  limits?: {
+    eventPostsPerDay?: number | null;
+    sponsorshipPostsPerDay?: number | null;
+    dealRequestsPerDay?: number | null;
+    contactRevealsPerDay?: number | null;
+    matchUsesPerDay?: number | null;
+
+    eventPostsPerMonth?: number | null;
+    sponsorshipPostsPerMonth?: number | null;
+    dealRequestsPerMonth?: number | null;
+    contactRevealsPerMonth?: number | null;
+matchUsesPerMonth?: number | null;
+
+    maxPostBudgetAmount?: number | null;
+    maxVisibleBudgetAmount?: number | null;
+  };
 
   isActive: boolean;
   isArchived: boolean;
@@ -46,15 +73,82 @@ export interface IPlan extends Document {
   updatedAt: Date;
 }
 
+const planFeaturesSchema = new Schema(
+  {
+    canPublishEvent: { type: Boolean, default: true },
+    canPublishSponsorship: { type: Boolean, default: true },
+    canUseMatch: { type: Boolean, default: true },
+    canRevealContact: { type: Boolean, default: true },
+    canSendDealRequest: { type: Boolean, default: true },
+  },
+  { _id: false }
+);
+
+const planLimitsSchema = new Schema(
+  {
+    eventPostsPerDay: { type: Number, default: null, min: 0 },
+    sponsorshipPostsPerDay: { type: Number, default: null, min: 0 },
+    dealRequestsPerDay: { type: Number, default: null, min: 0 },
+    contactRevealsPerDay: { type: Number, default: null, min: 0 },
+matchUsesPerDay: { type: Number, default: null, min: 0 },
+
+    eventPostsPerMonth: { type: Number, default: null, min: 0 },
+    sponsorshipPostsPerMonth: { type: Number, default: null, min: 0 },
+    dealRequestsPerMonth: { type: Number, default: null, min: 0 },
+    contactRevealsPerMonth: { type: Number, default: null, min: 0 },
+matchUsesPerMonth: { type: Number, default: null, min: 0 },
+
+    maxPostBudgetAmount: { type: Number, default: null, min: 0 },
+    maxVisibleBudgetAmount: { type: Number, default: null, min: 0 },
+  },
+  { _id: false }
+);
+
+const MAX_CODE_LENGTH = 80;
+const MAX_NAME_LENGTH = 120;
+const MAX_DESCRIPTION_LENGTH = 1000;
+const MAX_PRICE = 100000000;
+const MAX_DURATION_DAYS = 3650;
+
 const planSchema = new Schema<IPlan>(
   {
-    code: {
-      type: String,
-      required: true,
-      unique: true,
-      trim: true,
-      uppercase: true,
-    },
+   
+code: {
+  type: String,
+  required: true,
+  unique: true,
+  trim: true,
+  uppercase: true,
+  maxlength: MAX_CODE_LENGTH,
+},
+
+name: {
+  type: String,
+  required: true,
+  trim: true,
+  maxlength: MAX_NAME_LENGTH,
+},
+
+description: {
+  type: String,
+  default: "",
+  trim: true,
+  maxlength: MAX_DESCRIPTION_LENGTH,
+},
+
+price: {
+  type: Number,
+  required: true,
+  min: 0,
+  max: MAX_PRICE,
+},
+
+durationInDays: {
+  type: Number,
+  required: true,
+  min: 1,
+  max: MAX_DURATION_DAYS,
+},
 
     role: {
       type: String,
@@ -63,24 +157,10 @@ const planSchema = new Schema<IPlan>(
       index: true,
     },
 
-    name: {
-      type: String,
-      required: true,
-      trim: true,
-    },
+ 
 
-    description: {
-      type: String,
-      default: "",
-      trim: true,
-    },
 
-    price: {
-      type: Number,
-      required: true,
-      min: 0,
-    },
-
+    
     currency: {
       type: String,
       enum: ["INR"],
@@ -93,11 +173,6 @@ const planSchema = new Schema<IPlan>(
       default: "CUSTOM",
     },
 
-    durationInDays: {
-      type: Number,
-      required: true,
-      min: 1,
-    },
 
     extraDays: {
       type: Number,
@@ -147,6 +222,16 @@ const planSchema = new Schema<IPlan>(
       type: Number,
       default: null,
       min: 0,
+    },
+
+    features: {
+      type: planFeaturesSchema,
+      default: () => ({}),
+    },
+
+    limits: {
+      type: planLimitsSchema,
+      default: () => ({}),
     },
 
     isActive: {
@@ -222,10 +307,26 @@ planSchema.pre("validate", function (next) {
     return next(new Error("budgetMin cannot be greater than budgetMax"));
   }
 
+  const maxPostBudgetAmount = this.limits?.maxPostBudgetAmount;
+  const maxVisibleBudgetAmount = this.limits?.maxVisibleBudgetAmount;
+
+  if (
+    maxPostBudgetAmount != null &&
+    maxVisibleBudgetAmount != null &&
+    maxPostBudgetAmount > maxVisibleBudgetAmount
+  ) {
+    return next(
+      new Error("maxPostBudgetAmount cannot be greater than maxVisibleBudgetAmount")
+    );
+  }
+
+  if (Array.isArray(this.visibleToRoles) && this.visibleToRoles.length === 0) {
+  this.visibleToRoles = ["BOTH"];
+}
+
   next();
 });
 
-planSchema.index({ code: 1 });
 planSchema.index({ role: 1, isActive: 1 });
 planSchema.index({ isActive: 1, isArchived: 1, sortOrder: 1 });
 planSchema.index({ visibleToRoles: 1, isVisible: 1 });

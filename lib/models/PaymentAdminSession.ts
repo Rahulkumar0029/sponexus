@@ -10,7 +10,6 @@ export type PaymentAdminSessionStatus =
 export interface IPaymentAdminSession extends Document {
   adminId: Types.ObjectId;
   email: string;
-
   status: PaymentAdminSessionStatus;
   isActive: boolean;
 
@@ -49,7 +48,6 @@ const paymentAdminSessionSchema = new Schema<IPaymentAdminSession>(
       type: Schema.Types.ObjectId,
       ref: "User",
       required: [true, "Admin user is required"],
-      index: true,
     },
 
     email: {
@@ -58,7 +56,6 @@ const paymentAdminSessionSchema = new Schema<IPaymentAdminSession>(
       trim: true,
       lowercase: true,
       maxlength: MAX_EMAIL_LENGTH,
-      index: true,
     },
 
     status: {
@@ -66,14 +63,12 @@ const paymentAdminSessionSchema = new Schema<IPaymentAdminSession>(
       enum: ["OTP_PENDING", "VERIFIED", "EXPIRED", "REVOKED", "LOCKED"],
       default: "OTP_PENDING",
       required: true,
-      index: true,
     },
 
     isActive: {
       type: Boolean,
       required: true,
       default: true,
-      index: true,
     },
 
     otpHash: {
@@ -86,13 +81,11 @@ const paymentAdminSessionSchema = new Schema<IPaymentAdminSession>(
     otpRequestedAt: {
       type: Date,
       default: null,
-      index: true,
     },
 
     otpExpiresAt: {
       type: Date,
       default: null,
-      index: true,
     },
 
     otpRequestCount: {
@@ -116,19 +109,16 @@ const paymentAdminSessionSchema = new Schema<IPaymentAdminSession>(
     verifiedAt: {
       type: Date,
       default: null,
-      index: true,
     },
 
     sessionExpiresAt: {
       type: Date,
       default: null,
-      index: true,
     },
 
     lastUsedAt: {
       type: Date,
       default: null,
-      index: true,
     },
 
     ipAddress: {
@@ -201,6 +191,7 @@ paymentAdminSessionSchema.pre("validate", function (next) {
     if (!this.otpExpiresAt) {
       return next(new Error("OTP pending sessions must have otpExpiresAt"));
     }
+
     this.verifiedAt = null;
     this.sessionExpiresAt = null;
     this.revokedAt = null;
@@ -212,6 +203,7 @@ paymentAdminSessionSchema.pre("validate", function (next) {
     if (!this.sessionExpiresAt) {
       return next(new Error("Verified sessions must have sessionExpiresAt"));
     }
+
     this.otpHash = this.otpHash ?? null;
     this.otpExpiresAt = null;
     this.revokedAt = null;
@@ -226,6 +218,7 @@ paymentAdminSessionSchema.pre("validate", function (next) {
         new Error("Locked sessions must have otpAttemptCount >= maxOtpAttempts")
       );
     }
+
     this.isActive = false;
     this.sessionExpiresAt = null;
   }
@@ -245,11 +238,16 @@ paymentAdminSessionSchema.pre("validate", function (next) {
   next();
 });
 
+/* ===============================
+   INDEXES
+=================================*/
 paymentAdminSessionSchema.index({ adminId: 1, status: 1, createdAt: -1 });
 paymentAdminSessionSchema.index({ adminId: 1, isActive: 1, createdAt: -1 });
 paymentAdminSessionSchema.index({ email: 1, status: 1, createdAt: -1 });
+
 paymentAdminSessionSchema.index({ sessionExpiresAt: 1, status: 1 });
 paymentAdminSessionSchema.index({ otpExpiresAt: 1, status: 1 });
+paymentAdminSessionSchema.index({ otpRequestedAt: -1 });
 paymentAdminSessionSchema.index({ verifiedAt: 1, status: 1 });
 paymentAdminSessionSchema.index({ lastUsedAt: 1 });
 

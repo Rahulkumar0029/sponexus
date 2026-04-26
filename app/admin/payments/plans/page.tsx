@@ -17,14 +17,40 @@ type Plan = {
   isVisible: boolean;
   isArchived?: boolean;
   createdAt?: string | null;
-};
 
+  features?: {
+    canPublishEvent?: boolean;
+    canPublishSponsorship?: boolean;
+    canUseMatch?: boolean;
+    canRevealContact?: boolean;
+    canSendDealRequest?: boolean;
+  };
+
+  limits?: {
+    eventPostsPerDay?: number | null;
+    sponsorshipPostsPerDay?: number | null;
+    dealRequestsPerDay?: number | null;
+    contactRevealsPerDay?: number | null;
+    matchUsesPerDay?: number | null;
+    eventPostsPerMonth?: number | null;
+    sponsorshipPostsPerMonth?: number | null;
+    dealRequestsPerMonth?: number | null;
+    contactRevealsPerMonth?: number | null;
+    matchUsesPerMonth?: number | null;
+    maxPostBudgetAmount?: number | null;
+    maxVisibleBudgetAmount?: number | null;
+  };
+};
 function formatCurrency(amount: number) {
   return new Intl.NumberFormat('en-IN', {
     style: 'currency',
     currency: 'INR',
     maximumFractionDigits: 0,
   }).format(amount || 0);
+}
+
+function formatLimit(value?: number | null) {
+  return value === null || value === undefined ? 'Unlimited' : String(value);
 }
 
 export default function AdminPlansPage() {
@@ -188,6 +214,22 @@ export default function AdminPlansPage() {
                       <p>Duration: {plan.durationInDays} days</p>
                       <p>Extra Days: {plan.extraDays ?? 0}</p>
                     </div>
+
+                    <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.03] p-3 text-xs text-[#94A3B8]">
+  <p className="mb-2 font-semibold text-white">Plan Limits</p>
+  <p>Event/day: {formatLimit(plan.limits?.eventPostsPerDay)}</p>
+  <p>Sponsorship/day: {formatLimit(plan.limits?.sponsorshipPostsPerDay)}</p>
+  <p>Deal requests/day: {formatLimit(plan.limits?.dealRequestsPerDay)}</p>
+  <p>Contact reveals/day: {formatLimit(plan.limits?.contactRevealsPerDay)}</p>
+  <p>Match uses/day: {formatLimit(plan.limits?.matchUsesPerDay)}</p>
+  <p>Match uses/month: {formatLimit(plan.limits?.matchUsesPerMonth)}</p>
+  <p>
+    Max budget:{' '}
+    {plan.limits?.maxPostBudgetAmount == null
+      ? 'Unlimited'
+      : formatCurrency(plan.limits.maxPostBudgetAmount)}
+  </p>
+</div>
 
                     <div className="mt-4 flex flex-wrap gap-2">
                       <span

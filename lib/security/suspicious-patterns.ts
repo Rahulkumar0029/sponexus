@@ -35,11 +35,14 @@ type SuspiciousPatternInput = {
     | "PAYMENT_VERIFY_FAILED"
     | "PAYMENT_INVALID_SIGNATURE"
     | "PAYMENT_DUPLICATE_DETECTED"
+    | "PAYMENT_REPLAY_BLOCKED"
     | "PAYMENT_ORDER_MISMATCH"
     | "PAYMENT_INVALID_AMOUNT"
     | "PAYMENT_MANUAL_REVIEW"
     | "WEBHOOK_INVALID_SIGNATURE"
     | "WEBHOOK_NO_MATCH"
+    | "WEBHOOK_DUPLICATE_PAYMENT_ID"
+    | "WEBHOOK_ORDER_MISMATCH"
     | "COUPON_ABUSE"
     | "SUBSCRIPTION_ABUSE"
     | "ADMIN_PAYMENT_ACCESS_DENIED"
@@ -111,7 +114,7 @@ function getUserAgent(request?: NextRequest | null) {
 }
 
 /* ===============================
-   🔐 STRONG FINGERPRINT
+   STRONG FINGERPRINT
 =================================*/
 function buildFingerprint({
   ip,
@@ -131,7 +134,7 @@ function buildFingerprint({
 }
 
 /* ===============================
-   🚫 RATE LIMIT LOGGING
+   RATE LIMIT LOGGING
 =================================*/
 const RATE_LIMIT_MS = 5000;
 
@@ -188,7 +191,7 @@ export async function detectAndRecordSuspiciousPattern(
   });
 
   /* ===============================
-     🚨 REPEAT OFFENDER DETECTION
+     REPEAT OFFENDER DETECTION
   =================================*/
   let repeatOffender = false;
 
@@ -204,7 +207,7 @@ export async function detectAndRecordSuspiciousPattern(
   }
 
   /* ===============================
-     🔥 HARD BLOCK ESCALATION
+     HARD BLOCK ESCALATION
   =================================*/
   let hardBlock = shouldHardBlockFraud(assessment);
 
@@ -227,7 +230,7 @@ export async function detectAndRecordSuspiciousPattern(
     : assessment.severity;
 
   /* ===============================
-     📝 SECURITY EVENT (RATE LIMITED)
+     SECURITY EVENT
   =================================*/
   let securityEvent = null;
 
@@ -262,7 +265,7 @@ export async function detectAndRecordSuspiciousPattern(
   }
 
   /* ===============================
-     🚩 FRAUD FLAG (NO DUPLICATES)
+     FRAUD FLAG
   =================================*/
   let fraudFlagId: string | null = null;
 

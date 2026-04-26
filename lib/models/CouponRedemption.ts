@@ -49,14 +49,12 @@ const couponRedemptionSchema = new Schema<ICouponRedemption>(
       type: Schema.Types.ObjectId,
       ref: "Coupon",
       required: true,
-      index: true,
     },
 
     paymentTransactionId: {
       type: Schema.Types.ObjectId,
       ref: "PaymentTransaction",
       required: true,
-      index: true,
       unique: true, // 🔥 VERY IMPORTANT: 1 payment = 1 redemption
     },
 
@@ -64,14 +62,12 @@ const couponRedemptionSchema = new Schema<ICouponRedemption>(
       type: Schema.Types.ObjectId,
       ref: "User",
       required: true,
-      index: true,
     },
 
     planId: {
       type: Schema.Types.ObjectId,
       ref: "Plan",
       required: true,
-      index: true,
     },
 
     codeSnapshot: {
@@ -80,14 +76,12 @@ const couponRedemptionSchema = new Schema<ICouponRedemption>(
       trim: true,
       uppercase: true,
       maxlength: MAX_CODE_LENGTH,
-      index: true,
     },
 
     role: {
       type: String,
       enum: ["ORGANIZER", "SPONSOR"],
       required: true,
-      index: true,
     },
 
     discountType: {
@@ -128,31 +122,26 @@ const couponRedemptionSchema = new Schema<ICouponRedemption>(
       type: String,
       enum: ["RESERVED", "COMPLETED", "FAILED", "RELEASED"],
       default: "RESERVED",
-      index: true,
     },
 
     reservedAt: {
       type: Date,
       default: Date.now,
-      index: true,
     },
 
     completedAt: {
       type: Date,
       default: null,
-      index: true,
     },
 
     releasedAt: {
       type: Date,
       default: null,
-      index: true,
     },
 
     failedAt: {
       type: Date,
       default: null,
-      index: true,
     },
 
     failureReason: {

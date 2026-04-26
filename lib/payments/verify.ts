@@ -14,6 +14,54 @@ function addDays(baseDate: Date, days: number) {
   return date;
 }
 
+function isValidSubscriptionRole(role: unknown): role is "ORGANIZER" | "SPONSOR" {
+  return role === "ORGANIZER" || role === "SPONSOR";
+}
+
+function isValidPlanRole(role: unknown): role is "ORGANIZER" | "SPONSOR" | "BOTH" {
+  return role === "ORGANIZER" || role === "SPONSOR" || role === "BOTH";
+}
+
+function isPlanAllowedForRole(
+  planRole: "ORGANIZER" | "SPONSOR" | "BOTH",
+  userRole: "ORGANIZER" | "SPONSOR"
+) {
+  return planRole === "BOTH" || planRole === userRole;
+}
+
+async function movePaymentToManualReview(params: {
+  payment: any;
+  failureCode: string;
+  failureReason: string;
+  notes: string;
+  webhookConfirmed?: boolean;
+}) {
+  const {
+    payment,
+    failureCode,
+    failureReason,
+    notes,
+    webhookConfirmed = false,
+  } = params;
+
+  const now = new Date();
+
+  payment.status = PAYMENT_STATUS.MANUAL_REVIEW;
+  payment.fraudFlagged = true;
+  payment.failureCode = failureCode;
+  payment.failureReason = failureReason;
+  payment.notes = notes;
+  payment.processedAt = payment.processedAt || now;
+
+  if (webhookConfirmed) {
+    payment.isWebhookConfirmed = true;
+    payment.webhookReceivedAt = payment.webhookReceivedAt || now;
+    payment.webhookConfirmedAt = payment.webhookConfirmedAt || now;
+  }
+
+  await payment.save();
+}
+
 export async function markPaymentFailed(params: {
   payment: any;
   status?: "FAILED" | "FLAGGED" | "MANUAL_REVIEW";
@@ -59,7 +107,7 @@ export async function markPaymentFailed(params: {
   if (razorpayPaymentId) payment.gatewayPaymentId = razorpayPaymentId;
   if (razorpaySignature) payment.gatewaySignature = razorpaySignature;
 
-  if (status === PAYMENT_STATUS.FLAGGED) {
+  if (status === PAYMENT_STATUS.FLAGGED || status === PAYMENT_STATUS.MANUAL_REVIEW) {
     payment.fraudFlagged = true;
   }
 
@@ -91,9 +139,7 @@ export async function finalizeSuccessfulPayment(params: {
   const now = new Date();
 
   if (payment.status === PAYMENT_STATUS.SUCCESS && payment.subscriptionId) {
-    const existingSubscription = await Subscription.findById(
-      payment.subscriptionId
-    );
+    const existingSubscription = await Subscription.findById(payment.subscriptionId);
 
     if (webhookConfirmed) {
       payment.isWebhookConfirmed = true;
@@ -113,6 +159,19 @@ export async function finalizeSuccessfulPayment(params: {
     };
   }
 
+  if (payment.status === PAYMENT_STATUS.SUCCESS && !payment.subscriptionId) {
+    await movePaymentToManualReview({
+      payment,
+      failureCode: "SUCCESS_WITHOUT_SUBSCRIPTION",
+      failureReason:
+        "Payment is marked success but no subscription is linked.",
+      notes: "Manual review required: successful payment has no subscriptionId.",
+      webhookConfirmed,
+    });
+
+    throw new Error("Successful payment is missing subscription link.");
+  }
+
   if (
     [
       PAYMENT_STATUS.FAILED,
@@ -120,6 +179,7 @@ export async function finalizeSuccessfulPayment(params: {
       PAYMENT_STATUS.CANCELLED,
       PAYMENT_STATUS.EXPIRED,
       PAYMENT_STATUS.FLAGGED,
+      PAYMENT_STATUS.MANUAL_REVIEW,
     ].includes(payment.status)
   ) {
     throw new Error(`Cannot finalize payment in ${payment.status} state.`);
@@ -133,25 +193,44 @@ export async function finalizeSuccessfulPayment(params: {
     throw new Error("Invalid payment amount during finalization.");
   }
 
+  if (!isValidSubscriptionRole(payment.role)) {
+    await movePaymentToManualReview({
+      payment,
+      failureCode: "INVALID_PAYMENT_ROLE",
+      failureReason: "Payment role is invalid during finalization.",
+      notes: "Manual review required: invalid payment role.",
+      webhookConfirmed,
+    });
+
+    throw new Error("Invalid payment role during finalization.");
+  }
+
   const snapshot = payment.planSnapshot;
 
   if (!snapshot) {
-    payment.status = PAYMENT_STATUS.MANUAL_REVIEW;
-    payment.fraudFlagged = true;
-    payment.failureCode = "MISSING_PLAN_SNAPSHOT";
-    payment.failureReason =
-      "Payment finalization blocked because plan snapshot is missing.";
-    payment.notes = "Moved to manual review because plan snapshot is missing.";
-    payment.processedAt = payment.processedAt || now;
+    await movePaymentToManualReview({
+      payment,
+      failureCode: "MISSING_PLAN_SNAPSHOT",
+      failureReason:
+        "Payment finalization blocked because plan snapshot is missing.",
+      notes: "Moved to manual review because plan snapshot is missing.",
+      webhookConfirmed,
+    });
 
-    if (webhookConfirmed) {
-      payment.isWebhookConfirmed = true;
-      payment.webhookReceivedAt = payment.webhookReceivedAt || now;
-      payment.webhookConfirmedAt = payment.webhookConfirmedAt || now;
-    }
-
-    await payment.save();
     throw new Error("Plan snapshot missing during payment finalization.");
+  }
+
+  if (!isValidPlanRole(snapshot.role) || !isPlanAllowedForRole(snapshot.role, payment.role)) {
+    await movePaymentToManualReview({
+      payment,
+      failureCode: "PLAN_ROLE_MISMATCH",
+      failureReason:
+        "Plan snapshot role does not match payment role during finalization.",
+      notes: "Manual review required: plan role mismatch.",
+      webhookConfirmed,
+    });
+
+    throw new Error("Plan role mismatch during payment finalization.");
   }
 
   const baseDurationInDays = Number(snapshot.durationInDays || 0);
@@ -159,13 +238,13 @@ export async function finalizeSuccessfulPayment(params: {
   const totalDays = baseDurationInDays + extraDaysApplied;
 
   if (!Number.isFinite(totalDays) || totalDays < 1) {
-    payment.status = PAYMENT_STATUS.MANUAL_REVIEW;
-    payment.fraudFlagged = true;
-    payment.failureCode = "INVALID_PLAN_DURATION";
-    payment.failureReason = "Plan duration is invalid during finalization.";
-    payment.notes = "Moved to manual review because plan duration is invalid.";
-    payment.processedAt = payment.processedAt || now;
-    await payment.save();
+    await movePaymentToManualReview({
+      payment,
+      failureCode: "INVALID_PLAN_DURATION",
+      failureReason: "Plan duration is invalid during finalization.",
+      notes: "Moved to manual review because plan duration is invalid.",
+      webhookConfirmed,
+    });
 
     throw new Error("Invalid plan duration during payment finalization.");
   }
@@ -181,27 +260,27 @@ export async function finalizeSuccessfulPayment(params: {
       : null;
 
     if (!existingSubscription) {
-      payment.status = PAYMENT_STATUS.MANUAL_REVIEW;
-      payment.fraudFlagged = true;
-      payment.failureCode = "RENEWAL_SUBSCRIPTION_NOT_FOUND";
-      payment.failureReason =
-        "Renewal subscription not found during finalization.";
-      payment.notes = "Manual review: renewal subscription missing.";
-      payment.processedAt = payment.processedAt || now;
+      await movePaymentToManualReview({
+        payment,
+        failureCode: "RENEWAL_SUBSCRIPTION_NOT_FOUND",
+        failureReason:
+          "Renewal subscription not found during finalization.",
+        notes: "Manual review: renewal subscription missing.",
+        webhookConfirmed,
+      });
 
-      await payment.save();
       throw new Error("Renewal subscription not found.");
     }
 
     const renewalBaseDate =
-      existingSubscription.endDate &&
-      new Date(existingSubscription.endDate) > now
+      existingSubscription.endDate && new Date(existingSubscription.endDate) > now
         ? new Date(existingSubscription.endDate)
         : now;
 
     existingSubscription.planId = payment.planId;
     existingSubscription.planSnapshot = snapshot;
     existingSubscription.status = SUBSCRIPTION_STATUS.ACTIVE;
+    existingSubscription.isActive = true;
     existingSubscription.startDate = now;
     existingSubscription.endDate = addDays(renewalBaseDate, totalDays);
     existingSubscription.graceEndDate = null;
@@ -221,24 +300,32 @@ export async function finalizeSuccessfulPayment(params: {
 
     subscription = await existingSubscription.save();
   } else {
-    subscription = await Subscription.create({
-      userId: payment.userId,
-      role: payment.role,
-      planId: payment.planId,
-      planSnapshot: snapshot,
-      status: SUBSCRIPTION_STATUS.ACTIVE,
-      startDate: now,
-      endDate: addDays(now, totalDays),
-      activatedAt: now,
-      autoRenew: false,
-      renewalCount: 0,
-      source: SUBSCRIPTION_SOURCE.GATEWAY,
-      baseDurationInDays,
-      extraDaysApplied,
-      lastPaymentId: payment._id,
-      couponCodeUsed: payment.couponCode || null,
-      couponDiscountAmount: payment.couponDiscountAmount ?? null,
-    });
+    if (payment.subscriptionId) {
+      subscription = await Subscription.findById(payment.subscriptionId);
+    }
+
+    if (!subscription) {
+      subscription = await Subscription.create({
+        userId: payment.userId,
+        role: payment.role,
+        planId: payment.planId,
+        planSnapshot: snapshot,
+        status: SUBSCRIPTION_STATUS.ACTIVE,
+        isActive: true,
+        startDate: now,
+        endDate: addDays(now, totalDays),
+        graceEndDate: null,
+        activatedAt: now,
+        autoRenew: false,
+        renewalCount: 0,
+        source: SUBSCRIPTION_SOURCE.GATEWAY,
+        baseDurationInDays,
+        extraDaysApplied,
+        lastPaymentId: payment._id,
+        couponCodeUsed: payment.couponCode || null,
+        couponDiscountAmount: payment.couponDiscountAmount ?? null,
+      });
+    }
   }
 
   payment.subscriptionId = subscription._id;

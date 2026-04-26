@@ -77,16 +77,15 @@ const userSchema = new Schema<IUser>(
       maxlength: 150,
     },
 
-    email: {
-      type: String,
-      required: [true, "Email is required"],
-      unique: true,
-      lowercase: true,
-      trim: true,
-      maxlength: 320,
-      match: [/^[^\s@]+@[^\s@]+\.[^\s@]+$/, "Invalid email"],
-      index: true,
-    },
+  email: {
+  type: String,
+  required: [true, "Email is required"],
+  unique: true,
+  lowercase: true,
+  trim: true,
+  maxlength: 320,
+  match: [/^[^\s@]+@[^\s@]+\.[^\s@]+$/, "Invalid email"],
+},
 
     password: {
       type: String,

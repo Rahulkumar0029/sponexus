@@ -48,6 +48,9 @@ function sanitizePlan(plan: any) {
     budgetMin: plan.budgetMin ?? null,
     budgetMax: plan.budgetMax ?? null,
 
+features: plan.features ?? {},
+limits: plan.limits ?? {},
+
     isActive: Boolean(plan.isActive),
     isArchived: Boolean(plan.isArchived),
     isVisible: Boolean(plan.isVisible),
@@ -220,6 +223,59 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    const features = {
+  canPublishEvent: body.features?.canPublishEvent !== false,
+  canPublishSponsorship: body.features?.canPublishSponsorship !== false,
+  canUseMatch: body.features?.canUseMatch !== false,
+  canRevealContact: body.features?.canRevealContact !== false,
+  canSendDealRequest: body.features?.canSendDealRequest !== false,
+};
+
+const limits = {
+  eventPostsPerDay: normalizeNullableNumber(body.limits?.eventPostsPerDay),
+  sponsorshipPostsPerDay: normalizeNullableNumber(
+    body.limits?.sponsorshipPostsPerDay
+  ),
+  dealRequestsPerDay: normalizeNullableNumber(body.limits?.dealRequestsPerDay),
+  contactRevealsPerDay: normalizeNullableNumber(
+    body.limits?.contactRevealsPerDay
+  ),
+
+  matchUsesPerDay: normalizeNullableNumber(body.limits?.matchUsesPerDay),
+
+  eventPostsPerMonth: normalizeNullableNumber(body.limits?.eventPostsPerMonth),
+  sponsorshipPostsPerMonth: normalizeNullableNumber(
+    body.limits?.sponsorshipPostsPerMonth
+  ),
+  dealRequestsPerMonth: normalizeNullableNumber(
+    body.limits?.dealRequestsPerMonth
+  ),
+  contactRevealsPerMonth: normalizeNullableNumber(
+    body.limits?.contactRevealsPerMonth
+  ),
+
+matchUsesPerMonth: normalizeNullableNumber(body.limits?.matchUsesPerMonth),
+
+  maxPostBudgetAmount: normalizeNullableNumber(body.limits?.maxPostBudgetAmount),
+  maxVisibleBudgetAmount: normalizeNullableNumber(
+    body.limits?.maxVisibleBudgetAmount
+  ),
+};
+
+if (
+  limits.maxPostBudgetAmount !== null &&
+  limits.maxVisibleBudgetAmount !== null &&
+  limits.maxPostBudgetAmount > limits.maxVisibleBudgetAmount
+) {
+  return buildNoStoreResponse(
+    {
+      success: false,
+      message: "maxPostBudgetAmount cannot exceed maxVisibleBudgetAmount.",
+    },
+    400
+  );
+}
+
     const plan = await Plan.create({
       code,
       role,
@@ -245,6 +301,8 @@ export async function POST(request: NextRequest) {
 
       budgetMin,
       budgetMax,
+      features,
+limits,
 
       isActive: body.isActive !== false,
       isArchived: false,

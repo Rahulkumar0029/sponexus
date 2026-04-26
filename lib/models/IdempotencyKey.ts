@@ -1,7 +1,8 @@
 import mongoose, { Schema, model, models } from "mongoose";
 
-const MAX_KEY_LENGTH = 120;
+const MAX_KEY_LENGTH = 200;
 const MAX_ENDPOINT_LENGTH = 100;
+const MAX_REQUEST_HASH_LENGTH = 128;
 
 const IdempotencyKeySchema = new Schema(
   {
@@ -10,13 +11,11 @@ const IdempotencyKeySchema = new Schema(
       required: true,
       trim: true,
       maxlength: MAX_KEY_LENGTH,
-      index: true,
     },
 
     userId: {
       type: mongoose.Schema.Types.ObjectId,
       required: true,
-      index: true,
     },
 
     endpoint: {
@@ -24,13 +23,13 @@ const IdempotencyKeySchema = new Schema(
       required: true,
       trim: true,
       maxlength: MAX_ENDPOINT_LENGTH,
-      index: true,
     },
 
     requestHash: {
       type: String,
       required: true,
-      index: true,
+      trim: true,
+      maxlength: MAX_REQUEST_HASH_LENGTH,
     },
 
     response: {
@@ -41,18 +40,18 @@ const IdempotencyKeySchema = new Schema(
     statusCode: {
       type: Number,
       default: null,
+      min: 100,
+      max: 599,
     },
 
     locked: {
       type: Boolean,
       default: false,
-      index: true,
     },
 
     expiresAt: {
       type: Date,
       required: true,
-      index: true, // TTL index below
     },
   },
   {
@@ -60,28 +59,16 @@ const IdempotencyKeySchema = new Schema(
   }
 );
 
-/* ===============================
-   TTL INDEX (AUTO CLEANUP)
-=================================*/
-IdempotencyKeySchema.index(
-  { expiresAt: 1 },
-  { expireAfterSeconds: 0 }
-);
+IdempotencyKeySchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 });
 
-/* ===============================
-   CRITICAL UNIQUE CONSTRAINT
-=================================*/
-// SAME key + user + endpoint = unique
 IdempotencyKeySchema.index(
   { key: 1, userId: 1, endpoint: 1 },
   { unique: true }
 );
 
-/* ===============================
-   PERFORMANCE INDEXES
-=================================*/
-IdempotencyKeySchema.index({ userId: 1, createdAt: -1 });
-IdempotencyKeySchema.index({ endpoint: 1, createdAt: -1 });
+IdempotencyKeySchema.index({ userId: 1, endpoint: 1, createdAt: -1 });
+IdempotencyKeySchema.index({ endpoint: 1, locked: 1, updatedAt: 1 });
+IdempotencyKeySchema.index({ requestHash: 1, createdAt: -1 });
 
 export default models.IdempotencyKey ||
   model("IdempotencyKey", IdempotencyKeySchema);

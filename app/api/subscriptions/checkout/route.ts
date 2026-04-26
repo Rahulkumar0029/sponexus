@@ -17,12 +17,12 @@ import { isAdminBypass } from "@/lib/subscription/isAdminBypass";
 import {
   buildCheckoutAttemptId,
   buildReceipt,
-  buildPlanSnapshot,
   isPlanAllowedForRole,
   sanitizePlan,
   sanitizePayment,
   sanitizeSubscription,
 } from "@/lib/payments/helpers";
+import { buildPlanSnapshot } from "@/lib/payments/plan-snapshot";
 import {
   reserveCouponRedemption,
   releaseCouponRedemption,
@@ -30,6 +30,8 @@ import {
 } from "@/lib/payments/coupon";
 import { safeLogAudit } from "@/lib/audit/log";
 import { createRazorpayOrder } from "@/lib/payments/razorpay";
+import { rateLimit, buildRateLimitKey } from "@/lib/security/rate-limit";
+import { detectAndRecordSuspiciousPattern } from "@/lib/security/suspicious-patterns";
 
 export const runtime = "nodejs";
 
@@ -63,6 +65,33 @@ export async function POST(request: NextRequest) {
       return buildNoStoreResponse(
         { success: false, message: "Invalid or expired session." },
         401
+      );
+    }
+
+    const rl = await rateLimit({
+      key: buildRateLimitKey({
+        request,
+        userId: decoded.userId,
+        route: "subscription-checkout",
+      }),
+      limit: 10,
+      windowMs: 60 * 1000,
+    });
+
+    if (!rl.allowed) {
+      await detectAndRecordSuspiciousPattern({
+        request,
+        userId: decoded.userId,
+        title: "Checkout spam detected",
+        reason: "Too many checkout attempts in a short time.",
+        securityEventType: "PAYMENT_CREATE_ORDER_ABUSE",
+        entityType: "PAYMENT",
+        recentCreateOrderCount: 10,
+      });
+
+      return buildNoStoreResponse(
+        { success: false, message: "Too many checkout attempts. Try later." },
+        429
       );
     }
 
@@ -155,7 +184,7 @@ export async function POST(request: NextRequest) {
       isArchived: false,
       isVisible: true,
     }).select(
-      "_id code name role price currency interval durationInDays extraDays postingLimitPerDay dealRequestLimitPerDay canPublish canContact canUseMatch canRevealContact budgetMin budgetMax isActive isArchived isVisible visibleToRoles visibleToLoggedOut sortOrder metadata"
+      "_id code name role price currency interval durationInDays extraDays postingLimitPerDay dealRequestLimitPerDay canPublish canContact canUseMatch canRevealContact budgetMin budgetMax features limits isActive isArchived isVisible visibleToRoles visibleToLoggedOut sortOrder metadata"
     );
 
     if (!plan) {
@@ -206,38 +235,51 @@ export async function POST(request: NextRequest) {
     }).sort({ createdAt: -1 });
 
     if (existingOpenTransaction) {
+      await detectAndRecordSuspiciousPattern({
+        request,
+        userId: user._id,
+        paymentId: existingOpenTransaction._id,
+        title: "Repeated checkout attempt",
+        reason: "User already has an open checkout attempt.",
+        securityEventType: "PAYMENT_CREATE_ORDER_ABUSE",
+        entityType: "PAYMENT",
+        recentCheckoutCount: 2,
+      });
+
       const existingResponse = {
-  success: true,
-  message: "An existing checkout attempt is already pending.",
-  requiresPayment: true,
-  payment: sanitizePayment(existingOpenTransaction),
-  subscription: latestSubscription
-    ? sanitizeSubscription(latestSubscription)
-    : null,
-  plan: sanitizePlan(plan),
-  checkout: {
-    checkoutAttemptId: existingOpenTransaction.checkoutAttemptId,
-    receipt: existingOpenTransaction.receipt,
-    transactionType: existingOpenTransaction.transactionType,
-  },
-  gateway: {
-    provider: "RAZORPAY",
-    keyId:
-      process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID ||
-      process.env.RAZORPAY_KEY_ID ||
-      "",
-    orderCreated: Boolean(existingOpenTransaction.gatewayOrderId),
-    order: existingOpenTransaction.gatewayOrderId
-      ? {
-          id: existingOpenTransaction.gatewayOrderId,
-          amount: Math.round(Number(existingOpenTransaction.amount || 0) * 100),
-          currency: existingOpenTransaction.currency,
-          receipt: existingOpenTransaction.receipt ?? null,
-          status: existingOpenTransaction.gatewayStatus ?? null,
-        }
-      : null,
-  },
-};
+        success: true,
+        message: "An existing checkout attempt is already pending.",
+        requiresPayment: true,
+        payment: sanitizePayment(existingOpenTransaction),
+        subscription: latestSubscription
+          ? sanitizeSubscription(latestSubscription)
+          : null,
+        plan: sanitizePlan(plan),
+        checkout: {
+          checkoutAttemptId: existingOpenTransaction.checkoutAttemptId,
+          receipt: existingOpenTransaction.receipt,
+          transactionType: existingOpenTransaction.transactionType,
+        },
+        gateway: {
+          provider: "RAZORPAY",
+          keyId:
+            process.env.NEXT_PUBLIC_RAZORPAY_KEY_ID ||
+            process.env.RAZORPAY_KEY_ID ||
+            "",
+          orderCreated: Boolean(existingOpenTransaction.gatewayOrderId),
+          order: existingOpenTransaction.gatewayOrderId
+            ? {
+                id: existingOpenTransaction.gatewayOrderId,
+                amount: Math.round(
+                  Number(existingOpenTransaction.amount || 0) * 100
+                ),
+                currency: existingOpenTransaction.currency,
+                receipt: existingOpenTransaction.receipt ?? null,
+                status: existingOpenTransaction.gatewayStatus ?? null,
+              }
+            : null,
+        },
+      };
 
       if (idemRecord) {
         await storeIdempotencyResponse({
@@ -285,6 +327,21 @@ export async function POST(request: NextRequest) {
           },
         });
 
+        await detectAndRecordSuspiciousPattern({
+          request,
+          userId: user._id,
+          title: "Coupon abuse during checkout",
+          reason: validatedCoupon.message || "Invalid coupon used.",
+          securityEventType: "COUPON_ABUSE",
+          entityType: "COUPON",
+          recentFailureCount: 1,
+          couponAbusePattern: true,
+          metadata: {
+            code: rawCouponCode.toUpperCase(),
+            planId: String(plan._id),
+          },
+        });
+
         return buildNoStoreResponse(
           { success: false, message: validatedCoupon.message },
           400
@@ -297,7 +354,26 @@ export async function POST(request: NextRequest) {
       couponCode = validatedCoupon.coupon.code;
     }
 
-    if (!Number.isFinite(finalAmount) || finalAmount < 0) {
+    if (
+      !Number.isFinite(finalAmount) ||
+      finalAmount < 0 ||
+      finalAmount > amountBeforeDiscount
+    ) {
+      await detectAndRecordSuspiciousPattern({
+        request,
+        userId: user._id,
+        title: "Invalid checkout amount",
+        reason: "Final amount is invalid or greater than original amount.",
+        securityEventType: "PAYMENT_INVALID_AMOUNT",
+        entityType: "PAYMENT",
+        invalidAmount: true,
+        metadata: {
+          amountBeforeDiscount,
+          finalAmount,
+          planId: String(plan._id),
+        },
+      });
+
       return buildNoStoreResponse(
         { success: false, message: "Invalid payment amount." },
         400
@@ -411,6 +487,16 @@ export async function POST(request: NextRequest) {
       payment.notes = "Checkout failed during Razorpay order creation.";
       payment.processedAt = new Date();
       await payment.save();
+
+      await detectAndRecordSuspiciousPattern({
+        request,
+        userId: user._id,
+        paymentId: payment._id,
+        title: "Razorpay order creation failed",
+        reason: "Gateway order creation failed during subscription checkout.",
+        securityEventType: "PAYMENT_VERIFY_FAILED",
+        entityType: "PAYMENT",
+      });
 
       throw razorpayError;
     }

@@ -158,6 +158,41 @@ export async function POST(request: NextRequest) {
       return buildNoStoreResponse({ success: true }, 200);
     }
 
+    // 🔐 DUPLICATE PAYMENT ID PROTECTION (WEBHOOK LEVEL)
+if (gatewayPaymentId) {
+  const duplicate = await PaymentTransaction.findOne({
+    gatewayPaymentId,
+    _id: { $ne: payment._id },
+  }).select("_id");
+
+  if (duplicate) {
+    webhookEvent.processingStatus = "FAILED";
+    webhookEvent.processingError = "Duplicate gateway payment id detected";
+    await webhookEvent.save();
+
+    await markPaymentFailed({
+      payment,
+      status: "FLAGGED",
+      verificationSource: PAYMENT_VERIFICATION_SOURCE.WEBHOOK,
+      failureCode: "WEBHOOK_DUPLICATE_PAYMENT_ID",
+      failureReason:
+        "Duplicate Razorpay payment id detected via webhook.",
+      gatewayStatus: "duplicate_payment_id",
+      razorpayPaymentId: gatewayPaymentId,
+    });
+
+    if (payment.couponCode) {
+      await failCouponRedemption({
+        paymentTransactionId: payment._id,
+        failureReason: "Duplicate payment id detected via webhook.",
+        notes: "Coupon cancelled due to duplicate webhook payment id.",
+      });
+    }
+
+    return buildNoStoreResponse({ success: true }, 200);
+  }
+}
+
     webhookEvent.paymentTransactionId = payment._id;
 
     if (payment.gateway !== "RAZORPAY") {
@@ -168,11 +203,7 @@ export async function POST(request: NextRequest) {
       return buildNoStoreResponse({ success: true }, 200);
     }
 
-    if (
-      gatewayOrderId &&
-      payment.gatewayOrderId &&
-      payment.gatewayOrderId !== gatewayOrderId
-    ) {
+    if (payment.gatewayOrderId !== gatewayOrderId){
       webhookEvent.processingStatus = "FAILED";
       webhookEvent.processingError = "Gateway order mismatch";
       await webhookEvent.save();
@@ -204,9 +235,9 @@ export async function POST(request: NextRequest) {
       payment.webhookReceivedAt = payment.webhookReceivedAt || new Date();
       payment.webhookConfirmedAt = payment.webhookConfirmedAt || new Date();
 
-      if (gatewayPaymentId && !payment.gatewayPaymentId) {
-        payment.gatewayPaymentId = gatewayPaymentId;
-      }
+     if (gatewayPaymentId) {
+  payment.gatewayPaymentId = gatewayPaymentId;
+}
 
       if (typeof paymentEntity?.status === "string") {
         payment.gatewayStatus = paymentEntity.status;

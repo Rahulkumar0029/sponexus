@@ -8,7 +8,10 @@ import Plan from "@/lib/models/Plan";
 import { validateCoupon } from "@/lib/payments/coupon";
 import { safeLogAudit } from "@/lib/audit/log";
 import { detectAndRecordSuspiciousPattern } from "@/lib/security/suspicious-patterns";
-import { rateLimit } from "@/lib/security/rate-limit";
+import {
+  rateLimit,
+  buildRateLimitKey,
+} from "@/lib/security/rate-limit";
 
 function buildNoStoreResponse(
   body: Record<string, unknown>,
@@ -43,8 +46,15 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    /* =========================================
+       🔐 RATE LIMIT (IMPROVED)
+    ========================================= */
     const rl = await rateLimit({
-      key: `coupon-validate:${decoded.userId}`,
+      key: buildRateLimitKey({
+        request,
+        userId: decoded.userId,
+        route: "coupon-validate",
+      }),
       limit: 20,
       windowMs: 60 * 1000,
     });
@@ -113,6 +123,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    /* =========================================
+       🎯 COUPON VALIDATION
+    ========================================= */
     const result = await validateCoupon({
       code: rawCode,
       userId: user._id,
@@ -121,6 +134,9 @@ export async function POST(request: NextRequest) {
       baseAmount: Number(plan.price),
     });
 
+    /* =========================================
+       ❌ INVALID COUPON
+    ========================================= */
     if (!result.valid) {
       await safeLogAudit({
         actorId: user._id,
@@ -144,6 +160,7 @@ export async function POST(request: NextRequest) {
         securityEventType: "COUPON_ABUSE",
         entityType: "COUPON",
         recentFailureCount: 1,
+        couponAbusePattern: true,
         metadata: {
           code: rawCode,
           planId: String(plan._id),
@@ -160,6 +177,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    /* =========================================
+       ✅ SUCCESS LOG
+    ========================================= */
     await safeLogAudit({
       actorId: user._id,
       action: "COUPON_VALIDATED",

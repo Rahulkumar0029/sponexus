@@ -96,7 +96,6 @@ const eventSchema = new mongoose.Schema(
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
       required: [true, "Organizer is required"],
-      index: true,
     },
 
     categories: {
@@ -170,7 +169,6 @@ const eventSchema = new mongoose.Schema(
       type: String,
       enum: ["CONFERENCE", "WORKSHOP", "WEBINAR", "FESTIVAL", "MEETUP", "OTHER"],
       required: [true, "Event type is required"],
-      index: true,
     },
 
     providedDeliverables: {
@@ -222,27 +220,23 @@ const eventSchema = new mongoose.Schema(
       type: String,
       enum: ["DRAFT", "PUBLISHED", "ONGOING", "COMPLETED", "CANCELLED"],
       default: "DRAFT",
-      index: true,
     },
 
     visibilityStatus: {
       type: String,
       enum: ["VISIBLE", "HIDDEN", "UNDER_REVIEW"],
       default: "VISIBLE",
-      index: true,
     },
 
     moderationStatus: {
       type: String,
       enum: ["APPROVED", "FLAGGED", "PENDING_REVIEW"],
       default: "APPROVED",
-      index: true,
     },
 
     isDeleted: {
       type: Boolean,
       default: false,
-      index: true,
     },
 
     deletedAt: {
@@ -288,7 +282,6 @@ const eventSchema = new mongoose.Schema(
       sparse: true,
       trim: true,
       maxlength: 200,
-      index: true,
     },
   },
   {

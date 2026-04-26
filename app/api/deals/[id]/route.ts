@@ -6,7 +6,8 @@ import { connectDB } from "@/lib/db";
 import { verifyAccessToken } from "@/lib/auth";
 import { DealModel } from "@/lib/models/Deal";
 import User from "@/lib/models/User";
-import { checkSubscriptionAccess } from "@/lib/subscription/checkAccess";
+import { checkUsageLimit } from "@/lib/subscription/checkUsageLimit";
+import { incrementUsage } from "@/lib/subscription/incrementUsage";
 import { ACTIONS } from "@/lib/subscription/constants";
 
 const ALLOWED_STATUSES = new Set([
@@ -482,20 +483,24 @@ export async function PATCH(
         );
       }
 
-      const access = await checkSubscriptionAccess({
-        userId: currentUserId,
-        role: roleInDeal,
-        action: ACTIONS.REVEAL_CONTACT,
-      });
+const usage = await checkUsageLimit({
+  userId: currentUserId,
+  role: roleInDeal,
+  action: ACTIONS.REVEAL_CONTACT,
+});
 
-      if (!access.allowed) {
+      if (!usage.allowed) {
         return NextResponse.json(
           {
             success: false,
-            message:
-              access.message ||
-              "Upgrade your subscription to unlock contact details on Sponexus.",
+            message: usage.message,
             requiresUpgrade: true,
+            usage: {
+              dailyLimit: usage.dailyLimit,
+              monthlyLimit: usage.monthlyLimit,
+              dailyUsed: usage.dailyUsed,
+              monthlyUsed: usage.monthlyUsed,
+            },
           },
           { status: 403 }
         );
@@ -553,6 +558,13 @@ export async function PATCH(
         );
       }
 
+     await incrementUsage({
+  userId: currentUserId,
+  role: roleInDeal,
+  action: ACTIONS.REVEAL_CONTACT,
+  subscriptionId: usage.subscriptionId || null,
+  planId: usage.planId || null,
+});
       const updatedDeal = await DealModel.findById(deal._id)
         .populate("organizerId", "_id name email phone companyName")
         .populate("sponsorId", "_id name email phone companyName")

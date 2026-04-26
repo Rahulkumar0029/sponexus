@@ -77,48 +77,41 @@ const fraudFlagSchema = new Schema<IFraudFlag>(
         "ADMIN_SESSION",
         "SYSTEM",
       ],
-      index: true,
     },
 
     entityId: {
       type: Schema.Types.ObjectId,
       default: null,
-      index: true,
     },
 
     userId: {
       type: Schema.Types.ObjectId,
       ref: "User",
       default: null,
-      index: true,
     },
 
     paymentId: {
       type: Schema.Types.ObjectId,
       ref: "PaymentTransaction",
       default: null,
-      index: true,
     },
 
     subscriptionId: {
       type: Schema.Types.ObjectId,
       ref: "Subscription",
       default: null,
-      index: true,
     },
 
     couponId: {
       type: Schema.Types.ObjectId,
       ref: "Coupon",
       default: null,
-      index: true,
     },
 
     securityEventId: {
       type: Schema.Types.ObjectId,
       ref: "SecurityEvent",
       default: null,
-      index: true,
     },
 
     title: {
@@ -155,7 +148,6 @@ const fraudFlagSchema = new Schema<IFraudFlag>(
       required: true,
       enum: ["LOW", "MEDIUM", "HIGH", "CRITICAL"],
       default: "LOW",
-      index: true,
     },
 
     score: {
@@ -163,7 +155,6 @@ const fraudFlagSchema = new Schema<IFraudFlag>(
       required: true,
       min: 0,
       default: 0,
-      index: true,
     },
 
     status: {
@@ -171,7 +162,6 @@ const fraudFlagSchema = new Schema<IFraudFlag>(
       required: true,
       enum: ["OPEN", "UNDER_REVIEW", "CONFIRMED", "FALSE_POSITIVE", "RESOLVED"],
       default: "OPEN",
-      index: true,
     },
 
     ipAddress: {
@@ -179,7 +169,6 @@ const fraudFlagSchema = new Schema<IFraudFlag>(
       default: null,
       trim: true,
       maxlength: MAX_IP_LENGTH,
-      index: true,
     },
 
     fingerprint: {
@@ -187,7 +176,6 @@ const fraudFlagSchema = new Schema<IFraudFlag>(
       default: null,
       trim: true,
       maxlength: MAX_FINGERPRINT_LENGTH,
-      index: true,
     },
 
     metadata: {
@@ -199,7 +187,6 @@ const fraudFlagSchema = new Schema<IFraudFlag>(
       type: Schema.Types.ObjectId,
       ref: "User",
       default: null,
-      index: true,
     },
 
     reviewedBy: {
@@ -217,7 +204,6 @@ const fraudFlagSchema = new Schema<IFraudFlag>(
       type: Schema.Types.ObjectId,
       ref: "User",
       default: null,
-      index: true,
     },
 
     resolutionNotes: {
@@ -233,54 +219,7 @@ const fraudFlagSchema = new Schema<IFraudFlag>(
   }
 );
 
-fraudFlagSchema.pre("validate", function (next) {
-  if (typeof this.title === "string") {
-    this.title = this.title.trim();
-  }
-
-  if (typeof this.reason === "string") {
-    this.reason = this.reason.trim();
-  }
-
-  if (Array.isArray(this.signals)) {
-    this.signals = this.signals
-      .filter((item) => typeof item === "string")
-      .map((item) => item.trim())
-      .filter(Boolean);
-  }
-
-  if (typeof this.ipAddress === "string") {
-    this.ipAddress = this.ipAddress.trim();
-  }
-
-  if (typeof this.fingerprint === "string") {
-    this.fingerprint = this.fingerprint.trim();
-  }
-
-  if (typeof this.resolutionNotes === "string") {
-    this.resolutionNotes = this.resolutionNotes.trim();
-  }
-
-  if (
-    ["OPEN", "UNDER_REVIEW"].includes(this.status) &&
-    (this.reviewedAt || this.reviewedBy || this.resolvedBy || this.resolutionNotes)
-  ) {
-    this.reviewedAt = null;
-    this.reviewedBy = null;
-    this.resolvedBy = null;
-    this.resolutionNotes = "";
-  }
-
-  if (
-    ["CONFIRMED", "FALSE_POSITIVE", "RESOLVED"].includes(this.status) &&
-    !this.reviewedAt
-  ) {
-    this.reviewedAt = new Date();
-  }
-
-  next();
-});
-
+/* INDEXES (ONLY HERE, NOT IN FIELDS) */
 fraudFlagSchema.index({ entityType: 1, entityId: 1, createdAt: -1 });
 fraudFlagSchema.index({ status: 1, severity: 1, createdAt: -1 });
 fraudFlagSchema.index({ userId: 1, status: 1, createdAt: -1 });

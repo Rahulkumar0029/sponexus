@@ -14,7 +14,10 @@ export type PaymentStatus =
 
 export type PaymentGateway = "RAZORPAY" | "CASHFREE" | "MANUAL";
 
-export type PaymentTransactionType = "NEW_SUBSCRIPTION" | "RENEWAL" | "MANUAL_ADJUSTMENT";
+export type PaymentTransactionType =
+  | "NEW_SUBSCRIPTION"
+  | "RENEWAL"
+  | "MANUAL_ADJUSTMENT";
 
 export type VerificationSource = "FRONTEND_VERIFY" | "WEBHOOK" | "ADMIN" | null;
 
@@ -38,6 +41,29 @@ export interface IPlanSnapshot {
 
   budgetMin?: number | null;
   budgetMax?: number | null;
+
+  features?: {
+    canPublishEvent?: boolean;
+    canPublishSponsorship?: boolean;
+    canUseMatch?: boolean;
+    canRevealContact?: boolean;
+    canSendDealRequest?: boolean;
+  };
+
+  limits?: {
+    eventPostsPerDay?: number | null;
+    sponsorshipPostsPerDay?: number | null;
+    dealRequestsPerDay?: number | null;
+    contactRevealsPerDay?: number | null;
+
+    eventPostsPerMonth?: number | null;
+    sponsorshipPostsPerMonth?: number | null;
+    dealRequestsPerMonth?: number | null;
+    contactRevealsPerMonth?: number | null;
+
+    maxPostBudgetAmount?: number | null;
+    maxVisibleBudgetAmount?: number | null;
+  };
 }
 
 export interface IPaymentTransaction extends Document {
@@ -106,6 +132,35 @@ const MAX_RECEIPT_LENGTH = 120;
 const MAX_COUPON_CODE_LENGTH = 100;
 const MAX_FAILURE_CODE_LENGTH = 100;
 const MAX_GATEWAY_STATUS_LENGTH = 100;
+
+const planFeaturesSnapshotSchema = new Schema(
+  {
+    canPublishEvent: { type: Boolean, default: true },
+    canPublishSponsorship: { type: Boolean, default: true },
+    canUseMatch: { type: Boolean, default: true },
+    canRevealContact: { type: Boolean, default: true },
+    canSendDealRequest: { type: Boolean, default: true },
+  },
+  { _id: false }
+);
+
+const planLimitsSnapshotSchema = new Schema(
+  {
+    eventPostsPerDay: { type: Number, default: null },
+    sponsorshipPostsPerDay: { type: Number, default: null },
+    dealRequestsPerDay: { type: Number, default: null },
+    contactRevealsPerDay: { type: Number, default: null },
+
+    eventPostsPerMonth: { type: Number, default: null },
+    sponsorshipPostsPerMonth: { type: Number, default: null },
+    dealRequestsPerMonth: { type: Number, default: null },
+    contactRevealsPerMonth: { type: Number, default: null },
+
+    maxPostBudgetAmount: { type: Number, default: null },
+    maxVisibleBudgetAmount: { type: Number, default: null },
+  },
+  { _id: false }
+);
 
 const planSnapshotSchema = new Schema<IPlanSnapshot>(
   {
@@ -198,6 +253,16 @@ const planSnapshotSchema = new Schema<IPlanSnapshot>(
       type: Number,
       default: null,
     },
+
+    features: {
+      type: planFeaturesSnapshotSchema,
+      default: () => ({}),
+    },
+
+    limits: {
+      type: planLimitsSnapshotSchema,
+      default: () => ({}),
+    },
   },
   {
     _id: false,
@@ -210,28 +275,24 @@ const paymentTransactionSchema = new Schema<IPaymentTransaction>(
       type: Schema.Types.ObjectId,
       ref: "User",
       required: [true, "User is required"],
-      index: true,
     },
 
     subscriptionId: {
       type: Schema.Types.ObjectId,
       ref: "Subscription",
       default: null,
-      index: true,
     },
 
     renewalOfSubscriptionId: {
       type: Schema.Types.ObjectId,
       ref: "Subscription",
       default: null,
-      index: true,
     },
 
     planId: {
       type: Schema.Types.ObjectId,
       ref: "Plan",
       required: [true, "Plan is required"],
-      index: true,
     },
 
     planSnapshot: {
@@ -243,7 +304,6 @@ const paymentTransactionSchema = new Schema<IPaymentTransaction>(
       type: String,
       enum: ["ORGANIZER", "SPONSOR"],
       required: [true, "Payment role is required"],
-      index: true,
     },
 
     transactionType: {
@@ -251,7 +311,6 @@ const paymentTransactionSchema = new Schema<IPaymentTransaction>(
       enum: ["NEW_SUBSCRIPTION", "RENEWAL", "MANUAL_ADJUSTMENT"],
       default: "NEW_SUBSCRIPTION",
       required: true,
-      index: true,
     },
 
     checkoutAttemptId: {
@@ -259,7 +318,6 @@ const paymentTransactionSchema = new Schema<IPaymentTransaction>(
       required: true,
       trim: true,
       maxlength: MAX_CHECKOUT_ATTEMPT_LENGTH,
-      index: true,
     },
 
     receipt: {
@@ -267,7 +325,6 @@ const paymentTransactionSchema = new Schema<IPaymentTransaction>(
       required: true,
       trim: true,
       maxlength: MAX_RECEIPT_LENGTH,
-      index: true,
     },
 
     amountBeforeDiscount: {
@@ -287,7 +344,6 @@ const paymentTransactionSchema = new Schema<IPaymentTransaction>(
       uppercase: true,
       default: null,
       maxlength: MAX_COUPON_CODE_LENGTH,
-      index: true,
     },
 
     couponDiscountAmount: {
@@ -331,7 +387,6 @@ const paymentTransactionSchema = new Schema<IPaymentTransaction>(
       ],
       default: "CREATED",
       required: true,
-      index: true,
     },
 
     gateway: {
@@ -339,7 +394,6 @@ const paymentTransactionSchema = new Schema<IPaymentTransaction>(
       enum: ["RAZORPAY", "CASHFREE", "MANUAL"],
       default: "MANUAL",
       required: true,
-      index: true,
     },
 
     method: {
@@ -361,7 +415,6 @@ const paymentTransactionSchema = new Schema<IPaymentTransaction>(
       trim: true,
       default: null,
       maxlength: MAX_GATEWAY_ID_LENGTH,
-      index: true,
     },
 
     gatewayPaymentId: {
@@ -369,7 +422,6 @@ const paymentTransactionSchema = new Schema<IPaymentTransaction>(
       trim: true,
       default: null,
       maxlength: MAX_GATEWAY_ID_LENGTH,
-      index: true,
     },
 
     gatewaySignature: {
@@ -390,25 +442,21 @@ const paymentTransactionSchema = new Schema<IPaymentTransaction>(
       type: String,
       enum: ["FRONTEND_VERIFY", "WEBHOOK", "ADMIN", null],
       default: null,
-      index: true,
     },
 
     verifiedAt: {
       type: Date,
       default: null,
-      index: true,
     },
 
     paidAt: {
       type: Date,
       default: null,
-      index: true,
     },
 
     processedAt: {
       type: Date,
       default: null,
-      index: true,
     },
 
     webhookReceivedAt: {
@@ -419,19 +467,16 @@ const paymentTransactionSchema = new Schema<IPaymentTransaction>(
     webhookConfirmedAt: {
       type: Date,
       default: null,
-      index: true,
     },
 
     isWebhookConfirmed: {
       type: Boolean,
       default: false,
-      index: true,
     },
 
     fraudFlagged: {
       type: Boolean,
       default: false,
-      index: true,
     },
 
     failureCode: {
@@ -462,7 +507,6 @@ const paymentTransactionSchema = new Schema<IPaymentTransaction>(
       trim: true,
       default: null,
       maxlength: MAX_INVOICE_LENGTH,
-      index: true,
     },
 
     notes: {
@@ -571,10 +615,23 @@ paymentTransactionSchema.pre("validate", function (next) {
     return next(new Error("Plan snapshot budgetMin cannot exceed budgetMax"));
   }
 
+  const maxPostBudgetAmount = this.planSnapshot?.limits?.maxPostBudgetAmount;
+  const maxVisibleBudgetAmount =
+    this.planSnapshot?.limits?.maxVisibleBudgetAmount;
+
   if (
-    ["SUCCESS", "VERIFIED"].includes(this.status) &&
-    !this.verifiedAt
+    maxPostBudgetAmount != null &&
+    maxVisibleBudgetAmount != null &&
+    maxPostBudgetAmount > maxVisibleBudgetAmount
   ) {
+    return next(
+      new Error(
+        "Plan snapshot maxPostBudgetAmount cannot exceed maxVisibleBudgetAmount"
+      )
+    );
+  }
+
+  if (["SUCCESS", "VERIFIED"].includes(this.status) && !this.verifiedAt) {
     this.verifiedAt = new Date();
   }
 
@@ -583,7 +640,9 @@ paymentTransactionSchema.pre("validate", function (next) {
   }
 
   if (
-    ["SUCCESS", "FAILED", "REFUNDED", "CANCELLED", "EXPIRED"].includes(this.status) &&
+    ["SUCCESS", "FAILED", "REFUNDED", "CANCELLED", "EXPIRED"].includes(
+      this.status
+    ) &&
     !this.processedAt
   ) {
     this.processedAt = new Date();
@@ -607,7 +666,11 @@ paymentTransactionSchema.index({ gateway: 1, status: 1, createdAt: -1 });
 paymentTransactionSchema.index({ subscriptionId: 1, createdAt: -1 });
 paymentTransactionSchema.index({ renewalOfSubscriptionId: 1, createdAt: -1 });
 paymentTransactionSchema.index({ planId: 1, createdAt: -1 });
-paymentTransactionSchema.index({ transactionType: 1, status: 1, createdAt: -1 });
+paymentTransactionSchema.index({
+  transactionType: 1,
+  status: 1,
+  createdAt: -1,
+});
 paymentTransactionSchema.index({ couponCode: 1, status: 1, createdAt: -1 });
 paymentTransactionSchema.index({ isWebhookConfirmed: 1, status: 1 });
 paymentTransactionSchema.index({ fraudFlagged: 1, status: 1, createdAt: -1 });

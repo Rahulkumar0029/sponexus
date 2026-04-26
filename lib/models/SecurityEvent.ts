@@ -29,30 +29,22 @@ export type SecurityEventType =
 export interface ISecurityEvent extends Document {
   userId?: Types.ObjectId | null;
   actorId?: Types.ObjectId | null;
-
   type: SecurityEventType;
   severity: SecurityEventSeverity;
-
   ipAddress?: string | null;
   userAgent?: string | null;
-
   route?: string | null;
   method?: string | null;
-
   relatedPaymentId?: Types.ObjectId | null;
   relatedSubscriptionId?: Types.ObjectId | null;
   relatedCouponId?: Types.ObjectId | null;
-
   fingerprint?: string | null;
   notes?: string;
-
   metadata?: Record<string, any>;
-
   resolved: boolean;
   resolvedAt?: Date | null;
   resolvedBy?: Types.ObjectId | null;
   resolutionNotes?: string;
-
   createdAt: Date;
   updatedAt: Date;
 }
@@ -71,14 +63,12 @@ const securityEventSchema = new Schema<ISecurityEvent>(
       type: Schema.Types.ObjectId,
       ref: "User",
       default: null,
-      index: true,
     },
 
     actorId: {
       type: Schema.Types.ObjectId,
       ref: "User",
       default: null,
-      index: true,
     },
 
     type: {
@@ -104,7 +94,6 @@ const securityEventSchema = new Schema<ISecurityEvent>(
         "ADMIN_PAYMENT_ACCESS_DENIED",
         "SUSPICIOUS_ACTIVITY",
       ],
-      index: true,
     },
 
     severity: {
@@ -112,7 +101,6 @@ const securityEventSchema = new Schema<ISecurityEvent>(
       required: true,
       enum: ["LOW", "MEDIUM", "HIGH", "CRITICAL"],
       default: "LOW",
-      index: true,
     },
 
     ipAddress: {
@@ -120,7 +108,6 @@ const securityEventSchema = new Schema<ISecurityEvent>(
       default: null,
       trim: true,
       maxlength: MAX_IP_LENGTH,
-      index: true,
     },
 
     userAgent: {
@@ -135,7 +122,6 @@ const securityEventSchema = new Schema<ISecurityEvent>(
       default: null,
       trim: true,
       maxlength: MAX_ROUTE_LENGTH,
-      index: true,
     },
 
     method: {
@@ -150,21 +136,18 @@ const securityEventSchema = new Schema<ISecurityEvent>(
       type: Schema.Types.ObjectId,
       ref: "PaymentTransaction",
       default: null,
-      index: true,
     },
 
     relatedSubscriptionId: {
       type: Schema.Types.ObjectId,
       ref: "Subscription",
       default: null,
-      index: true,
     },
 
     relatedCouponId: {
       type: Schema.Types.ObjectId,
       ref: "Coupon",
       default: null,
-      index: true,
     },
 
     fingerprint: {
@@ -172,7 +155,6 @@ const securityEventSchema = new Schema<ISecurityEvent>(
       default: null,
       trim: true,
       maxlength: MAX_FINGERPRINT_LENGTH,
-      index: true,
     },
 
     notes: {
@@ -190,7 +172,6 @@ const securityEventSchema = new Schema<ISecurityEvent>(
     resolved: {
       type: Boolean,
       default: false,
-      index: true,
     },
 
     resolvedAt: {
@@ -218,29 +199,16 @@ const securityEventSchema = new Schema<ISecurityEvent>(
 );
 
 securityEventSchema.pre("validate", function (next) {
-  if (typeof this.ipAddress === "string") {
-    this.ipAddress = this.ipAddress.trim();
-  }
-
-  if (typeof this.userAgent === "string") {
-    this.userAgent = this.userAgent.trim();
-  }
-
-  if (typeof this.route === "string") {
-    this.route = this.route.trim();
-  }
-
+  if (typeof this.ipAddress === "string") this.ipAddress = this.ipAddress.trim();
+  if (typeof this.userAgent === "string") this.userAgent = this.userAgent.trim();
+  if (typeof this.route === "string") this.route = this.route.trim();
   if (typeof this.method === "string") {
     this.method = this.method.trim().toUpperCase();
   }
-
   if (typeof this.fingerprint === "string") {
     this.fingerprint = this.fingerprint.trim();
   }
-
-  if (typeof this.notes === "string") {
-    this.notes = this.notes.trim();
-  }
+  if (typeof this.notes === "string") this.notes = this.notes.trim();
 
   if (typeof this.resolutionNotes === "string") {
     this.resolutionNotes = this.resolutionNotes.trim();

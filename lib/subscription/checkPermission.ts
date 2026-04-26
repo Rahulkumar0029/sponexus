@@ -7,8 +7,10 @@ export type PermissionAction =
   | typeof ACTIONS.USE_MATCH
   | typeof ACTIONS.REVEAL_CONTACT;
 
+type SupportedRole = "ORGANIZER" | "SPONSOR";
+
 type PermissionInput = {
-  role?: string;
+  role?: string | null;
   hasActiveSubscription?: boolean;
   adminBypass?: boolean;
   plan?: {
@@ -19,45 +21,57 @@ type PermissionInput = {
   } | null;
 };
 
+function isSupportedRole(role: unknown): role is SupportedRole {
+  return role === "ORGANIZER" || role === "SPONSOR";
+}
+
 export function checkPermission(
   action: PermissionAction,
   input: PermissionInput
 ): boolean {
   const { role, hasActiveSubscription, adminBypass, plan } = input;
 
-  if (adminBypass) return true;
+  /* ===============================
+     ADMIN BYPASS
+  =============================== */
+  if (adminBypass === true) return true;
 
-  if (!hasActiveSubscription) {
-    return false;
+  /* ===============================
+     SUBSCRIPTION REQUIRED
+  =============================== */
+  if (!hasActiveSubscription) return false;
+
+  /* ===============================
+     ROLE VALIDATION
+  =============================== */
+  if (!isSupportedRole(role)) return false;
+
+  /* ===============================
+     PLAN REQUIRED
+  =============================== */
+  if (!plan) return false;
+
+  /* ===============================
+     PERMISSION MATRIX
+  =============================== */
+
+  switch (action) {
+    case ACTIONS.PUBLISH_EVENT:
+      return role === "ORGANIZER" && plan.canPublish === true;
+
+    case ACTIONS.PUBLISH_SPONSORSHIP:
+      return role === "SPONSOR" && plan.canPublish === true;
+
+    case ACTIONS.SEND_INTEREST:
+      return plan.canContact === true;
+
+    case ACTIONS.USE_MATCH:
+      return plan.canUseMatch === true;
+
+    case ACTIONS.REVEAL_CONTACT:
+      return plan.canRevealContact === true;
+
+    default:
+      return false;
   }
-
-  if (role !== "ORGANIZER" && role !== "SPONSOR") {
-    return false;
-  }
-
-  if (!plan) {
-    return false;
-  }
-
-  if (action === ACTIONS.PUBLISH_EVENT) {
-    return role === "ORGANIZER" && Boolean(plan.canPublish);
-  }
-
-  if (action === ACTIONS.PUBLISH_SPONSORSHIP) {
-    return role === "SPONSOR" && Boolean(plan.canPublish);
-  }
-
-  if (action === ACTIONS.SEND_INTEREST) {
-    return Boolean(plan.canContact);
-  }
-
-  if (action === ACTIONS.USE_MATCH) {
-    return Boolean(plan.canUseMatch);
-  }
-
-  if (action === ACTIONS.REVEAL_CONTACT) {
-    return Boolean(plan.canRevealContact);
-  }
-
-  return false;
 }
