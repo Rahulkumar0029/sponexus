@@ -478,6 +478,13 @@ export default function SettingsPage() {
           </div>
         ) : null}
 
+<AccountSettingsCard
+  email={currentUser?.email || user?.email || ""}
+  role={role || ""}
+  isEmailVerified={Boolean((user as any)?.isEmailVerified)}
+/>
+
+
         {role === "SPONSOR" ? (
           <>
             <div className="mb-8 grid grid-cols-1 gap-6 md:grid-cols-3">
@@ -763,6 +770,67 @@ export default function SettingsPage() {
   );
 }
 
+function AccountSettingsCard({
+  email,
+  role,
+  isEmailVerified,
+}: {
+  email: string;
+  role: string;
+  isEmailVerified: boolean;
+}) {
+  return (
+    <div className="mb-8 rounded-[24px] border border-white/10 bg-white/[0.05] p-6 backdrop-blur-xl">
+      <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <h2 className="text-2xl font-bold text-white">Account Security</h2>
+          <p className="mt-2 text-sm text-text-muted">
+            Manage your login email and password.
+          </p>
+        </div>
+
+        <div className="flex flex-col gap-3 sm:flex-row">
+          <Link href="/change-password">
+            <Button type="button" variant="secondary">
+              Change Password
+            </Button>
+          </Link>
+          <Link href="/change-email">
+            <Button type="button" variant="secondary">
+              Change Email
+            </Button>
+          </Link>
+        </div>
+      </div>
+
+      <div className="mt-6 grid gap-4 md:grid-cols-2">
+        <div className="rounded-2xl border border-white/10 bg-dark-layer px-4 py-4">
+          <p className="text-xs uppercase tracking-[0.16em] text-text-muted">
+            Email
+          </p>
+          <p className="mt-2 break-all text-sm font-semibold text-white">
+            {email || "Not available"}
+          </p>
+          <span className="mt-3 inline-flex rounded-full border border-green-500/30 bg-green-500/10 px-3 py-1 text-xs text-green-300">
+            {isEmailVerified ? "Verified" : "Not verified"}
+          </span>
+        </div>
+
+        <div className="rounded-2xl border border-white/10 bg-dark-layer px-4 py-4">
+          <p className="text-xs uppercase tracking-[0.16em] text-text-muted">
+            Account Role
+          </p>
+          <p className="mt-2 text-sm font-semibold text-white">
+            {role || "User"}
+          </p>
+          <p className="mt-2 text-xs text-text-muted">
+            Role changes require support approval.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+}
 function StatCard({ title, value }: { title: string; value: string }) {
   return (
     <div className="rounded-[24px] border border-white/10 bg-white/[0.05] p-6 backdrop-blur-xl">

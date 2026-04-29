@@ -22,7 +22,7 @@ export async function GET() {
     }
 
     const user = await User.findById(currentUser._id).select(
-      "_id firstName lastName name email role organizationName companyName"
+      "_id firstName lastName name email role organizationName companyName isProfileComplete"
     );
 
     if (!user) {
@@ -135,16 +135,18 @@ export async function GET() {
         },
         recentEvents,
         recentDeals,
+
         user: {
-          _id: String(user._id),
-          firstName: user.firstName || "",
-          lastName: user.lastName || "",
-          name: user.name || "",
-          email: user.email || "",
-          organizationName: user.organizationName || "",
-          companyName: user.companyName || "",
-          role: user.role,
-        },
+  _id: String(user._id),
+  firstName: user.firstName || "",
+  lastName: user.lastName || "",
+  name: user.name || "",
+  email: user.email || "",
+  organizationName: user.organizationName || "",
+  companyName: user.companyName || "",
+  role: user.role,
+  isProfileComplete: Boolean(user.isProfileComplete),
+},
       },
       { status: 200 }
     );

@@ -25,6 +25,7 @@ const EVENT_TYPES = [
   "OTHER",
 ] as const;
 
+const MAX_DELIVERABLES = 3;
 const DELIVERABLE_OPTIONS: { value: EventDeliverable; label: string }[] = [
   { value: "STAGE_BRANDING", label: "Stage Branding" },
   { value: "STALL_SPACE", label: "Stall Space" },
@@ -41,40 +42,7 @@ function splitCommaValues(value: string): string[] {
     .split(",")
     .map((item) => item.trim())
     .filter(Boolean);
-}
-
-function splitLineValues(value: string): string[] {
-  return value
-    .split("\n")
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
-function guessMediaType(url: string): MediaType {
-  const lower = url.toLowerCase();
-
-  if (
-    lower.includes(".mp4") ||
-    lower.includes(".mov") ||
-    lower.includes(".avi") ||
-    lower.includes(".webm") ||
-    lower.includes(".mkv")
-  ) {
-    return "video";
-  }
-
-  return "image";
-}
-
-function toMediaItems(urls: string[], titlePrefix: string): UploadedMedia[] {
-  return urls.map((url, index) => ({
-    url,
-    publicId: url,
-    type: guessMediaType(url),
-    title: `${titlePrefix} ${index + 1}`,
-    uploadedAt: new Date().toISOString(),
-  }));
-}
+} 
 
 export default function CreateEventPage() {
   const router = useRouter();
@@ -95,8 +63,7 @@ export default function CreateEventPage() {
   const [providedDeliverables, setProvidedDeliverables] = useState<EventDeliverable[]>([]);
 
   const [coverImage, setCoverImage] = useState("");
-  const [venueImagesInput, setVenueImagesInput] = useState("");
-  const [pastEventMediaInput, setPastEventMediaInput] = useState("");
+const [uploadedMedia, setUploadedMedia] = useState<UploadedMedia[]>([]);
 
   const [publishMode, setPublishMode] = useState<"draft" | "publish">("publish");
   const [submitting, setSubmitting] = useState(false);
@@ -108,15 +75,6 @@ export default function CreateEventPage() {
     () => splitCommaValues(targetAudienceInput),
     [targetAudienceInput]
   );
-  const venueImages = useMemo(
-    () => toMediaItems(splitLineValues(venueImagesInput), "Venue Media"),
-    [venueImagesInput]
-  );
-  const pastEventMedia = useMemo(
-    () => toMediaItems(splitLineValues(pastEventMediaInput), "Past Event Media"),
-    [pastEventMediaInput]
-  );
-
   const today = useMemo(() => {
     const now = new Date();
     const yyyy = now.getFullYear();
@@ -126,13 +84,54 @@ export default function CreateEventPage() {
   }, []);
 
   const toggleDeliverable = (value: EventDeliverable) => {
-    setProvidedDeliverables((prev) =>
-      prev.includes(value)
-        ? prev.filter((item) => item !== value)
-        : [...prev, value]
-    );
-  };
+  setError("");
 
+  setProvidedDeliverables((prev) => {
+    if (prev.includes(value)) {
+      return prev.filter((item) => item !== value);
+    }
+
+    if (prev.length >= MAX_DELIVERABLES) {
+      setError("You can select only your top 3 sponsor deliverables.");
+      return prev;
+    }
+
+    return [...prev, value];
+  });
+};
+
+const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  const files = e.target.files;
+  if (!files) return;
+
+  setError("");
+
+  const formData = new FormData();
+  formData.append("uploadType", "eventImage");
+
+  Array.from(files).forEach((file) => {
+    formData.append("files", file);
+  });
+
+  try {
+    const res = await fetch("/api/upload", {
+      method: "POST",
+      body: formData,
+      credentials: "include",
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      setError(data.message || "Upload failed");
+      return;
+    }
+
+    setUploadedMedia((prev) => [...prev, ...data.files]);
+  } catch {
+    setError("Upload failed");
+  }
+};
   const validateForm = () => {
     if (!user) {
       return "Please login first.";
@@ -175,10 +174,14 @@ export default function CreateEventPage() {
     }
 
     if (new Date(endDate) < new Date(startDate)) {
-      return "End date cannot be before start date.";
-    }
+  return "End date cannot be before start date.";
+}
 
-    return "";
+if (uploadedMedia.length < 2) {
+  return "Please upload at least 2 event images.";
+}
+
+return "";
   };
 
   const submitEvent = async (mode: "draft" | "publish") => {
@@ -207,9 +210,12 @@ export default function CreateEventPage() {
         attendeeCount: Number(attendeeCount),
         eventType,
         providedDeliverables,
-        coverImage: coverImage.trim(),
-        venueImages,
-        pastEventMedia,
+       coverImage:
+  coverImage.trim() ||
+  uploadedMedia.find((m) => m.type === "image")?.url ||
+  "",
+        venueImages: uploadedMedia,
+pastEventMedia: [],
         status: mode === "publish" ? "PUBLISHED" : "DRAFT",
       };
 
@@ -225,10 +231,14 @@ export default function CreateEventPage() {
       const data = await response.json();
 
       if (!response.ok) {
-        setError(data.message || "Failed to create event.");
-        return;
-      }
+  setError(data.message || "Failed to create event.");
 
+  if (data.redirectTo) {
+    router.push(data.redirectTo);
+  }
+
+  return;
+}
       setSuccessMessage(
         mode === "publish"
           ? "Event published successfully."
@@ -474,9 +484,12 @@ export default function CreateEventPage() {
           <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-6 sm:p-8">
             <h2 className="text-xl font-semibold">Sponsor Deliverables</h2>
             <p className="mt-3 max-w-2xl text-sm text-text-muted">
-              Select what this event can realistically offer to sponsors. These
-              deliverables will directly improve sponsor matching quality.
+              Select your top 3 strongest sponsor deliverables. This helps us match your
+event with the right sponsors more accurately.
             </p>
+            <p className="mt-2 text-xs text-accent-orange">
+  {providedDeliverables.length}/{MAX_DELIVERABLES} selected
+</p>
 
             <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
               {DELIVERABLE_OPTIONS.map((item) => {
@@ -513,47 +526,71 @@ export default function CreateEventPage() {
             <div className="mt-6 grid gap-5">
               <div>
                 <label className="mb-2 block text-sm font-medium text-text-light">
-                  Cover Image URL
+                  Cover Image URL (Optional)
                 </label>
                 <input
                   value={coverImage}
                   onChange={(e) => setCoverImage(e.target.value)}
-                  placeholder="https://..."
+                  placeholder="Optional. If empty, first uploaded photo becomes cover."
                   className="w-full rounded-2xl border border-white/10 bg-dark-layer px-4 py-3 text-text-light outline-none transition focus:border-accent-orange"
                 />
               </div>
+<div>
+              <label className="flex w-full cursor-pointer items-center justify-between rounded-2xl border border-white/10 bg-dark-layer px-4 py-4 text-sm transition hover:border-accent-orange">
+  
+  <div className="flex flex-col">
+   <span className="text-text-light font-medium">
+  Upload Event Media
+</span>
+<span className="text-xs text-text-muted">
+  Photos, posters, logos • Max 5 files
+</span>
+  </div>
 
-              <div>
-                <label className="mb-2 block text-sm font-medium text-text-light">
-                  Venue Media URLs
-                </label>
-                <textarea
-                  value={venueImagesInput}
-                  onChange={(e) => setVenueImagesInput(e.target.value)}
-                  placeholder={"One URL per line\nhttps://...\nhttps://..."}
-                  rows={4}
-                  className="w-full rounded-2xl border border-white/10 bg-dark-layer px-4 py-3 text-text-light outline-none transition focus:border-accent-orange"
-                />
-                <p className="mt-2 text-xs text-text-muted">
-                  Add one image/video URL per line for venue or event space proof.
-                </p>
-              </div>
+  <span className="rounded-lg bg-accent-orange px-3 py-1 text-xs font-semibold text-dark-base">
+    Upload
+  </span>
 
-              <div>
-                <label className="mb-2 block text-sm font-medium text-text-light">
-                  Past Event Media URLs
-                </label>
-                <textarea
-                  value={pastEventMediaInput}
-                  onChange={(e) => setPastEventMediaInput(e.target.value)}
-                  placeholder={"One URL per line\nhttps://...\nhttps://..."}
-                  rows={4}
-                  className="w-full rounded-2xl border border-white/10 bg-dark-layer px-4 py-3 text-text-light outline-none transition focus:border-accent-orange"
-                />
-                <p className="mt-2 text-xs text-text-muted">
-                  Add proof from previous editions to build sponsor trust.
-                </p>
-              </div>
+  <input
+    type="file"
+    multiple
+    accept="image/jpeg,image/png,image/webp"
+    onChange={handleFileUpload}
+    className="hidden"
+  />
+</label>
+<p className="mt-2 text-xs text-text-muted">
+    Minimum 2 images required • Max 5 allowed
+  </p>
+</div>
+
+
+{uploadedMedia.length > 0 && (
+  <div className="flex gap-4 overflow-x-auto rounded-2xl border border-white/10 bg-dark-layer p-4">
+    {uploadedMedia.map((item, index) => (
+      <div
+        key={`${item.publicId}-${index}`}
+        className="relative h-40 w-40 flex-shrink-0 overflow-hidden rounded-2xl border border-white/10"
+      >
+        <img
+          src={item.url}
+          alt={item.title || "Event media"}
+          className="h-full w-full object-cover"
+        />
+
+        <button
+          type="button"
+          onClick={() =>
+            setUploadedMedia((prev) => prev.filter((_, i) => i !== index))
+          }
+          className="absolute right-2 top-2 rounded-full bg-black/70 px-2 py-1 text-xs text-white"
+        >
+          ✕
+        </button>
+      </div>
+    ))}
+  </div>
+)}
             </div>
           </section>
 

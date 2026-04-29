@@ -34,6 +34,7 @@ type OrganizerDashboardResponse = {
     organizationName?: string;
     companyName?: string;
     role?: "ORGANIZER";
+isProfileComplete?: boolean;
   };
   message?: string;
 };
@@ -177,6 +178,8 @@ function getSubscriptionBannerClasses(
 export default function OrganizerDashboardPage() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
+const [dashboardUser, setDashboardUser] =
+  useState<OrganizerDashboardResponse["user"] | null>(null);
 
   const [events, setEvents] = useState<Event[]>([]);
   const [deals, setDeals] = useState<Deal[]>([]);
@@ -227,7 +230,10 @@ export default function OrganizerDashboardPage() {
         negotiatingDeals: data.summary?.negotiatingDeals || 0,
         acceptedDeals: data.summary?.acceptedDeals || 0,
         completedDeals: data.summary?.completedDeals || 0,
+        
       });
+
+      setDashboardUser(data.user || null);
 
       setEvents(Array.isArray(data.recentEvents) ? data.recentEvents : []);
       setDeals(
@@ -322,6 +328,8 @@ export default function OrganizerDashboardPage() {
     );
   }
 
+  const isProfileComplete = Boolean(dashboardUser?.isProfileComplete);
+
   if (!user || user.role !== "ORGANIZER") {
     return null;
   }
@@ -349,13 +357,42 @@ export default function OrganizerDashboardPage() {
             </Button>
 
             <Button
-              variant="primary"
-              onClick={() => router.push("/events/create")}
-            >
-              + Create Event
-            </Button>
+  variant="primary"
+  onClick={() =>
+    router.push(
+      isProfileComplete ? "/events/create" : "/settings?completeProfile=1"
+    )
+  }
+>
+  + Create Event
+</Button>
           </div>
         </div>
+
+{!isProfileComplete && (
+  <section className="mb-8 rounded-3xl border border-[#FF7A18]/30 bg-[#FF7A18]/10 p-6 sm:p-8">
+    <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+      <div>
+        <p className="text-sm uppercase tracking-[0.18em] text-[#FFB347]">
+          Profile Required
+        </p>
+        <h2 className="mt-2 text-2xl font-semibold text-white">
+          Complete your profile before creating events
+        </h2>
+        <p className="mt-2 text-sm text-[#CBD5E1]">
+          Add organizer identity details first so sponsors can trust your listings.
+        </p>
+      </div>
+
+      <Button
+        variant="primary"
+        onClick={() => router.push("/settings?completeProfile=1")}
+      >
+        Complete Profile
+      </Button>
+    </div>
+  </section>
+)}
 
         {!subscriptionLoading && (
           <section
@@ -521,7 +558,11 @@ export default function OrganizerDashboardPage() {
 
           <div className="mt-6 grid gap-4 md:grid-cols-4">
             <button
-              onClick={() => router.push("/events/create")}
+              onClick={() =>
+  router.push(
+    isProfileComplete ? "/events/create" : "/settings?completeProfile=1"
+  )
+}
               className="rounded-2xl border border-white/10 bg-dark-layer px-5 py-5 text-left transition hover:border-accent-orange/40 hover:bg-white/[0.03]"
             >
               <p className="text-lg font-semibold text-white">Create New Event</p>
@@ -592,11 +633,15 @@ export default function OrganizerDashboardPage() {
               </p>
               <div className="mt-6">
                 <Button
-                  variant="primary"
-                  onClick={() => router.push("/events/create")}
-                >
-                  Create First Event
-                </Button>
+  variant="primary"
+  onClick={() =>
+    router.push(
+      isProfileComplete ? "/events/create" : "/settings?completeProfile=1"
+    )
+  }
+>
+  Create First Event
+</Button>
               </div>
             </div>
           )}

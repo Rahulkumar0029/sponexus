@@ -43,6 +43,18 @@ function sanitizeOwnerSponsor(profile: any) {
   return plain;
 }
 
+function sanitizeOrganizerSponsor(profile: any) {
+  if (!profile) return profile;
+
+  const plain =
+    typeof profile?.toObject === "function" ? profile.toObject() : { ...profile };
+
+  plain.officialEmail = undefined;
+  plain.phone = undefined;
+
+  return plain;
+}
+
 export async function GET(
   _request: NextRequest,
   { params }: { params: { id: string } }
@@ -122,14 +134,14 @@ export async function GET(
         );
       }
 
-      return buildNoStoreResponse(
-        {
-          success: true,
-          mode: "owner_view",
-          data: sanitizeOwnerSponsor(sponsor),
-        },
-        200
-      );
+     return buildNoStoreResponse(
+  {
+    success: true,
+    mode: "owner_view",
+    data: sanitizeOwnerSponsor(sponsor),
+  },
+  200
+);
     }
 
     if (user.role === "ORGANIZER") {
@@ -149,13 +161,13 @@ export async function GET(
       }
 
       return buildNoStoreResponse(
-        {
-          success: true,
-          mode: "organizer_view",
-          data: sanitizePublicSponsor(sponsor),
-        },
-        200
-      );
+  {
+    success: true,
+    mode: "organizer_view",
+    data: sanitizeOrganizerSponsor(sponsor),
+  },
+  200
+);
     }
 
     return buildNoStoreResponse(

@@ -63,8 +63,18 @@ export function useAuth() {
   }, [clearAuthState]);
 
   useEffect(() => {
+  fetchCurrentUser();
+
+  const handleAuthChange = () => {
     fetchCurrentUser();
-  }, [fetchCurrentUser]);
+  };
+
+  window.addEventListener('sponexus-auth-change', handleAuthChange);
+
+  return () => {
+    window.removeEventListener('sponexus-auth-change', handleAuthChange);
+  };
+}, [fetchCurrentUser]);
 
   const login = useCallback(async (email: string, password: string) => {
     try {

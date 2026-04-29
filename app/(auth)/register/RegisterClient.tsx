@@ -103,14 +103,11 @@ export default function RegisterClient() {
         return;
       }
 
-      localStorage.setItem('user', JSON.stringify(data.user));
-      localStorage.setItem('token', data.token);
-
       router.push(
-        formData.role === 'ORGANIZER'
-          ? '/dashboard/organizer'
-          : '/dashboard/sponsor'
-      );
+  `/verify-email?email=${encodeURIComponent(
+    formData.email.trim().toLowerCase()
+  )}&from=register`
+);
     } catch (err: unknown) {
       if (err instanceof Error) {
         setGeneralError(err.message || 'Something went wrong.');

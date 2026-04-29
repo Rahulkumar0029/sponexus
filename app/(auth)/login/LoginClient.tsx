@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { Input } from '@/components/Input';
 import { Button } from '@/components/Button';
 
@@ -36,10 +36,15 @@ type LoginResponseUser = {
 export default function LoginClient() {
   const router = useRouter();
 
+  const searchParams = useSearchParams();
+
+const initialEmail = searchParams.get('email') || '';
+const verified = searchParams.get('verified') === '1';
+
   const [formData, setFormData] = useState({
-    email: '',
-    password: '',
-  });
+  email: initialEmail,
+  password: '',
+});
 
   const [errors, setErrors] = useState<FormErrors>({});
   const [loading, setLoading] = useState(false);
@@ -114,7 +119,8 @@ export default function LoginClient() {
         return;
       }
 
-      localStorage.setItem('user', JSON.stringify(user));
+     localStorage.setItem('user', JSON.stringify(user));
+window.dispatchEvent(new Event('sponexus-auth-change'));
 
       if (!user.isEmailVerified) {
         router.push(`/verify-email?email=${encodeURIComponent(user.email)}`);
@@ -157,6 +163,12 @@ export default function LoginClient() {
               Access your Sponexus account
             </p>
           </div>
+
+          {verified && (
+  <div className="mb-4 rounded-xl border border-green-500/40 bg-green-500/10 p-3 text-sm text-green-300">
+    Email verified successfully. Please login to continue.
+  </div>
+)}
 
           {errors.general && (
             <div className="mb-4 rounded-xl border border-red-500/40 bg-red-500/10 p-3 text-sm text-red-300">

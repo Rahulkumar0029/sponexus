@@ -71,6 +71,10 @@ export default function SponsorDetailPage() {
     "public_view"
   );
   const [item, setItem] = useState<SponsorDetail | null>(null);
+  const [open, setOpen] = useState(false);
+  const [events, setEvents] = useState<any[]>([]);
+  const [selectedEvent, setSelectedEvent] = useState("");
+  const [sending, setSending] = useState(false);
 
   useEffect(() => {
     const loadSponsor = async () => {
@@ -108,6 +112,78 @@ export default function SponsorDetailPage() {
 
     loadSponsor();
   }, [sponsorId]);
+
+  useEffect(() => {
+    if (!user || user.role !== "ORGANIZER") return;
+
+    const loadEvents = async () => {
+      try {
+        const res = await fetch("/api/events/my", {
+          credentials: "include",
+        });
+
+        const data = await res.json();
+        setEvents(data.events || []);
+      } catch {
+        setEvents([]);
+      }
+    };
+
+    loadEvents();
+  }, [user]);
+
+  const handleSendRequest = async () => {
+    if (!selectedEvent) {
+      alert("Select event first");
+      return;
+    }
+
+    if (!item?.userId) {
+      alert("Sponsor not found");
+      return;
+    }
+
+    if (!user?._id) {
+      alert("Organizer not found");
+      return;
+    }
+
+    try {
+      setSending(true);
+
+      const res = await fetch("/api/deals", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        credentials: "include",
+        body: JSON.stringify({
+          organizerId: user._id,
+          sponsorId: item.userId,
+          eventId: selectedEvent,
+          title: "Sponsorship Request",
+          description: "We want to collaborate with your brand.",
+          proposedAmount: 5000,
+          deliverables: [],
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.message || "Failed");
+      }
+
+      alert("Request sent successfully ✅");
+      setOpen(false);
+      setSelectedEvent("");
+      router.push(`/deals/${data.deal._id}`);
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setSending(false);
+    }
+  };
 
   const pageTitle = useMemo(() => {
     if (mode === "owner_view") return "My Sponsor Profile";
@@ -201,11 +277,12 @@ export default function SponsorDetailPage() {
                   </>
                 ) : mode === "organizer_view" ? (
                   <>
+                    <Button variant="primary" onClick={() => setOpen(true)}>
+                      Send Sponsorship Request
+                    </Button>
+
                     <Link href="/sponsorships">
-                      <Button variant="primary">Browse Sponsorships</Button>
-                    </Link>
-                    <Link href="/sponsors">
-                      <Button variant="secondary">Browse Sponsors</Button>
+                      <Button variant="secondary">Browse Sponsorships</Button>
                     </Link>
                   </>
                 ) : (
@@ -472,6 +549,44 @@ export default function SponsorDetailPage() {
           </>
         )}
       </div>
+
+      {open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+          <div className="w-full max-w-md rounded-xl bg-[#020617] p-6">
+            <h2 className="mb-4 text-lg font-semibold text-white">
+              Send Sponsorship Request
+            </h2>
+
+            <select
+              value={selectedEvent}
+              onChange={(e) => setSelectedEvent(e.target.value)}
+              className="mb-4 w-full rounded bg-white/10 p-2 text-white"
+            >
+              <option value="">Select Event</option>
+              {events.map((e) => (
+                <option key={e._id} value={e._id}>
+                  {e.title}
+                </option>
+              ))}
+            </select>
+
+            <button
+              onClick={handleSendRequest}
+              disabled={sending || !selectedEvent}
+              className="w-full rounded bg-accent-orange py-2 font-semibold text-dark-base disabled:opacity-50"
+            >
+              {sending ? "Sending..." : "Send Request"}
+            </button>
+
+            <button
+              onClick={() => setOpen(false)}
+              className="mt-3 w-full text-sm text-gray-400"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

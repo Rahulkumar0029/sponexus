@@ -46,8 +46,10 @@ function VerifyEmailContent() {
         setMessage("Email verified successfully. Redirecting to login...");
 
         setTimeout(() => {
-          router.push("/login");
-        }, 1800);
+  router.push(
+    `/login?email=${encodeURIComponent(resendEmail || email)}&verified=1`
+  );
+}, 1800);
       } catch {
         setError("Something went wrong while verifying your email.");
       } finally {

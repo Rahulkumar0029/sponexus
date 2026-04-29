@@ -153,6 +153,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    if (!currentUser.isProfileComplete) {
+  return buildNoStoreResponse(
+    {
+      success: false,
+      message: "Please complete your profile before creating an event.",
+      redirectTo: "/settings?completeProfile=1",
+    },
+    403
+  );
+}
+
     const body: CreateEventInput & {
       coverImage?: string;
       venueImages?: UploadedMedia[];
