@@ -6,10 +6,7 @@ import PaymentTransaction from "@/lib/models/PaymentTransaction";
 import WebhookEvent from "@/lib/models/WebhookEvent";
 import User from "@/lib/models/User";
 
-import {
-  completeCouponRedemption,
-  failCouponRedemption,
-} from "@/lib/payments/coupon";
+import { failCouponRedemption } from "@/lib/payments/coupon";
 
 import {
   finalizeSuccessfulPayment,
@@ -300,15 +297,6 @@ if (gatewayPaymentId) {
             ? paymentEntity.status
             : "paid",
       });
-
-      if (payment.couponCode) {
-        await completeCouponRedemption({
-          paymentTransactionId: payment._id,
-          notes: result.alreadyProcessed
-            ? "Coupon redemption already linked to successful webhook confirmation."
-            : "Coupon redemption completed after successful Razorpay webhook.",
-        });
-      }
 
       webhookEvent.processingStatus = "PROCESSED";
       await webhookEvent.save();

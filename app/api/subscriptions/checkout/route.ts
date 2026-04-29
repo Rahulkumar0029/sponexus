@@ -26,8 +26,9 @@ import { buildPlanSnapshot } from "@/lib/payments/plan-snapshot";
 import {
   reserveCouponRedemption,
   releaseCouponRedemption,
-  validateCoupon,
 } from "@/lib/payments/coupon";
+
+import { validateCouponForPlan } from "@/lib/payments/coupon-engine";
 import { safeLogAudit } from "@/lib/audit/log";
 import { createRazorpayOrder } from "@/lib/payments/razorpay";
 import { rateLimit, buildRateLimitKey } from "@/lib/security/rate-limit";
@@ -45,7 +46,8 @@ function buildNoStoreResponse(body: Record<string, unknown>, status: number) {
 
 export async function POST(request: NextRequest) {
   let idemRecord: any = null;
-  let reservedPayment: any = null;
+let reservedPayment: any = null;
+let couponReservationShouldRelease = false;
 
   try {
     await connectDB();
@@ -128,9 +130,15 @@ export async function POST(request: NextRequest) {
       requestHash,
     });
 
-    if (idem.isReplay) {
-      return buildNoStoreResponse(idem.response, idem.statusCode);
-    }
+   if (idem.isLocked) {
+  return buildNoStoreResponse(
+    {
+      success: false,
+      message: "Checkout is already processing. Please wait.",
+    },
+    409
+  );
+}
 
     idemRecord = idem.record ?? null;
 
@@ -296,17 +304,17 @@ export async function POST(request: NextRequest) {
     let couponCode: string | null = null;
     let couponDiscountAmount: number | null = null;
     let finalAmount = Number(plan.price) || 0;
-    let validatedCoupon: Awaited<ReturnType<typeof validateCoupon>> | null =
-      null;
+    let validatedCoupon: Awaited<ReturnType<typeof validateCouponForPlan>> | null =
+  null;
 
     if (rawCouponCode) {
-      validatedCoupon = await validateCoupon({
-        code: rawCouponCode,
-        userId: user._id,
-        role: user.role,
-        planId: plan._id,
-        baseAmount: Number(plan.price),
-      });
+      validatedCoupon = await validateCouponForPlan({
+  code: rawCouponCode,
+  userId: String(user._id),
+  role: user.role,
+  planId: String(plan._id),
+  amountBeforeDiscount: Number(plan.price),
+});
 
       if (!validatedCoupon.valid) {
         await safeLogAudit({
@@ -348,10 +356,10 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      amountBeforeDiscount = validatedCoupon.amountBeforeDiscount;
-      couponDiscountAmount = validatedCoupon.discountAmount;
-      finalAmount = validatedCoupon.finalAmount;
-      couponCode = validatedCoupon.coupon.code;
+      amountBeforeDiscount = validatedCoupon.pricing.amountBeforeDiscount;
+couponDiscountAmount = validatedCoupon.pricing.discountAmount;
+finalAmount = validatedCoupon.pricing.finalAmount;
+couponCode = validatedCoupon.coupon.code;
     }
 
     if (
@@ -438,7 +446,7 @@ export async function POST(request: NextRequest) {
       }
 
       await reserveCouponRedemption({
-        couponId: validatedCoupon.coupon._id,
+       couponId: new mongoose.Types.ObjectId(validatedCoupon.coupon.id),
         paymentTransactionId: payment._id,
         userId: user._id,
         planId: plan._id,
@@ -446,10 +454,11 @@ export async function POST(request: NextRequest) {
         codeSnapshot: validatedCoupon.coupon.code,
         discountType: couponType,
         discountValue: couponValue,
-        amountBeforeDiscount: validatedCoupon.amountBeforeDiscount,
-        discountAmount: validatedCoupon.discountAmount,
-        finalAmount: validatedCoupon.finalAmount,
+        amountBeforeDiscount: validatedCoupon.pricing.amountBeforeDiscount,
+discountAmount: validatedCoupon.pricing.discountAmount,
+finalAmount: validatedCoupon.pricing.finalAmount,
       });
+      couponReservationShouldRelease = true;
     }
 
     let razorpayOrder: any;
@@ -487,6 +496,7 @@ export async function POST(request: NextRequest) {
       payment.notes = "Checkout failed during Razorpay order creation.";
       payment.processedAt = new Date();
       await payment.save();
+      payment.status = "PENDING";
 
       await detectAndRecordSuspiciousPattern({
         request,
@@ -507,6 +517,7 @@ export async function POST(request: NextRequest) {
     payment.status = "PENDING";
     payment.notes = "Checkout + Razorpay order created successfully.";
     await payment.save();
+    couponReservationShouldRelease = false;
 
     await safeLogAudit({
       actorId: user._id,
@@ -582,9 +593,19 @@ export async function POST(request: NextRequest) {
     }
 
     return buildNoStoreResponse(responseBody, 201);
-  } catch (error) {
-    console.error("POST /api/subscriptions/checkout error:", error);
+ } catch (error) {
+  console.error("POST /api/subscriptions/checkout error:", error);
 
+if (couponReservationShouldRelease && reservedPayment?._id) {
+    try {
+      await releaseCouponRedemption({
+        paymentTransactionId: reservedPayment._id,
+        notes: "Coupon reservation released because checkout failed.",
+      });
+    } catch (releaseError) {
+      console.error("Coupon release after checkout failure error:", releaseError);
+    }
+  }
     if (idemRecord) {
       try {
         idemRecord.locked = false;

@@ -319,6 +319,12 @@ export async function reserveCouponRedemption(input: ReserveCouponInput) {
     input.session ? { session: input.session } : undefined
   );
 
+  await Coupon.updateOne(
+  { _id: toObjectId(input.couponId) },
+  { $inc: { reservedCount: 1 } },
+  input.session ? { session: input.session } : undefined
+);
+
   return redemption[0];
 }
 
@@ -351,10 +357,15 @@ export async function completeCouponRedemption(
   await redemption.save(input.session ? { session: input.session } : undefined);
 
   await Coupon.updateOne(
-    { _id: redemption.couponId },
-    { $inc: { usedCount: 1 } },
-    input.session ? { session: input.session } : undefined
-  );
+  { _id: redemption.couponId },
+  {
+    $inc: {
+      usedCount: 1,
+      reservedCount: -1,
+    },
+  },
+  input.session ? { session: input.session } : undefined
+);
 
   return redemption;
 }
@@ -388,6 +399,12 @@ export async function failCouponRedemption(
 
   await redemption.save(input.session ? { session: input.session } : undefined);
 
+await Coupon.updateOne(
+  { _id: redemption.couponId },
+  { $inc: { reservedCount: -1 } },
+  input.session ? { session: input.session } : undefined
+);
+
   return redemption;
 }
 
@@ -418,6 +435,12 @@ export async function releaseCouponRedemption(
     input.notes || "Coupon reservation released without successful payment.";
 
   await redemption.save(input.session ? { session: input.session } : undefined);
+
+await Coupon.updateOne(
+  { _id: redemption.couponId },
+  { $inc: { reservedCount: -1 } },
+  input.session ? { session: input.session } : undefined
+);
 
   return redemption;
 }

@@ -6,6 +6,14 @@ import { IPlanSnapshot } from "@/lib/models/Subscription";
  * Creates a full immutable snapshot of a plan at purchase time.
  */
 export function buildPlanSnapshot(plan: IPlan): IPlanSnapshot {
+  if (
+    typeof plan.price !== "number" ||
+    !Number.isFinite(plan.price) ||
+    plan.price < 0
+  ) {
+    throw new Error("Invalid plan price in snapshot");
+  }
+
   return {
     planId:
       plan._id instanceof Types.ObjectId
@@ -25,39 +33,39 @@ export function buildPlanSnapshot(plan: IPlan): IPlanSnapshot {
     postingLimitPerDay: plan.postingLimitPerDay ?? null,
     dealRequestLimitPerDay: plan.dealRequestLimitPerDay ?? null,
 
-    canPublish: plan.canPublish ?? true,
-    canContact: plan.canContact ?? true,
-    canUseMatch: plan.canUseMatch ?? true,
-    canRevealContact: plan.canRevealContact ?? true,
+    canPublish: Boolean(plan.canPublish),
+    canContact: Boolean(plan.canContact),
+    canUseMatch: Boolean(plan.canUseMatch),
+    canRevealContact: Boolean(plan.canRevealContact),
 
     budgetMin: plan.budgetMin ?? null,
     budgetMax: plan.budgetMax ?? null,
 
-    features: {
-      canPublishEvent: plan.features?.canPublishEvent ?? true,
-      canPublishSponsorship: plan.features?.canPublishSponsorship ?? true,
-      canUseMatch: plan.features?.canUseMatch ?? true,
-      canRevealContact: plan.features?.canRevealContact ?? true,
-      canSendDealRequest: plan.features?.canSendDealRequest ?? true,
-    },
-    
-limits: {
-  eventPostsPerDay: plan.limits?.eventPostsPerDay ?? null,
-  sponsorshipPostsPerDay: plan.limits?.sponsorshipPostsPerDay ?? null,
-  dealRequestsPerDay: plan.limits?.dealRequestsPerDay ?? null,
-  contactRevealsPerDay: plan.limits?.contactRevealsPerDay ?? null,
-  matchUsesPerDay: plan.limits?.matchUsesPerDay ?? null,
-
-  eventPostsPerMonth: plan.limits?.eventPostsPerMonth ?? null,
-  sponsorshipPostsPerMonth: plan.limits?.sponsorshipPostsPerMonth ?? null,
-  dealRequestsPerMonth: plan.limits?.dealRequestsPerMonth ?? null,
-  contactRevealsPerMonth: plan.limits?.contactRevealsPerMonth ?? null,
-  matchUsesPerMonth: plan.limits?.matchUsesPerMonth ?? null,
-
-  maxPostBudgetAmount: plan.limits?.maxPostBudgetAmount ?? null,
-  maxVisibleBudgetAmount: plan.limits?.maxVisibleBudgetAmount ?? null,
+   features: {
+  canPublishEvent: plan.features?.canPublishEvent !== false,
+  canPublishSponsorship: plan.features?.canPublishSponsorship !== false,
+  canUseMatch: plan.features?.canUseMatch !== false,
+  canRevealContact: plan.features?.canRevealContact !== false,
+  canSendDealRequest: plan.features?.canSendDealRequest !== false,
 },
-  }
+
+    limits: {
+      eventPostsPerDay: plan.limits?.eventPostsPerDay ?? null,
+      sponsorshipPostsPerDay: plan.limits?.sponsorshipPostsPerDay ?? null,
+      dealRequestsPerDay: plan.limits?.dealRequestsPerDay ?? null,
+      contactRevealsPerDay: plan.limits?.contactRevealsPerDay ?? null,
+      matchUsesPerDay: plan.limits?.matchUsesPerDay ?? null,
+
+      eventPostsPerMonth: plan.limits?.eventPostsPerMonth ?? null,
+      sponsorshipPostsPerMonth: plan.limits?.sponsorshipPostsPerMonth ?? null,
+      dealRequestsPerMonth: plan.limits?.dealRequestsPerMonth ?? null,
+      contactRevealsPerMonth: plan.limits?.contactRevealsPerMonth ?? null,
+      matchUsesPerMonth: plan.limits?.matchUsesPerMonth ?? null,
+
+      maxPostBudgetAmount: plan.limits?.maxPostBudgetAmount ?? null,
+      maxVisibleBudgetAmount: plan.limits?.maxVisibleBudgetAmount ?? null,
+    },
+  };
 }
 
 /**

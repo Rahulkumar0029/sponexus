@@ -5,6 +5,7 @@ import {
   SUBSCRIPTION_SOURCE,
   SUBSCRIPTION_STATUS,
 } from "@/lib/subscription/constants";
+import { completeCouponRedemption } from "@/lib/payments/coupon";
 
 type VerificationSource = "FRONTEND_VERIFY" | "WEBHOOK" | "ADMIN";
 
@@ -127,14 +128,15 @@ export async function finalizeSuccessfulPayment(params: {
   gatewayStatus?: string | null;
   webhookConfirmed?: boolean;
 }) {
-  const {
-    payment,
-    verificationSource,
-    razorpayPaymentId = null,
-    razorpaySignature = null,
-    gatewayStatus = "paid",
-    webhookConfirmed = false,
-  } = params;
+
+ let {
+  payment,
+  verificationSource,
+  razorpayPaymentId = null,
+  razorpaySignature = null,
+  gatewayStatus = "paid",
+  webhookConfirmed = false,
+} = params;
 
   const now = new Date();
 
@@ -184,6 +186,99 @@ export async function finalizeSuccessfulPayment(params: {
   ) {
     throw new Error(`Cannot finalize payment in ${payment.status} state.`);
   }
+
+if (
+  razorpayPaymentId &&
+  payment.gatewayPaymentId &&
+  payment.gatewayPaymentId !== razorpayPaymentId
+) {
+  await movePaymentToManualReview({
+    payment,
+    failureCode: "GATEWAY_PAYMENT_ID_MISMATCH",
+    failureReason:
+      "Different Razorpay payment id received for the same transaction.",
+    notes:
+      "Manual review required: possible duplicate/fraudulent payment verification attempt.",
+    webhookConfirmed,
+  });
+
+  throw new Error("Payment id mismatch.");
+}
+
+  if (payment.status === PAYMENT_STATUS.VERIFIED && !payment.subscriptionId) {
+  const verifiedAt = payment.verifiedAt
+    ? new Date(payment.verifiedAt).getTime()
+    : 0;
+
+  const lockAgeMs = verifiedAt ? Date.now() - verifiedAt : 0;
+
+  if (lockAgeMs > 5 * 60 * 1000) {
+    await movePaymentToManualReview({
+      payment,
+      failureCode: "STALE_PAYMENT_FINALIZATION_LOCK",
+      failureReason:
+        "Payment stayed VERIFIED without subscription for more than 5 minutes.",
+      notes:
+        "Manual review required: possible crash during payment finalization.",
+      webhookConfirmed,
+    });
+
+    throw new Error("Stale payment finalization lock.");
+  }
+
+  throw new Error("Payment finalization is already in progress.");
+}
+
+const lockedPayment = await payment.constructor.findOneAndUpdate(
+  {
+    _id: payment._id,
+    status: {
+      $in: [PAYMENT_STATUS.CREATED, PAYMENT_STATUS.PENDING],
+    },
+  },
+  {
+    $set: {
+      status: PAYMENT_STATUS.VERIFIED,
+      verificationSource,
+      verifiedAt: now,
+      gatewayStatus,
+      ...(razorpayPaymentId ? { gatewayPaymentId: razorpayPaymentId } : {}),
+      ...(razorpaySignature ? { gatewaySignature: razorpaySignature } : {}),
+      ...(webhookConfirmed
+        ? {
+            isWebhookConfirmed: true,
+            webhookReceivedAt: payment.webhookReceivedAt || now,
+            webhookConfirmedAt: payment.webhookConfirmedAt || now,
+          }
+        : {}),
+    },
+  },
+  { new: true }
+);
+
+if (!lockedPayment) {
+  const latestPayment = await payment.constructor.findById(payment._id);
+
+  if (
+    latestPayment?.status === PAYMENT_STATUS.SUCCESS &&
+    latestPayment.subscriptionId
+  ) {
+    const existingSubscription = await Subscription.findById(
+      latestPayment.subscriptionId
+    );
+
+    return {
+      payment: latestPayment,
+      subscription: existingSubscription,
+      alreadyProcessed: true,
+      isRenewal: latestPayment.transactionType === "RENEWAL",
+    };
+  }
+
+  throw new Error("Payment finalization lock failed.");
+}
+
+payment = lockedPayment;
 
   if (
     typeof payment.amount !== "number" ||
@@ -304,28 +399,48 @@ export async function finalizeSuccessfulPayment(params: {
       subscription = await Subscription.findById(payment.subscriptionId);
     }
 
-    if (!subscription) {
-      subscription = await Subscription.create({
-        userId: payment.userId,
-        role: payment.role,
-        planId: payment.planId,
-        planSnapshot: snapshot,
-        status: SUBSCRIPTION_STATUS.ACTIVE,
-        isActive: true,
-        startDate: now,
-        endDate: addDays(now, totalDays),
-        graceEndDate: null,
-        activatedAt: now,
-        autoRenew: false,
-        renewalCount: 0,
-        source: SUBSCRIPTION_SOURCE.GATEWAY,
-        baseDurationInDays,
-        extraDaysApplied,
-        lastPaymentId: payment._id,
-        couponCodeUsed: payment.couponCode || null,
-        couponDiscountAmount: payment.couponDiscountAmount ?? null,
-      });
-    }
+   if (subscription) {
+  subscription.planId = payment.planId;
+  subscription.planSnapshot = snapshot;
+  subscription.status = SUBSCRIPTION_STATUS.ACTIVE;
+  subscription.isActive = true;
+  subscription.startDate = now;
+  subscription.endDate = addDays(now, totalDays);
+  subscription.graceEndDate = null;
+  subscription.activatedAt = subscription.activatedAt || now;
+  subscription.expiredAt = null;
+  subscription.cancelledAt = null;
+  subscription.autoRenew = false;
+  subscription.source = SUBSCRIPTION_SOURCE.GATEWAY;
+  subscription.baseDurationInDays = baseDurationInDays;
+  subscription.extraDaysApplied = extraDaysApplied;
+  subscription.lastPaymentId = payment._id;
+  subscription.couponCodeUsed = payment.couponCode || null;
+  subscription.couponDiscountAmount = payment.couponDiscountAmount ?? null;
+
+  subscription = await subscription.save();
+} else {
+  subscription = await Subscription.create({
+    userId: payment.userId,
+    role: payment.role,
+    planId: payment.planId,
+    planSnapshot: snapshot,
+    status: SUBSCRIPTION_STATUS.ACTIVE,
+    isActive: true,
+    startDate: now,
+    endDate: addDays(now, totalDays),
+    graceEndDate: null,
+    activatedAt: now,
+    autoRenew: false,
+    renewalCount: 0,
+    source: SUBSCRIPTION_SOURCE.GATEWAY,
+    baseDurationInDays,
+    extraDaysApplied,
+    lastPaymentId: payment._id,
+    couponCodeUsed: payment.couponCode || null,
+    couponDiscountAmount: payment.couponDiscountAmount ?? null,
+  });
+}
   }
 
   payment.subscriptionId = subscription._id;
@@ -349,6 +464,13 @@ export async function finalizeSuccessfulPayment(params: {
   }
 
   await payment.save();
+
+  if (payment.couponCode) {
+  await completeCouponRedemption({
+    paymentTransactionId: payment._id,
+    notes: "Coupon redemption completed during successful payment finalization.",
+  });
+}
 
   return {
     payment,

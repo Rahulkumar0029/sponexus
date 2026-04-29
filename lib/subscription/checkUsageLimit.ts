@@ -165,6 +165,16 @@ export async function checkUsageLimit({
 
   const todayKey = getDayKey();
  const monthKey = todayKey.slice(0, 7);
+
+ if (!mongoose.Types.ObjectId.isValid(userId)) {
+  return {
+    allowed: false,
+    message: "Invalid user id.",
+    requiresUpgrade: false,
+    reason: "INVALID_USER_ID",
+  };
+}
+
 const userObjectId = new mongoose.Types.ObjectId(userId);
 
   const todayUsage = await UsageCounter.findOne({

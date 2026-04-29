@@ -24,6 +24,7 @@ export interface ICoupon extends Document {
   perUserUsageLimit?: number | null;
 
   usedCount: number;
+  reservedCount: number;
 
   isActive: boolean;
   isArchived: boolean;
@@ -90,15 +91,7 @@ const couponSchema = new Schema<ICoupon>(
       type: Number,
       default: null,
       min: [0, "Max discount amount cannot be negative"],
-      max: [
-        MAX_DISCOUNT_AMOUNT,
-        `Max discount amount cannot exceed ${MAX_DISCOUNT_AMOUNT}`,
-      ],
-      validate: {
-        validator: (value: number | null) =>
-          value === null || Number.isFinite(value),
-        message: "Max discount amount must be a valid number",
-      },
+      max: [MAX_DISCOUNT_AMOUNT, `Max discount amount cannot exceed ${MAX_DISCOUNT_AMOUNT}`],
     },
 
     minOrderAmount: {
@@ -106,11 +99,6 @@ const couponSchema = new Schema<ICoupon>(
       default: null,
       min: [0, "Minimum order amount cannot be negative"],
       max: [MAX_VALUE, `Minimum order amount cannot exceed ${MAX_VALUE}`],
-      validate: {
-        validator: (value: number | null) =>
-          value === null || Number.isFinite(value),
-        message: "Minimum order amount must be a valid number",
-      },
     },
 
     applicableRoles: {
@@ -140,37 +128,25 @@ const couponSchema = new Schema<ICoupon>(
       default: null,
       min: [1, "Total usage limit must be at least 1 when provided"],
       max: [MAX_USAGE_LIMIT, `Total usage limit cannot exceed ${MAX_USAGE_LIMIT}`],
-      validate: {
-        validator: (value: number | null) =>
-          value === null || Number.isFinite(value),
-        message: "Total usage limit must be a valid number",
-      },
     },
 
     perUserUsageLimit: {
       type: Number,
       default: null,
       min: [1, "Per-user usage limit must be at least 1 when provided"],
-      max: [
-        MAX_USAGE_LIMIT,
-        `Per-user usage limit cannot exceed ${MAX_USAGE_LIMIT}`,
-      ],
-      validate: {
-        validator: (value: number | null) =>
-          value === null || Number.isFinite(value),
-        message: "Per-user usage limit must be a valid number",
-      },
+      max: [MAX_USAGE_LIMIT, `Per-user usage limit cannot exceed ${MAX_USAGE_LIMIT}`],
     },
 
     usedCount: {
       type: Number,
       default: 0,
       min: [0, "Used count cannot be negative"],
-      index: true,
-      validate: {
-        validator: Number.isFinite,
-        message: "Used count must be a valid number",
-      },
+    },
+
+    reservedCount: {
+      type: Number,
+      default: 0,
+      min: [0, "Reserved count cannot be negative"],
     },
 
     isActive: {
@@ -207,17 +183,9 @@ const couponSchema = new Schema<ICoupon>(
 );
 
 couponSchema.pre("validate", function (next) {
-  if (typeof this.code === "string") {
-    this.code = this.code.trim().toUpperCase();
-  }
-
-  if (typeof this.name === "string") {
-    this.name = this.name.trim();
-  }
-
-  if (typeof this.description === "string") {
-    this.description = this.description.trim();
-  }
+  if (typeof this.code === "string") this.code = this.code.trim().toUpperCase();
+  if (typeof this.name === "string") this.name = this.name.trim();
+  if (typeof this.description === "string") this.description = this.description.trim();
 
   if (Array.isArray(this.applicableRoles) && this.applicableRoles.length === 0) {
     this.applicableRoles = ["BOTH"];
@@ -232,21 +200,22 @@ couponSchema.pre("validate", function (next) {
     this.maxDiscountAmount != null &&
     this.maxDiscountAmount < this.value
   ) {
-    return next(
-      new Error("For flat coupons, maxDiscountAmount cannot be less than value")
-    );
+    return next(new Error("For flat coupons, maxDiscountAmount cannot be less than value"));
   }
 
-  if (
-    this.startsAt &&
-    this.expiresAt &&
-    new Date(this.expiresAt) <= new Date(this.startsAt)
-  ) {
+  if (this.startsAt && this.expiresAt && this.expiresAt <= this.startsAt) {
     return next(new Error("expiresAt must be later than startsAt"));
   }
 
   if (this.totalUsageLimit != null && this.usedCount > this.totalUsageLimit) {
     return next(new Error("usedCount cannot exceed totalUsageLimit"));
+  }
+
+  if (
+    this.totalUsageLimit != null &&
+    this.usedCount + this.reservedCount > this.totalUsageLimit
+  ) {
+    return next(new Error("usedCount plus reservedCount cannot exceed totalUsageLimit"));
   }
 
   next();

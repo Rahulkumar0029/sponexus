@@ -48,6 +48,7 @@ function sanitizeCoupon(coupon: any) {
     isActive: Boolean(coupon.isActive),
     isArchived: Boolean(coupon.isArchived),
     usedCount: coupon.usedCount ?? 0,
+    reservedCount: coupon.reservedCount ?? 0,
     createdBy: coupon.createdBy ? String(coupon.createdBy) : null,
     updatedBy: coupon.updatedBy ? String(coupon.updatedBy) : null,
     metadata: coupon.metadata ?? {},
@@ -210,6 +211,30 @@ export async function POST(request: NextRequest) {
       );
     }
 
+if (maxDiscountAmount !== null && maxDiscountAmount < 0) {
+  return buildNoStoreResponse(
+    { success: false, message: "Max discount amount cannot be negative." },
+    400
+  );
+}
+
+if (minOrderAmount !== null && minOrderAmount < 0) {
+  return buildNoStoreResponse(
+    { success: false, message: "Minimum order amount cannot be negative." },
+    400
+  );
+}
+
+if (type === "FLAT" && maxDiscountAmount !== null && maxDiscountAmount < value) {
+  return buildNoStoreResponse(
+    {
+      success: false,
+      message: "For flat coupons, max discount cannot be less than coupon value.",
+    },
+    400
+  );
+}
+
     const exists = await Coupon.findOne({ code });
     if (exists) {
       return buildNoStoreResponse(
@@ -235,6 +260,7 @@ export async function POST(request: NextRequest) {
       isActive: body.isActive !== false,
       isArchived: false,
       usedCount: 0,
+      reservedCount: 0,
       createdBy: access.adminUser._id,
       updatedBy: access.adminUser._id,
       metadata:

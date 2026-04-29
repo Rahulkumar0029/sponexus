@@ -55,11 +55,13 @@ export interface IPlanSnapshot {
     sponsorshipPostsPerDay?: number | null;
     dealRequestsPerDay?: number | null;
     contactRevealsPerDay?: number | null;
+    matchUsesPerDay?: number | null;
 
     eventPostsPerMonth?: number | null;
     sponsorshipPostsPerMonth?: number | null;
     dealRequestsPerMonth?: number | null;
     contactRevealsPerMonth?: number | null;
+    matchUsesPerMonth?: number | null;
 
     maxPostBudgetAmount?: number | null;
     maxVisibleBudgetAmount?: number | null;
@@ -150,11 +152,13 @@ const planLimitsSnapshotSchema = new Schema(
     sponsorshipPostsPerDay: { type: Number, default: null },
     dealRequestsPerDay: { type: Number, default: null },
     contactRevealsPerDay: { type: Number, default: null },
+    matchUsesPerDay: { type: Number, default: null },
 
     eventPostsPerMonth: { type: Number, default: null },
     sponsorshipPostsPerMonth: { type: Number, default: null },
     dealRequestsPerMonth: { type: Number, default: null },
     contactRevealsPerMonth: { type: Number, default: null },
+    matchUsesPerMonth: { type: Number, default: null },
 
     maxPostBudgetAmount: { type: Number, default: null },
     maxVisibleBudgetAmount: { type: Number, default: null },
@@ -648,10 +652,10 @@ paymentTransactionSchema.pre("validate", function (next) {
     this.processedAt = new Date();
   }
 
-  if (this.status !== "FAILED") {
-    this.failureReason = null;
-    this.failureCode = null;
-  }
+  if (!["FAILED", "FLAGGED", "MANUAL_REVIEW"].includes(this.status)) {
+  this.failureReason = null;
+  this.failureCode = null;
+}
 
   if (this.status !== "REFUNDED") {
     this.refundReason = null;

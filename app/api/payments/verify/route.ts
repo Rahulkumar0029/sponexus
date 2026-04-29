@@ -9,11 +9,11 @@ import {
   sanitizePayment,
   sanitizeSubscription,
 } from "@/lib/payments/helpers";
-import { verifyRazorpayPaymentSignature } from "@/lib/payments/razorpay";
 import {
-  completeCouponRedemption,
-  failCouponRedemption,
-} from "@/lib/payments/coupon";
+  fetchRazorpayPayment,
+  verifyRazorpayPaymentSignature,
+} from "@/lib/payments/razorpay";
+import { failCouponRedemption } from "@/lib/payments/coupon";
 import {
   finalizeSuccessfulPayment,
   markPaymentFailed,
@@ -28,6 +28,7 @@ import {
 } from "@/lib/email/subscription";
 import { safeLogAudit } from "@/lib/audit/log";
 import { detectAndRecordSuspiciousPattern } from "@/lib/security/suspicious-patterns";
+import Subscription from "@/lib/models/Subscription";
 
 export const runtime = "nodejs";
 
@@ -339,22 +340,10 @@ if (
     );
   }
 
-  const { subscription } = await finalizeSuccessfulPayment({
-    payment,
-    verificationSource: PAYMENT_VERIFICATION_SOURCE.FRONTEND_VERIFY,
-    razorpayPaymentId,
-    razorpaySignature,
-    gatewayStatus: "paid",
-    webhookConfirmed: false,
-  });
+ const subscription = payment.subscriptionId
+  ? await Subscription.findById(payment.subscriptionId)
+  : null;
 
-  if (payment.couponCode) {
-    await completeCouponRedemption({
-      paymentTransactionId: payment._id,
-      notes:
-        "Coupon redemption already linked to successful payment verification.",
-    });
-  }
 
   await safeLogAudit({
     actorId: payment.userId,
@@ -686,7 +675,48 @@ if (
         400
       );
     }
+const gatewayPayment = await fetchRazorpayPayment(razorpayPaymentId);
 
+const expectedAmountInPaise = Math.round(payment.amount * 100);
+
+if (
+  gatewayPayment.order_id !== razorpayOrderId ||
+  gatewayPayment.amount !== expectedAmountInPaise ||
+  gatewayPayment.currency !== "INR" ||
+  !["authorized", "captured"].includes(String(gatewayPayment.status))
+) {
+  await markPaymentFailed({
+    payment,
+    status: "FLAGGED",
+    verificationSource: PAYMENT_VERIFICATION_SOURCE.FRONTEND_VERIFY,
+    failureCode: "GATEWAY_PAYMENT_MISMATCH",
+    failureReason:
+      "Razorpay payment details do not match local payment transaction.",
+    notes:
+      "Gateway payment amount/order/currency/status mismatch during verification.",
+    gatewayStatus: String(gatewayPayment.status || "unknown"),
+    razorpayPaymentId,
+    razorpaySignature,
+  });
+
+  if (payment.couponCode) {
+    await failCouponRedemption({
+      paymentTransactionId: payment._id,
+      failureReason:
+        "Gateway payment details mismatch during payment verification.",
+      notes:
+        "Coupon redemption failed because Razorpay payment details did not match local transaction.",
+    });
+  }
+
+  return buildNoStoreResponse(
+    {
+      success: false,
+      message: "Payment verification failed due to gateway mismatch.",
+    },
+    400
+  );
+}
     const result = await finalizeSuccessfulPayment({
       payment,
       verificationSource: PAYMENT_VERIFICATION_SOURCE.FRONTEND_VERIFY,
@@ -695,14 +725,6 @@ if (
       gatewayStatus: "paid",
       webhookConfirmed: false,
     });
-
-    if (payment.couponCode) {
-      await completeCouponRedemption({
-        paymentTransactionId: payment._id,
-        notes:
-          "Coupon redemption completed after successful payment verification.",
-      });
-    }
 
     await safeLogAudit({
       actorId: payment.userId,

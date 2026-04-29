@@ -7,7 +7,7 @@ import { verifyAccessToken } from "@/lib/auth";
 import { DealModel } from "@/lib/models/Deal";
 import User from "@/lib/models/User";
 import { checkUsageLimit } from "@/lib/subscription/checkUsageLimit";
-import { incrementUsage } from "@/lib/subscription/incrementUsage";
+import { incrementUsage } from "@/lib/subscription/enforceLimits";
 import { ACTIONS } from "@/lib/subscription/constants";
 
 const ALLOWED_STATUSES = new Set([

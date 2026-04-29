@@ -106,6 +106,9 @@ export default function PricingPage() {
   const [loading, setLoading] = useState(true);
   const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null);
   const [couponCode, setCouponCode] = useState('');
+  const [appliedCoupon, setAppliedCoupon] = useState<any>(null);
+const [couponLoading, setCouponLoading] = useState(false);
+const [couponError, setCouponError] = useState<string | null>(null);
   const [subscriptionLoading, setSubscriptionLoading] = useState(true);
   const [subscriptionData, setSubscriptionData] =
     useState<MySubscriptionResponse | null>(null);
@@ -245,6 +248,47 @@ export default function PricingPage() {
     router.refresh();
   }
 
+  async function handleApplyCoupon(planId: string) {
+  try {
+    setCouponLoading(true);
+    setCouponError(null);
+    setAppliedCoupon(null);
+
+    const code = couponCode.trim().toUpperCase();
+
+    if (!code) {
+      throw new Error('Enter a coupon code first.');
+    }
+
+    const res = await fetch('/api/payments/coupons/validate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({
+        code,
+        planId,
+      }),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok || !data.success || !data.valid) {
+      throw new Error(data.message || 'Invalid coupon.');
+    }
+
+    setAppliedCoupon({
+      planId,
+      code: data.coupon.code,
+      coupon: data.coupon,
+      pricing: data.pricing,
+    });
+  } catch (err: any) {
+    setCouponError(err?.message || 'Failed to apply coupon.');
+  } finally {
+    setCouponLoading(false);
+  }
+}
+
   async function handleCheckout(planId: string) {
     try {
       setCheckoutLoading(planId);
@@ -265,7 +309,8 @@ export default function PricingPage() {
         credentials: 'include',
         body: JSON.stringify({
   planId,
-  couponCode: couponCode.trim(),
+  couponCode:
+  appliedCoupon?.planId === planId ? appliedCoupon.code : undefined,
 }),
       });
 
@@ -498,9 +543,11 @@ const keyId =
   <div className="mt-4 flex flex-col gap-3 sm:flex-row">
     <input
       value={couponCode}
-      onChange={(event) =>
-        setCouponCode(event.target.value.toUpperCase().trimStart())
-      }
+      onChange={(event) => {
+  setCouponCode(event.target.value.toUpperCase().trimStart());
+  setAppliedCoupon(null);
+  setCouponError(null);
+}}
       placeholder="Enter coupon code"
       className="w-full rounded-xl border border-white/10 bg-[#07152F] px-4 py-3 text-sm text-white outline-none placeholder:text-[#64748B] focus:border-[#FF7A18]/50"
     />
@@ -528,19 +575,30 @@ const keyId =
               visiblePlanSections.length > 1 ? 'lg:grid-cols-2' : 'grid-cols-1'
             }`}
           >
-            {visiblePlanSections.map((section) => (
-              <PlanSection
-                key={section.key}
-                title={section.title}
-                subtitle={section.subtitle}
-                plans={section.plans}
-                currentPlanCode={currentPlanCode}
-                checkoutLoading={checkoutLoading}
-                onCheckout={handleCheckout}
-                adminBypass={isAdminBypass}
-              />
-            ))}
+           {visiblePlanSections.map((section) => (
+  <PlanSection
+    key={section.key}
+    title={section.title}
+    subtitle={section.subtitle}
+    plans={section.plans}
+    currentPlanCode={currentPlanCode}
+    checkoutLoading={checkoutLoading}
+    onCheckout={handleCheckout}
+    adminBypass={isAdminBypass}
+    couponCode={couponCode}
+    appliedCoupon={appliedCoupon}
+    couponLoading={couponLoading}
+    couponError={couponError}
+    onApplyCoupon={handleApplyCoupon}
+    onClearCoupon={() => {
+      setCouponCode('');
+      setAppliedCoupon(null);
+      setCouponError(null);
+    }}
+  />
+))}
           </div>
+
         )}
 
         <div className="mt-10 rounded-3xl border border-white/10 bg-white/5 p-6 backdrop-blur-md">
@@ -575,6 +633,12 @@ function PlanSection({
   checkoutLoading,
   onCheckout,
   adminBypass,
+  couponCode,
+  appliedCoupon,
+  couponLoading,
+  couponError,
+  onApplyCoupon,
+  onClearCoupon,
 }: {
   title: string;
   subtitle: string;
@@ -583,6 +647,12 @@ function PlanSection({
   checkoutLoading: string | null;
   onCheckout: (planId: string) => Promise<void>;
   adminBypass: boolean;
+  couponCode: string;
+  appliedCoupon: any;
+  couponLoading: boolean;
+  couponError: string | null;
+  onApplyCoupon: (planId: string) => Promise<void>;
+  onClearCoupon: () => void;
 }) {
   return (
     <div className="rounded-3xl border border-white/10 bg-white/5 p-6 backdrop-blur-md">
@@ -596,15 +666,23 @@ function PlanSection({
 
       <div className="grid gap-5">
         {plans.map((plan) => (
-          <PlanCard
-            key={plan._id || plan.code}
-            plan={plan}
-            isCurrent={currentPlanCode === plan.code}
-            isLoading={checkoutLoading === plan._id}
-            adminBypass={adminBypass}
-            onSelect={() => onCheckout(plan._id)}
-          />
-        ))}
+  <PlanCard
+    key={plan._id || plan.code}
+    plan={plan}
+    isCurrent={currentPlanCode === plan.code}
+    isLoading={checkoutLoading === plan._id}
+    adminBypass={adminBypass}
+
+    couponCode={couponCode}
+    appliedCoupon={appliedCoupon?.planId === plan._id ? appliedCoupon : null}
+    couponLoading={couponLoading}
+    couponError={couponError}
+    onApplyCoupon={() => onApplyCoupon(plan._id)}
+    onClearCoupon={onClearCoupon}
+
+    onSelect={() => onCheckout(plan._id)}
+  />
+))}
 
         {plans.length === 0 && (
           <div className="rounded-2xl border border-dashed border-white/10 bg-[#07152F] p-5 text-sm text-[#94A3B8]">

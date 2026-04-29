@@ -11,7 +11,7 @@ import { Event } from "@/types/event";
 import { MatchWeights } from "@/types/match";
 import { Sponsor as SponsorType } from "@/types/sponsor";
 import { checkUsageLimit } from "@/lib/subscription/checkUsageLimit";
-import { incrementUsage } from "@/lib/subscription/incrementUsage";
+import { incrementUsage } from "@/lib/subscription/enforceLimits";
 import { ACTIONS } from "@/lib/subscription/constants";
 
 const DEFAULT_WEIGHTS: MatchWeights = {

@@ -214,9 +214,34 @@ export async function GET(request: NextRequest) {
     }
 
     const subscriptionIsActive =
-      typeof subscription.isActive === "boolean" ? subscription.isActive : true;
+  typeof subscription.isActive === "boolean" ? subscription.isActive : true;
 
-    const remainingDays = getRemainingDays(subscription.endDate);
+const remainingDays = getRemainingDays(subscription.endDate);
+const now = new Date();
+
+const hasValidTime =
+  subscription.status === SUBSCRIPTION_STATUS.GRACE
+    ? Boolean(
+        subscription.graceEndDate && new Date(subscription.graceEndDate) >= now
+      )
+    : Boolean(subscription.endDate && new Date(subscription.endDate) >= now);
+
+if (!hasValidTime) {
+  return buildNoStoreResponse(
+    {
+      success: true,
+      adminBypass: false,
+      hasActiveSubscription: false,
+      subscription: sanitizeSubscription(subscription),
+      plan: null,
+      status: "SUBSCRIPTION_EXPIRED",
+      remainingDays,
+      isExpiringSoon: false,
+      message: "Subscription has expired.",
+    },
+    200
+  );
+}
 
     if (!subscriptionIsActive) {
       return buildNoStoreResponse(

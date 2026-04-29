@@ -5,7 +5,7 @@ import { connectDB } from "@/lib/db";
 import { verifyAccessToken } from "@/lib/auth";
 import User from "@/lib/models/User";
 import Plan from "@/lib/models/Plan";
-import { validateCoupon } from "@/lib/payments/coupon";
+import { validateCouponForPlan } from "@/lib/payments/coupon-engine";
 import { safeLogAudit } from "@/lib/audit/log";
 import { detectAndRecordSuspiciousPattern } from "@/lib/security/suspicious-patterns";
 import {
@@ -122,17 +122,31 @@ export async function POST(request: NextRequest) {
         404
       );
     }
+    
+    if (plan.role !== "BOTH" && plan.role !== user.role) {
+  return buildNoStoreResponse(
+    { success: false, message: "This plan is not available for your role." },
+    403
+  );
+}
 
     /* =========================================
        🎯 COUPON VALIDATION
     ========================================= */
-    const result = await validateCoupon({
-      code: rawCode,
-      userId: user._id,
-      role: user.role,
-      planId: plan._id,
-      baseAmount: Number(plan.price),
-    });
+    if (user.role !== "ORGANIZER" && user.role !== "SPONSOR") {
+  return buildNoStoreResponse(
+    { success: false, message: "Coupon is only available for paid user roles." },
+    403
+  );
+}
+
+const result = await validateCouponForPlan({
+  code: rawCode,
+  userId: String(user._id),
+  role: user.role,
+  planId: String(plan._id),
+  amountBeforeDiscount: Number(plan.price),
+});
 
     /* =========================================
        ❌ INVALID COUPON
@@ -184,14 +198,14 @@ export async function POST(request: NextRequest) {
       actorId: user._id,
       action: "COUPON_VALIDATED",
       entityType: "COUPON",
-      entityId: result.coupon._id,
+      entityId: result.coupon.id,
       severity: "INFO",
       request,
       metadata: {
-        code: result.coupon.code,
-        planId: String(plan._id),
-        discountAmount: result.discountAmount,
-        finalAmount: result.finalAmount,
+       code: result.coupon.code,
+planId: String(plan._id),
+discountAmount: result.pricing.discountAmount,
+finalAmount: result.pricing.finalAmount,
       },
     });
 
@@ -200,17 +214,20 @@ export async function POST(request: NextRequest) {
         success: true,
         valid: true,
         coupon: {
-          _id: String(result.coupon._id),
-          code: result.coupon.code,
-          type: result.coupon.type,
-          value: result.coupon.value,
-        },
-        pricing: {
-          amountBeforeDiscount: result.amountBeforeDiscount,
-          discountAmount: result.discountAmount,
-          finalAmount: result.finalAmount,
-          currency: plan.currency,
-        },
+  _id: result.coupon.id,
+  code: result.coupon.code,
+  name: result.coupon.name,
+  type: result.coupon.type,
+  value: result.coupon.value,
+  maxDiscountAmount: result.coupon.maxDiscountAmount,
+  minOrderAmount: result.coupon.minOrderAmount,
+},
+pricing: {
+  amountBeforeDiscount: result.pricing.amountBeforeDiscount,
+  discountAmount: result.pricing.discountAmount,
+  finalAmount: result.pricing.finalAmount,
+  currency: plan.currency,
+},
       },
       200
     );

@@ -14,7 +14,6 @@ export interface ICouponRedemption extends Document {
   planId: Types.ObjectId;
 
   codeSnapshot: string;
-
   role: "ORGANIZER" | "SPONSOR";
 
   discountType: "PERCENTAGE" | "FLAT";
@@ -27,6 +26,7 @@ export interface ICouponRedemption extends Document {
   status: CouponRedemptionStatus;
 
   reservedAt?: Date | null;
+  reservedUntil?: Date | null;
   completedAt?: Date | null;
   releasedAt?: Date | null;
   failedAt?: Date | null;
@@ -42,6 +42,7 @@ const MAX_CODE_LENGTH = 100;
 const MAX_AMOUNT = 100000000;
 const MAX_REASON_LENGTH = 1000;
 const MAX_NOTES_LENGTH = 2000;
+const RESERVATION_MINUTES = 15;
 
 const couponRedemptionSchema = new Schema<ICouponRedemption>(
   {
@@ -55,7 +56,7 @@ const couponRedemptionSchema = new Schema<ICouponRedemption>(
       type: Schema.Types.ObjectId,
       ref: "PaymentTransaction",
       required: true,
-      unique: true, // 🔥 VERY IMPORTANT: 1 payment = 1 redemption
+      unique: true,
     },
 
     userId: {
@@ -122,11 +123,18 @@ const couponRedemptionSchema = new Schema<ICouponRedemption>(
       type: String,
       enum: ["RESERVED", "COMPLETED", "FAILED", "RELEASED"],
       default: "RESERVED",
+      index: true,
     },
 
     reservedAt: {
       type: Date,
       default: Date.now,
+    },
+
+    reservedUntil: {
+      type: Date,
+      default: () => new Date(Date.now() + RESERVATION_MINUTES * 60 * 1000),
+      index: true,
     },
 
     completedAt: {
@@ -164,11 +172,7 @@ const couponRedemptionSchema = new Schema<ICouponRedemption>(
   }
 );
 
-/* ===============================
-   PRE VALIDATION
-=================================*/
 couponRedemptionSchema.pre("validate", function (next) {
-  // normalize
   if (typeof this.codeSnapshot === "string") {
     this.codeSnapshot = this.codeSnapshot.trim().toUpperCase();
   }
@@ -181,26 +185,18 @@ couponRedemptionSchema.pre("validate", function (next) {
     this.notes = this.notes.trim();
   }
 
-  // 🔒 Safety checks
   if (this.discountAmount > this.amountBeforeDiscount) {
-    return next(
-      new Error("Discount amount cannot exceed amountBeforeDiscount")
-    );
+    return next(new Error("Discount amount cannot exceed amountBeforeDiscount"));
   }
 
   if (this.finalAmount > this.amountBeforeDiscount) {
-    return next(
-      new Error("Final amount cannot exceed amountBeforeDiscount")
-    );
+    return next(new Error("Final amount cannot exceed amountBeforeDiscount"));
   }
 
   if (this.finalAmount < 0) {
     return next(new Error("Final amount cannot be negative"));
   }
 
-  /* ===============================
-     STATUS TIMESTAMP CONTROL
-  =================================*/
   if (this.status === "COMPLETED") {
     this.completedAt = this.completedAt || new Date();
     this.failedAt = null;
@@ -221,6 +217,9 @@ couponRedemptionSchema.pre("validate", function (next) {
 
   if (this.status === "RESERVED") {
     this.reservedAt = this.reservedAt || new Date();
+    this.reservedUntil =
+      this.reservedUntil ||
+      new Date(Date.now() + RESERVATION_MINUTES * 60 * 1000);
     this.completedAt = null;
     this.failedAt = null;
     this.releasedAt = null;
@@ -229,14 +228,12 @@ couponRedemptionSchema.pre("validate", function (next) {
   next();
 });
 
-/* ===============================
-   INDEXES (IMPORTANT FOR ANALYTICS + FRAUD)
-=================================*/
 couponRedemptionSchema.index({ couponId: 1, status: 1, createdAt: -1 });
 couponRedemptionSchema.index({ userId: 1, couponId: 1, createdAt: -1 });
 couponRedemptionSchema.index({ codeSnapshot: 1, createdAt: -1 });
 couponRedemptionSchema.index({ planId: 1, createdAt: -1 });
 couponRedemptionSchema.index({ role: 1, createdAt: -1 });
+couponRedemptionSchema.index({ status: 1, reservedUntil: 1 });
 
 const CouponRedemption: Model<ICouponRedemption> =
   mongoose.models.CouponRedemption ||

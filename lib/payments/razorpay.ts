@@ -93,7 +93,9 @@ export function verifyRazorpayPaymentSignature(params: {
   razorpayOrderId: string;
   razorpayPaymentId: string;
   razorpaySignature: string;
-}) {
+}) 
+
+{
   const { keySecret } = assertRazorpayEnv();
 
   if (
@@ -118,5 +120,20 @@ export function verifyRazorpayPaymentSignature(params: {
     );
   } catch {
     return false; // prevents crash if length mismatch
+  }
+}
+
+export async function fetchRazorpayPayment(razorpayPaymentId: string) {
+  if (!razorpayPaymentId || typeof razorpayPaymentId !== "string") {
+    throw new Error("Invalid Razorpay payment id.");
+  }
+
+  const client = getRazorpayClient();
+
+  try {
+    return await client.payments.fetch(razorpayPaymentId);
+  } catch (error: any) {
+    console.error("Razorpay payment fetch failed:", error?.message);
+    throw new Error("Failed to fetch Razorpay payment.");
   }
 }

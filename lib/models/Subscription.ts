@@ -338,6 +338,16 @@ subscriptionSchema.index({ isActive: 1, status: 1 });
 subscriptionSchema.index({ source: 1, status: 1 });
 subscriptionSchema.index({ grantedByAdminId: 1 });
 subscriptionSchema.index({ couponCodeUsed: 1 });
+subscriptionSchema.index(
+  { userId: 1, role: 1, isActive: 1 },
+  {
+    unique: true,
+    partialFilterExpression: {
+      isActive: true,
+      status: { $in: ["ACTIVE", "GRACE"] },
+    },
+  }
+);
 
 const Subscription: Model<ISubscription> =
   mongoose.models.Subscription ||

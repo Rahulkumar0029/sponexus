@@ -7,7 +7,7 @@ import Sponsor from "@/lib/models/Sponsor";
 import User from "@/lib/models/User";
 import { getCurrentUser } from "@/lib/current-user";
 import { checkUsageLimit } from "@/lib/subscription/checkUsageLimit";
-import { incrementUsage } from "@/lib/subscription/incrementUsage";
+import { incrementUsage } from "@/lib/subscription/enforceLimits";
 import { ACTIONS } from "@/lib/subscription/constants";
 
 function clean(value: unknown): string {

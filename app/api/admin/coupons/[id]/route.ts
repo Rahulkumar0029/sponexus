@@ -44,6 +44,7 @@ function sanitizeCoupon(coupon: any) {
     totalUsageLimit: coupon.totalUsageLimit ?? null,
     perUserUsageLimit: coupon.perUserUsageLimit ?? null,
     usedCount: coupon.usedCount ?? 0,
+    reservedCount: coupon.reservedCount ?? 0,
     isActive: Boolean(coupon.isActive),
     isArchived: Boolean(coupon.isArchived),
     createdBy: coupon.createdBy ? String(coupon.createdBy) : null,
@@ -261,6 +262,37 @@ export async function PATCH(
       coupon.minOrderAmount = normalizeNullableNumber(body.minOrderAmount);
     }
 
+
+const maxDiscountAmount = coupon.maxDiscountAmount ?? null;
+const minOrderAmount = coupon.minOrderAmount ?? null;
+
+if (maxDiscountAmount != null && maxDiscountAmount < 0) {
+  return buildNoStoreResponse(
+    { success: false, message: "Max discount amount cannot be negative." },
+    400
+  );
+}
+
+if (minOrderAmount != null && minOrderAmount < 0) {
+  return buildNoStoreResponse(
+    { success: false, message: "Minimum order amount cannot be negative." },
+    400
+  );
+}
+
+if (
+  coupon.type === "FLAT" &&
+  maxDiscountAmount != null &&
+  maxDiscountAmount < coupon.value
+) {
+  return buildNoStoreResponse(
+    {
+      success: false,
+      message: "For flat coupons, max discount cannot be less than coupon value.",
+    },
+    400
+  );
+}
     if (body.applicableRoles !== undefined) {
       coupon.applicableRoles = normalizeApplicableRoles(body.applicableRoles);
     }
@@ -291,24 +323,31 @@ export async function PATCH(
     }
 
     if (body.totalUsageLimit !== undefined) {
-      const val = normalizeNullableNumber(body.totalUsageLimit);
+  const val = normalizeNullableNumber(body.totalUsageLimit);
 
-      if (val !== null && val < 1) {
-        return buildNoStoreResponse(
-          { success: false, message: "totalUsageLimit must be at least 1." },
-          400
-        );
-      }
+  if (val !== null && val < 1) {
+    return buildNoStoreResponse(
+      { success: false, message: "totalUsageLimit must be at least 1." },
+      400
+    );
+  }
 
-      if (val !== null && val < Number(coupon.usedCount || 0)) {
-        return buildNoStoreResponse(
-          { success: false, message: "Limit cannot be less than usedCount." },
-          400
-        );
-      }
+  const used = Number(coupon.usedCount || 0);
+  const reserved = Number(coupon.reservedCount || 0);
 
-      coupon.totalUsageLimit = val;
-    }
+  if (val !== null && val < used + reserved) {
+    return buildNoStoreResponse(
+      {
+        success: false,
+        message: "Limit cannot be less than used + reserved coupons.",
+      },
+      400
+    );
+  }
+
+  coupon.totalUsageLimit = val;
+}
+
 
     if (body.perUserUsageLimit !== undefined) {
       const val = normalizeNullableNumber(body.perUserUsageLimit);

@@ -9,7 +9,7 @@ import User from "@/lib/models/User";
 import { EventModel } from "@/lib/models/Event";
 
 import { checkUsageLimit } from "@/lib/subscription/checkUsageLimit";
-import { incrementUsage } from "@/lib/subscription/incrementUsage";
+import { incrementUsage } from "@/lib/subscription/enforceLimits";
 
 import { ACTIONS } from "@/lib/subscription/constants";
 

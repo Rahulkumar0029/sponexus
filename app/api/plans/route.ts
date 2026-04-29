@@ -49,6 +49,8 @@ function sanitizePlan(plan: any) {
 
     sortOrder: typeof plan.sortOrder === "number" ? plan.sortOrder : 0,
     metadata: plan.metadata ?? {},
+    features: plan.features ?? {},
+limits: plan.limits ?? {},
 
     createdAt: plan.createdAt || null,
     updatedAt: plan.updatedAt || null,
@@ -98,7 +100,7 @@ export async function GET(request: NextRequest) {
     const plans = await Plan.find(query)
       .sort({ sortOrder: 1, price: 1, createdAt: 1 })
       .select(
-        "_id code role name description price currency interval durationInDays extraDays postingLimitPerDay dealRequestLimitPerDay canPublish canContact canUseMatch canRevealContact budgetMin budgetMax isActive isArchived isVisible visibleToRoles visibleToLoggedOut sortOrder metadata createdAt updatedAt"
+        "_id code role name description price currency interval durationInDays extraDays postingLimitPerDay dealRequestLimitPerDay canPublish canContact canUseMatch canRevealContact budgetMin budgetMax isActive isArchived isVisible visibleToRoles visibleToLoggedOut sortOrder metadata features limits createdAt updatedAt"
       )
       .lean();
 

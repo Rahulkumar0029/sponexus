@@ -15,9 +15,11 @@ type PlanLimits = {
   eventPostsPerMonth?: number | null;
   sponsorshipPostsPerMonth?: number | null;
   dealRequestsPerMonth?: number | null;
-  contactRevealsPerMonth?: number | null;
+ contactRevealsPerMonth?: number | null;
+matchUsesPerDay?: number | null;
+matchUsesPerMonth?: number | null;
 
-  maxPostBudgetAmount?: number | null;
+maxPostBudgetAmount?: number | null;
   maxVisibleBudgetAmount?: number | null;
 };
 
@@ -88,6 +90,13 @@ function getLimitForAction(action: UsageAction, limits?: PlanLimits | null) {
       monthlyLimit: limits.contactRevealsPerMonth ?? null,
     };
   }
+
+if (action === "USE_MATCH") {
+  return {
+    dailyLimit: limits.matchUsesPerDay ?? null,
+    monthlyLimit: limits.matchUsesPerMonth ?? null,
+  };
+}
 
   return {
     dailyLimit: null,
