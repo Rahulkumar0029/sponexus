@@ -2,14 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 
 import { connectDB } from "@/lib/db";
 import { EventModel } from "@/lib/models/Event";
-import Subscription from "@/lib/models/Subscription";
 import { getCurrentUser } from "@/lib/current-user";
-import { checkSubscriptionAccess } from "@/lib/subscription/checkAccess";
 import { ACTIONS } from "@/lib/subscription/constants";
-import {
-  checkUsageLimit,
-  incrementUsage,
-} from "@/lib/subscription/enforceLimits";
+import { checkUsageLimit } from "@/lib/subscription/checkUsageLimit";
+import { incrementUsage } from "@/lib/subscription/enforceLimits";
 import { CreateEventInput, EventDeliverable } from "@/types/event";
 
 type UploadedMedia = {
@@ -420,56 +416,24 @@ export async function POST(request: NextRequest) {
     let accessPlanId: string | null = null;
 
     if (safeRequestedStatus === "PUBLISHED") {
-      const access = await checkSubscriptionAccess({
-        userId: String(currentUser._id),
-        role: currentUser.role,
-        action: ACTIONS.PUBLISH_EVENT,
-      });
+  const usage = await checkUsageLimit({
+    userId: String(currentUser._id),
+    role: "ORGANIZER",
+    action: ACTIONS.PUBLISH_EVENT,
+    amount: parsedBudget,
+  });
 
-      if (!access.allowed) {
-        finalStatus = "DRAFT";
-        publishBlockedMessage =
-          access.message ||
-          "Upgrade your subscription to publish events on Sponexus.";
-      } else {
-        accessSubscriptionId = access.subscriptionId || null;
-        accessPlanId = access.planId || null;
-
-        const subscription = access.subscriptionId
-          ? await Subscription.findById(access.subscriptionId).select(
-              "planSnapshot planId"
-            )
-          : null;
-
-        const limits = subscription?.planSnapshot?.limits || null;
-        const maxPostBudgetAmount = limits?.maxPostBudgetAmount ?? null;
-
-        if (
-          maxPostBudgetAmount != null &&
-          parsedBudget > maxPostBudgetAmount
-        ) {
-          finalStatus = "DRAFT";
-          publishBlockedMessage = `Your current plan allows event budget up to ₹${maxPostBudgetAmount}. Save as draft or upgrade your plan.`;
-        } else {
-          const usage = await checkUsageLimit({
-            userId: currentUser._id,
-            role: "ORGANIZER",
-            action: ACTIONS.PUBLISH_EVENT,
-            limits,
-            subscriptionId: accessSubscriptionId,
-            planId: accessPlanId,
-          });
-
-          if (!usage.allowed) {
-            finalStatus = "DRAFT";
-            publishBlockedMessage = usage.message;
-          } else {
-            finalStatus = "PUBLISHED";
-          }
-        }
-      }
-    }
-
+  if (!usage.allowed) {
+    finalStatus = "DRAFT";
+    publishBlockedMessage =
+      usage.message ||
+      "Upgrade your subscription to publish events on Sponexus.";
+  } else {
+    finalStatus = "PUBLISHED";
+    accessSubscriptionId = usage.subscriptionId || null;
+    accessPlanId = usage.planId || null;
+  }
+}
     const event = await EventModel.create({
       title: safeTitle,
       description: safeDescription,
