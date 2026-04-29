@@ -6,6 +6,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import { useMemo, useState } from 'react';
 import { Button } from './Button';
 import { useAuth } from '@/hooks/useAuth';
+import { NotificationBell } from '@/components/notifications/NotificationBell';
 
 type NavItem = {
   label: string;
@@ -152,8 +153,11 @@ export function Navbar() {
 
           {loading ? (
             <div className="text-sm text-text-muted">Loading...</div>
-          ) : isAuthenticated && user ? (
-            <div className="relative ml-3 border-l border-white/10 pl-4">
+         ) : isAuthenticated && user ? (
+  <div className="flex items-center gap-3">
+    <NotificationBell />
+
+    <div className="relative border-l border-white/10 pl-4">
               <button
                 onClick={() => setProfileOpen((prev) => !prev)}
                 className="group flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2.5 text-left text-sm text-text-light shadow-[0_8px_30px_rgba(0,0,0,0.22)] transition-all duration-200 hover:border-white/20 hover:bg-white/[0.07]"
@@ -244,6 +248,7 @@ export function Navbar() {
                 </div>
               )}
             </div>
+            </div>
           ) : (
             <div className="flex items-center gap-3">
               <Link href="/pricing">
@@ -260,6 +265,7 @@ export function Navbar() {
             </div>
           )}
         </div>
+        
 
         <button
           onClick={() => setIsOpen(!isOpen)}
@@ -296,6 +302,12 @@ export function Navbar() {
                   </Link>
                 )
               )}
+
+              {!loading && isAuthenticated && user && (
+  <div className="mb-3 flex justify-end">
+    <NotificationBell />
+  </div>
+)}
 
             {!loading && isAuthenticated && user && (
               <div className="mb-4 mt-4 overflow-hidden rounded-3xl border border-white/10 bg-white/[0.04] shadow-[0_12px_40px_rgba(0,0,0,0.28)]">

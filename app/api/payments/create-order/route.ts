@@ -20,6 +20,7 @@ import {
 } from "@/lib/subscription/constants";
 
 import { safeLogAudit } from "@/lib/audit/log";
+import { rateLimit, buildRateLimitKey } from "@/lib/security/rate-limit";
 
 export const runtime = "nodejs";
 
@@ -73,6 +74,36 @@ export async function POST(request: NextRequest) {
         401
       );
     }
+
+    const rl = await rateLimit({
+  key: buildRateLimitKey({
+    request,
+    userId: decoded.userId,
+    route: "payment-create-order",
+  }),
+  limit: 10,
+  windowMs: 60 * 1000,
+});
+
+if (!rl.allowed) {
+  await detectAndRecordSuspiciousPattern({
+    request,
+    userId: decoded.userId,
+    title: "Payment create order rate limit exceeded",
+    reason: "Too many payment order creation attempts in a short time.",
+    securityEventType: "PAYMENT_CREATE_ORDER_ABUSE",
+    entityType: "PAYMENT",
+    recentVerifyCount: 10,
+  });
+
+  return buildNoStoreResponse(
+    {
+      success: false,
+      message: "Too many order attempts. Try again later.",
+    },
+    429
+  );
+}
 
     /* ===============================
        INPUT

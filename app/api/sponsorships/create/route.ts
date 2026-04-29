@@ -9,6 +9,7 @@ import { getCurrentUser } from "@/lib/current-user";
 import { checkUsageLimit } from "@/lib/subscription/checkUsageLimit";
 import { incrementUsage } from "@/lib/subscription/enforceLimits";
 import { ACTIONS } from "@/lib/subscription/constants";
+import { createNotification } from "@/lib/notifications/createNotification";
 
 function clean(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
@@ -357,6 +358,21 @@ export async function POST(request: NextRequest) {
       subscriptionId: usage.subscriptionId || null,
       planId: usage.planId || null,
     });
+
+try {
+  await createNotification({
+    userId: user._id,
+    type: "SPONSORSHIP_CREATED",
+    title: "Sponsorship published",
+    message: "Your sponsorship opportunity is now live on Sponexus.",
+    link: `/sponsorships/${sponsorship._id}`,
+    metadata: {
+      sponsorshipId: String(sponsorship._id),
+    },
+  });
+} catch (notificationError) {
+  console.error("Sponsorship created notification error:", notificationError);
+}
 
     return NextResponse.json(
       {

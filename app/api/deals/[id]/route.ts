@@ -9,6 +9,7 @@ import User from "@/lib/models/User";
 import { checkUsageLimit } from "@/lib/subscription/checkUsageLimit";
 import { incrementUsage } from "@/lib/subscription/enforceLimits";
 import { ACTIONS } from "@/lib/subscription/constants";
+import { createNotification } from "@/lib/notifications/createNotification";
 
 const ALLOWED_STATUSES = new Set([
   "pending",
@@ -565,12 +566,34 @@ const usage = await checkUsageLimit({
   subscriptionId: usage.subscriptionId || null,
   planId: usage.planId || null,
 });
-      const updatedDeal = await DealModel.findById(deal._id)
-        .populate("organizerId", "_id name email phone companyName")
-        .populate("sponsorId", "_id name email phone companyName")
-        .populate("eventId", "_id title location startDate");
 
-      const safeDeal = sanitizeDealContactsForResponse(updatedDeal);
+const contactRevealReceiverId =
+  roleInDeal === "ORGANIZER"
+    ? String(deal.sponsorId)
+    : String(deal.organizerId);
+
+    try {
+  await createNotification({
+    userId: contactRevealReceiverId,
+    type: "CONTACT_REVEALED",
+    title: "Contact reveal updated",
+    message: "The other party revealed their contact details.",
+    link: `/deals/${deal._id}`,
+    metadata: {
+      dealId: String(deal._id),
+      revealedBy: currentUserId,
+    },
+  });
+} catch (notificationError) {
+  console.error("Contact reveal notification error:", notificationError);
+}
+     const updatedDeal = await DealModel.findById(deal._id)
+  .populate("organizerId", "_id name email phone companyName")
+  .populate("sponsorId", "_id name email phone companyName")
+  .populate("eventId", "_id title location startDate");
+
+
+const safeDeal = sanitizeDealContactsForResponse(updatedDeal);
 
       return NextResponse.json(
         {
@@ -650,6 +673,7 @@ const usage = await checkUsageLimit({
         );
       }
     }
+
 
     if (nextStatus) {
       if (currentStatus === nextStatus) {
@@ -752,7 +776,40 @@ const usage = await checkUsageLimit({
         { status: 409 }
       );
     }
+    
+if (nextStatus) {
+  try {
+    const statusReceiverId =
+      roleInDeal === "ORGANIZER"
+        ? String(deal.sponsorId)
+        : String(deal.organizerId);
 
+    await createNotification({
+      userId: statusReceiverId,
+      type:
+        nextStatus === "accepted"
+          ? "DEAL_ACCEPTED"
+          : nextStatus === "rejected"
+          ? "DEAL_REJECTED"
+          : "DEAL_UPDATED",
+      title:
+        nextStatus === "accepted"
+          ? "Deal accepted"
+          : nextStatus === "rejected"
+          ? "Deal rejected"
+          : "Deal updated",
+      message: `Your deal status changed to ${nextStatus}.`,
+      link: `/deals/${deal._id}`,
+      metadata: {
+        dealId: String(deal._id),
+        status: nextStatus,
+        updatedBy: currentUserId,
+      },
+    });
+  } catch (notificationError) {
+    console.error("Deal status notification error:", notificationError);
+  }
+}
     const updatedDeal = await DealModel.findById(deal._id)
       .populate("organizerId", "_id name email phone companyName")
       .populate("sponsorId", "_id name email phone companyName")

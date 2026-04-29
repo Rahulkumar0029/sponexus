@@ -29,6 +29,7 @@ import {
 import { safeLogAudit } from "@/lib/audit/log";
 import { detectAndRecordSuspiciousPattern } from "@/lib/security/suspicious-patterns";
 import Subscription from "@/lib/models/Subscription";
+import { createNotification } from "@/lib/notifications/createNotification";
 
 export const runtime = "nodejs";
 
@@ -725,6 +726,30 @@ if (
       gatewayStatus: "paid",
       webhookConfirmed: false,
     });
+
+    if (!result.alreadyProcessed) {
+  try {
+    await createNotification({
+      userId: payment.userId,
+      type: result.isRenewal ? "SUBSCRIPTION_ACTIVE" : "PAYMENT_SUCCESS",
+      title: result.isRenewal
+        ? "Subscription renewed"
+        : "Subscription activated",
+      message: result.isRenewal
+        ? "Your Sponexus subscription has been renewed successfully."
+        : "Your Sponexus subscription is now active.",
+      link: "/pricing",
+      metadata: {
+        paymentId: String(payment._id),
+        subscriptionId: result.subscription?._id
+          ? String(result.subscription._id)
+          : null,
+      },
+    });
+  } catch (notificationError) {
+    console.error("Payment success notification error:", notificationError);
+  }
+}
 
     await safeLogAudit({
       actorId: payment.userId,

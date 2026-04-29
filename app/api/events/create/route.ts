@@ -7,6 +7,7 @@ import { ACTIONS } from "@/lib/subscription/constants";
 import { checkUsageLimit } from "@/lib/subscription/checkUsageLimit";
 import { incrementUsage } from "@/lib/subscription/enforceLimits";
 import { CreateEventInput, EventDeliverable } from "@/types/event";
+import { createNotification } from "@/lib/notifications/createNotification";
 
 type UploadedMedia = {
   url: string;
@@ -454,14 +455,29 @@ export async function POST(request: NextRequest) {
     });
 
     if (finalStatus === "PUBLISHED") {
-      await incrementUsage({
-        userId: currentUser._id,
-        role: "ORGANIZER",
-        action: ACTIONS.PUBLISH_EVENT,
-        subscriptionId: accessSubscriptionId,
-        planId: accessPlanId,
-      });
-    }
+  await incrementUsage({
+    userId: currentUser._id,
+    role: "ORGANIZER",
+    action: ACTIONS.PUBLISH_EVENT,
+    subscriptionId: accessSubscriptionId,
+    planId: accessPlanId,
+  });
+
+  try {
+  await createNotification({
+    userId: currentUser._id,
+    type: "EVENT_PUBLISHED",
+    title: "Event published",
+    message: "Your event is now live on Sponexus.",
+    link: `/events/${event._id}`,
+    metadata: {
+      eventId: String(event._id),
+    },
+  });
+} catch (notificationError) {
+  console.error("Event published notification error:", notificationError);
+}
+}
 
     return buildNoStoreResponse(
       {

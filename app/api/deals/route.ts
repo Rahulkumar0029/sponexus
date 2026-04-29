@@ -12,6 +12,7 @@ import { checkUsageLimit } from "@/lib/subscription/checkUsageLimit";
 import { incrementUsage } from "@/lib/subscription/enforceLimits";
 
 import { ACTIONS } from "@/lib/subscription/constants";
+import { createNotification } from "@/lib/notifications/createNotification";
 
 const ALLOWED_DEAL_STATUSES = new Set([
   "pending",
@@ -465,6 +466,28 @@ export async function POST(request: NextRequest) {
   subscriptionId: usage.subscriptionId || null,
   planId: usage.planId || null,
 });
+
+try {
+  const receiverId =
+    currentUser.role === "ORGANIZER" ? sponsorId : organizerId;
+
+  await createNotification({
+    userId: receiverId,
+    type: "DEAL_CREATED",
+    title: "New deal request",
+    message: "You received a new sponsorship deal request.",
+    link: `/deals/${deal._id}`,
+    metadata: {
+      dealId: String(deal._id),
+      eventId,
+      organizerId,
+      sponsorId,
+      createdBy: String(currentUser._id),
+    },
+  });
+} catch (notificationError) {
+  console.error("Deal created notification error:", notificationError);
+}
 
     const populatedDeal = await DealModel.findById(deal._id)
       .populate("organizerId", "_id name email phone companyName")
