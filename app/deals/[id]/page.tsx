@@ -215,6 +215,7 @@ export default function DealDetailPage() {
 
         const response = await fetch(`/api/deals/${dealId}`, {
           method: "GET",
+          credentials: "include",
           cache: "no-store",
         });
 
@@ -256,12 +257,14 @@ export default function DealDetailPage() {
     };
   }, [dealId]);
 
-  const roleInDeal = useMemo<"ORGANIZER" | "SPONSOR" | null>(() => {
-    if (!user || !deal) return null;
-    if (user._id === deal.organizer._id) return "ORGANIZER";
-    if (user._id === deal.sponsor._id) return "SPONSOR";
-    return null;
-  }, [user, deal]);
+const currentUserId = (user as any)?._id || (user as any)?.id || "";
+
+const roleInDeal = useMemo<"ORGANIZER" | "SPONSOR" | null>(() => {
+  if (!currentUserId || !deal) return null;
+  if (currentUserId === deal.organizer._id) return "ORGANIZER";
+  if (currentUserId === deal.sponsor._id) return "SPONSOR";
+  return null;
+}, [currentUserId, deal]);
 
   const canEditCommercialFields = useMemo(() => {
     if (!deal || roleInDeal !== "ORGANIZER") return false;
@@ -336,9 +339,10 @@ export default function DealDetailPage() {
     if (!dealId) return;
 
     const response = await fetch(`/api/deals/${dealId}`, {
-      method: "GET",
-      cache: "no-store",
-    });
+  method: "GET",
+  credentials: "include",
+  cache: "no-store",
+});
 
     const data: DealApiResponse = await response.json();
 
@@ -367,12 +371,13 @@ export default function DealDetailPage() {
       setActionSuccess("");
 
       const response = await fetch(`/api/deals/${dealId}`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      });
+  method: "PATCH",
+  headers: {
+    "Content-Type": "application/json",
+  },
+  credentials: "include",
+  body: JSON.stringify(payload),
+});
 
       const data: DealApiResponse = await response.json();
 
@@ -399,13 +404,14 @@ export default function DealDetailPage() {
       setActionError("");
       setActionSuccess("");
 
-      const response = await fetch(`/api/deals/${dealId}`, {
-        method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ revealContact: true }),
-      });
+     const response = await fetch(`/api/deals/${dealId}`, {
+  method: "PATCH",
+  headers: {
+    "Content-Type": "application/json",
+  },
+  credentials: "include",
+  body: JSON.stringify({ revealContact: true }),
+});
 
       const data: DealApiResponse = await response.json();
 

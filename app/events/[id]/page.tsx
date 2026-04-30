@@ -61,6 +61,7 @@ export default function EventDetailPage() {
   const [error, setError] = useState("");
   const [dealError, setDealError] = useState("");
   const [dealSuccess, setDealSuccess] = useState("");
+const [previewMedia, setPreviewMedia] = useState<MediaItem | null>(null);
 
   useEffect(() => {
     const fetchEvent = async () => {
@@ -181,6 +182,21 @@ export default function EventDetailPage() {
     ? event.pastEventMedia
     : [];
 
+    const allMedia: MediaItem[] = [
+  ...(event?.coverImage
+    ? [
+        {
+          url: event.coverImage,
+          publicId: "cover-image",
+          type: "image" as const,
+          title: "Cover Image",
+        },
+      ]
+    : []),
+  ...venueImages,
+  ...pastEventMedia,
+];
+
   const handleCreateDeal = async () => {
     if (!isAuthenticated) {
       router.push(`/login?redirect=/events/${eventId}`);
@@ -299,340 +315,288 @@ export default function EventDetailPage() {
   }
 
   return (
-    <main className="min-h-screen bg-dark-base px-4 py-8 text-text-light">
-      <div className="container-custom mx-auto max-w-6xl">
-        <div className="mb-8 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div>
-            <p className="text-sm uppercase tracking-[0.18em] text-accent-orange">
-              {event.isPast ? "Past Event" : event.isActive ? "Active Event" : "Event"}
-            </p>
-            <h1 className="mt-2 text-3xl font-bold sm:text-4xl">
-              {event.title || "Untitled Event"}
-            </h1>
-            <p className="mt-3 max-w-3xl text-text-muted">
-              {event.description || "No description available."}
-            </p>
-          </div>
-
-          <div className="flex flex-col gap-3 sm:flex-row lg:flex-col">
-            {isOwner ? (
-              <>
-                <Button
-                  variant="secondary"
-                  onClick={() => router.push("/dashboard/organizer")}
-                >
-                  Back to Dashboard
-                </Button>
-
-                <Button
-                  variant="primary"
-                  onClick={() => router.push("/events")}
-                >
-                  View My Events
-                </Button>
-              </>
-            ) : user?.role === "SPONSOR" ? (
-              <div className="w-full max-w-md space-y-3 rounded-2xl border border-white/10 bg-white/[0.04] p-4">
-                <input
-                  type="number"
-                  placeholder="Enter your proposed amount"
-                  value={dealAmount}
-                  onChange={(e) => setDealAmount(e.target.value)}
-                  className="w-full rounded-xl border border-white/10 bg-[#07152F]/80 px-4 py-3 text-white outline-none placeholder:text-[#94A3B8]"
-                />
-
-                <textarea
-                  placeholder="Write your proposal message"
-                  value={dealMessage}
-                  onChange={(e) => setDealMessage(e.target.value)}
-                  rows={4}
-                  className="w-full rounded-xl border border-white/10 bg-[#07152F]/80 px-4 py-3 text-white outline-none placeholder:text-[#94A3B8]"
-                />
-
-                {dealError ? (
-                  <p className="text-sm text-red-300">{dealError}</p>
-                ) : null}
-
-                {dealSuccess ? (
-                  <p className="text-sm text-[#FFB347]">{dealSuccess}</p>
-                ) : null}
-
-                <Button
-                  variant="primary"
-                  loading={actionLoading}
-                  onClick={handleCreateDeal}
-                  className="w-full"
-                >
-                  {actionLoading ? "Creating..." : "Start Deal"}
-                </Button>
-              </div>
+  <main className="min-h-screen bg-[radial-gradient(circle_at_top_right,rgba(255,122,24,0.10),transparent_35%),linear-gradient(135deg,#020617,#07152f,#020617)] px-4 py-8 text-text-light">
+    <div className="container-custom mx-auto max-w-7xl">
+      <section className="mb-8 overflow-hidden rounded-[32px] border border-white/10 bg-white/[0.05] shadow-[0_20px_80px_rgba(0,0,0,0.35)] backdrop-blur-xl">
+        <div className="grid gap-0 lg:grid-cols-[1.45fr_0.85fr]">
+          <div className="relative min-h-[320px] overflow-hidden bg-dark-layer sm:min-h-[430px]">
+            {event.coverImage ? (
+              <Image
+                src={event.coverImage}
+                alt={event.title || "Event cover image"}
+                fill
+                className="object-cover"
+                sizes="100vw"
+                priority
+              />
             ) : (
-              <Button asChild variant="primary">
-                <Link href={`/login?redirect=/events/${eventId}`}>
-                  Login to Continue
-                </Link>
-              </Button>
-            )}
-          </div>
-        </div>
-
-        {event.coverImage ? (
-          <div className="relative mb-8 h-[260px] w-full overflow-hidden rounded-3xl border border-white/10 bg-dark-layer sm:h-[380px]">
-            <Image
-              src={event.coverImage}
-              alt={event.title || "Event cover image"}
-              fill
-              className="object-cover"
-              sizes="100vw"
-              priority
-            />
-          </div>
-        ) : null}
-
-        <div className="grid gap-8 lg:grid-cols-[1.6fr_0.9fr]">
-          <div className="space-y-8">
-            <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-6 sm:p-8">
-              <h2 className="text-xl font-semibold">Event Overview</h2>
-
-              <div className="mt-6 grid gap-5 sm:grid-cols-2">
-                <div>
-                  <p className="text-xs uppercase tracking-wide text-text-muted">Date</p>
-                  <p className="mt-1 font-medium text-text-light">{formattedDateRange}</p>
-                </div>
-
-                <div>
-                  <p className="text-xs uppercase tracking-wide text-text-muted">Budget</p>
-                  <p className="mt-1 font-medium text-accent-orange">{formattedBudget}</p>
-                </div>
-
-                <div>
-                  <p className="text-xs uppercase tracking-wide text-text-muted">Location</p>
-                  <p className="mt-1 font-medium text-text-light">
-                    {event.location || "Not specified"}
-                  </p>
-                </div>
-
-                <div>
-                  <p className="text-xs uppercase tracking-wide text-text-muted">
-                    Expected Attendees
-                  </p>
-                  <p className="mt-1 font-medium text-text-light">
-                    👥 {formattedAttendees}
-                  </p>
-                </div>
-
-                <div>
-                  <p className="text-xs uppercase tracking-wide text-text-muted">Event Type</p>
-                  <p className="mt-1 font-medium text-text-light">
-                    {event.eventType || "Event"}
-                  </p>
-                </div>
-
-                <div>
-                  <p className="text-xs uppercase tracking-wide text-text-muted">Organizer</p>
-                  <p className="mt-1 font-medium text-text-light">{organizerDisplay}</p>
-                </div>
+              <div className="flex h-full min-h-[320px] items-center justify-center text-text-muted">
+                No cover image
               </div>
-            </section>
-
-            <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-6 sm:p-8">
-              <h2 className="text-xl font-semibold">Categories</h2>
-
-              <div className="mt-5 flex flex-wrap gap-3">
-                {categories.length > 0 ? (
-                  categories.map((category) => (
-                    <span
-                      key={category}
-                      className="rounded-full bg-accent-orange/10 px-4 py-2 text-sm text-accent-orange"
-                    >
-                      {category}
-                    </span>
-                  ))
-                ) : (
-                  <p className="text-text-muted">No categories added.</p>
-                )}
-              </div>
-            </section>
-
-            <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-6 sm:p-8">
-              <h2 className="text-xl font-semibold">Target Audience</h2>
-
-              <div className="mt-5 flex flex-wrap gap-3">
-                {targetAudience.length > 0 ? (
-                  targetAudience.map((audience) => (
-                    <span
-                      key={audience}
-                      className="rounded-full bg-white/5 px-4 py-2 text-sm text-text-light"
-                    >
-                      {audience}
-                    </span>
-                  ))
-                ) : (
-                  <p className="text-text-muted">No audience details added.</p>
-                )}
-              </div>
-            </section>
-
-            {providedDeliverables.length > 0 && (
-              <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-6 sm:p-8">
-                <h2 className="text-xl font-semibold">Sponsor Deliverables</h2>
-                <p className="mt-2 text-sm text-text-muted">
-                  These are the sponsorship benefits or deliverables available for brand partners.
-                </p>
-
-                <div className="mt-5 flex flex-wrap gap-3">
-                  {providedDeliverables.map((deliverable) => (
-                    <span
-                      key={deliverable}
-                      className="rounded-full bg-white/5 px-4 py-2 text-sm text-text-light"
-                    >
-                      {deliverable.split("_").join(" ")}
-                    </span>
-                  ))}
-                </div>
-              </section>
             )}
 
-            {venueImages.length > 0 && (
-              <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-6 sm:p-8">
-                <h2 className="text-xl font-semibold">Venue & Event Space</h2>
-                <div className="mt-6 grid gap-4 sm:grid-cols-2">
-                  {venueImages.map((item, index) => (
-                    <div
-                      key={`${item.publicId}-${index}`}
-                      className="overflow-hidden rounded-2xl border border-white/10 bg-dark-layer"
-                    >
-                      {item.type === "video" ? (
-                        <video
-                          controls
-                          className="h-56 w-full object-cover"
-                          src={item.url}
-                        />
-                      ) : (
-                        <div className="relative h-56 w-full">
-                          <Image
-                            src={item.url}
-                            alt={item.title || `Venue media ${index + 1}`}
-                            fill
-                            className="object-cover"
-                            sizes="(max-width: 768px) 100vw, 50vw"
-                          />
-                        </div>
-                      )}
+            <div className="absolute inset-0 bg-gradient-to-t from-[#020617] via-[#020617]/20 to-transparent" />
 
-                      {item.title ? (
-                        <div className="px-4 py-3 text-sm text-text-muted">
-                          {item.title}
-                        </div>
-                      ) : null}
-                    </div>
-                  ))}
-                </div>
-              </section>
-            )}
+            <div className="absolute bottom-0 left-0 right-0 p-6 sm:p-8">
+              <p className="mb-3 inline-flex rounded-full border border-accent-orange/30 bg-accent-orange/10 px-4 py-2 text-xs font-semibold uppercase tracking-[0.18em] text-accent-orange">
+                {event.isPast ? "Past Event" : event.isActive ? "Active Event" : event.status || "Event"}
+              </p>
 
-            {pastEventMedia.length > 0 && (
-              <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-6 sm:p-8">
-                <h2 className="text-xl font-semibold">Past Event Proof</h2>
-                <p className="mt-2 text-sm text-text-muted">
-                  Previous event media to help sponsors evaluate trust and execution quality.
-                </p>
+              <h1 className="max-w-4xl text-3xl font-bold text-white sm:text-5xl">
+                {event.title || "Untitled Event"}
+              </h1>
 
-                <div className="mt-6 grid gap-4 sm:grid-cols-2">
-                  {pastEventMedia.map((item, index) => (
-                    <div
-                      key={`${item.publicId}-${index}`}
-                      className="overflow-hidden rounded-2xl border border-white/10 bg-dark-layer"
-                    >
-                      {item.type === "video" ? (
-                        <video
-                          controls
-                          className="h-56 w-full object-cover"
-                          src={item.url}
-                        />
-                      ) : (
-                        <div className="relative h-56 w-full">
-                          <Image
-                            src={item.url}
-                            alt={item.title || `Past event media ${index + 1}`}
-                            fill
-                            className="object-cover"
-                            sizes="(max-width: 768px) 100vw, 50vw"
-                          />
-                        </div>
-                      )}
-
-                      {item.title ? (
-                        <div className="px-4 py-3 text-sm text-text-muted">
-                          {item.title}
-                        </div>
-                      ) : null}
-                    </div>
-                  ))}
-                </div>
-              </section>
-            )}
+              <p className="mt-4 max-w-3xl text-sm leading-relaxed text-[#CBD5E1] sm:text-base">
+                {event.description || "No description available."}
+              </p>
+            </div>
           </div>
 
-          <aside className="space-y-6">
-            <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-6">
-              <h2 className="text-lg font-semibold">Why this matters</h2>
-              <div className="mt-4 space-y-3 text-sm text-text-muted">
-                <p>• Strong event details improve sponsor confidence.</p>
-                <p>• Clear audience and budget help better-fit matching.</p>
-                <p>• Venue and past-event proof build credibility fast.</p>
-              </div>
-            </section>
+          <aside className="border-t border-white/10 bg-[#07152F]/70 p-6 sm:p-8 lg:border-l lg:border-t-0">
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-1">
+              <InfoTile label="Date" value={formattedDateRange} />
+              <InfoTile label="Budget" value={formattedBudget} accent />
+              <InfoTile label="Location" value={event.location || "Not specified"} />
+              <InfoTile label="Expected Attendees" value={`👥 ${formattedAttendees}`} />
+              <InfoTile label="Event Type" value={event.eventType || "Event"} />
+              <InfoTile label="Organizer" value={organizerDisplay} />
+            </div>
 
-            {isOwner ? (
-              <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-6">
-                <h2 className="text-lg font-semibold">Organizer Actions</h2>
-                <div className="mt-4 space-y-3">
-                  <Button
-                    variant="secondary"
-                    className="w-full"
-                    onClick={() => router.push("/events")}
-                  >
-                    Go to My Events
+            <div className="mt-6 space-y-3">
+              {isOwner ? (
+                <>
+                  <Button variant="primary" className="w-full" onClick={() => router.push("/events")}>
+                    View My Events
                   </Button>
-
-                  <Button
-                    variant="ghost"
-                    className="w-full"
-                    onClick={() => router.push("/dashboard/organizer")}
-                  >
+                  <Button variant="secondary" className="w-full" onClick={() => router.push("/dashboard/organizer")}>
                     Back to Dashboard
                   </Button>
-                </div>
-              </section>
-            ) : user?.role === "SPONSOR" ? (
-              <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-6">
-                <h2 className="text-lg font-semibold">Sponsor Action</h2>
-                <p className="mt-2 text-sm text-text-muted">
-                  Use the proposal form above to start a direct sponsorship discussion for this event.
-                </p>
-                <div className="mt-4 rounded-2xl border border-white/10 bg-[#07152F]/60 px-4 py-3 text-sm text-[#94A3B8]">
-                  Submit your amount and proposal message from the deal box above.
-                </div>
-              </section>
-            ) : (
-              <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-6">
-                <h2 className="text-lg font-semibold">Want to sponsor this?</h2>
-                <p className="mt-2 text-sm text-text-muted">
-                  Login as a sponsor to explore opportunities and continue the next step.
-                </p>
-                <div className="mt-4">
-                  <Button asChild variant="primary" className="w-full">
-                    <Link href={`/login?redirect=/events/${eventId}`}>
-                      Login as Sponsor
-                    </Link>
+                </>
+              ) : user?.role === "SPONSOR" ? (
+                <div className="space-y-3 rounded-3xl border border-white/10 bg-white/[0.04] p-4">
+                  <h2 className="text-lg font-semibold text-white">Start Sponsorship Deal</h2>
+
+                  <input
+                    type="number"
+                    placeholder="Enter your proposed amount"
+                    value={dealAmount}
+                    onChange={(e) => setDealAmount(e.target.value)}
+                    className="w-full rounded-xl border border-white/10 bg-[#020617]/70 px-4 py-3 text-white outline-none placeholder:text-[#94A3B8]"
+                  />
+
+                  <textarea
+                    placeholder="Write your proposal message"
+                    value={dealMessage}
+                    onChange={(e) => setDealMessage(e.target.value)}
+                    rows={4}
+                    className="w-full rounded-xl border border-white/10 bg-[#020617]/70 px-4 py-3 text-white outline-none placeholder:text-[#94A3B8]"
+                  />
+
+                  {dealError ? <p className="text-sm text-red-300">{dealError}</p> : null}
+                  {dealSuccess ? <p className="text-sm text-[#FFB347]">{dealSuccess}</p> : null}
+
+                  <Button variant="primary" loading={actionLoading} onClick={handleCreateDeal} className="w-full">
+                    {actionLoading ? "Creating..." : "Start Deal"}
                   </Button>
                 </div>
-              </section>
-            )}
+              ) : (
+                <Button asChild variant="primary" className="w-full">
+                  <Link href={`/login?redirect=/events/${eventId}`}>Login to Continue</Link>
+                </Button>
+              )}
+            </div>
           </aside>
         </div>
+      </section>
+
+      <div className="grid gap-8 lg:grid-cols-[1.7fr_0.8fr]">
+        <div className="space-y-8">
+
+          <section className="rounded-[28px] border border-white/10 bg-white/[0.04] p-6 backdrop-blur-xl sm:p-8">
+            <h2 className="text-2xl font-bold text-white">Categories & Audience</h2>
+
+            <div className="mt-6 grid gap-6 md:grid-cols-2">
+              <div>
+                <p className="mb-3 text-sm font-semibold text-text-muted">Categories</p>
+                <div className="flex flex-wrap gap-3">
+                  {categories.length > 0 ? (
+                    categories.map((category) => (
+                      <span key={category} className="rounded-full border border-accent-orange/20 bg-accent-orange/10 px-4 py-2 text-sm text-accent-orange">
+                        {category}
+                      </span>
+                    ))
+                  ) : (
+                    <p className="text-text-muted">No categories added.</p>
+                  )}
+                </div>
+              </div>
+
+              <div>
+                <p className="mb-3 text-sm font-semibold text-text-muted">Target Audience</p>
+                <div className="flex flex-wrap gap-3">
+                  {targetAudience.length > 0 ? (
+                    targetAudience.map((audience) => (
+                      <span key={audience} className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-white">
+                        {audience}
+                      </span>
+                    ))
+                  ) : (
+                    <p className="text-text-muted">No audience details added.</p>
+                  )}
+                </div>
+              </div>
+            </div>
+          </section>
+
+          {providedDeliverables.length > 0 && (
+            <section className="rounded-[28px] border border-white/10 bg-white/[0.04] p-6 backdrop-blur-xl sm:p-8">
+              <h2 className="text-2xl font-bold text-white">Sponsor Deliverables</h2>
+              <p className="mt-2 text-sm text-text-muted">
+                These are the sponsorship benefits or deliverables available for brand partners.
+              </p>
+
+              <div className="mt-5 flex flex-wrap gap-3">
+                {providedDeliverables.map((deliverable) => (
+                  <span key={deliverable} className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-white">
+                    {deliverable.split("_").join(" ")}
+                  </span>
+                ))}
+              </div>
+            </section>
+          )}
+
+          {allMedia.length > 0 && (
+            <section className="rounded-[28px] border border-white/10 bg-white/[0.04] p-6 backdrop-blur-xl sm:p-8">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <h2 className="text-2xl font-bold text-white">Event Media</h2>
+                  <p className="mt-2 text-sm text-text-muted">
+                    Venue, event space, and past event proof in one gallery.
+                  </p>
+                </div>
+                <p className="text-sm text-accent-orange">{allMedia.length} media files</p>
+              </div>
+
+              <div className="mt-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+                {allMedia.map((item, index) => (
+                  <button
+                    key={`${item.publicId}-${index}`}
+                    type="button"
+                    onClick={() => setPreviewMedia(item)}
+                    className="group overflow-hidden rounded-2xl border border-white/10 bg-dark-layer text-left transition hover:border-accent-orange/40 hover:shadow-[0_0_30px_rgba(255,122,24,0.14)]"
+                  >
+                    {item.type === "video" ? (
+                      <video className="h-56 w-full object-cover" src={item.url} />
+                    ) : (
+                      <div className="relative aspect-[16/10] w-full bg-[#020617]">
+                        <Image
+                          src={item.url}
+                          alt={item.title || `Event media ${index + 1}`}
+                          fill
+                          className="object-cover transition duration-300 group-hover:scale-105"
+                          sizes="(max-width: 768px) 100vw, 33vw"
+                        />
+                      </div>
+                    )}
+
+                    <div className="px-4 py-3 text-sm text-text-muted">
+                      {item.title || `Media ${index + 1}`}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </section>
+          )}
+        </div>
+
+        <aside className="space-y-6 lg:sticky lg:top-24 lg:self-start">
+          <section className="rounded-[28px] border border-white/10 bg-white/[0.05] p-6 backdrop-blur-xl">
+            <h2 className="text-lg font-semibold">Why this matters</h2>
+            <div className="mt-4 space-y-3 text-sm text-text-muted">
+              <p>• Strong event details improve sponsor confidence.</p>
+              <p>• Clear audience and budget help better-fit matching.</p>
+              <p>• Venue and past-event proof build credibility fast.</p>
+            </div>
+          </section>
+
+          <section className="rounded-[28px] border border-accent-orange/20 bg-accent-orange/10 p-6 backdrop-blur-xl">
+            <h2 className="text-lg font-semibold text-white">Quick Action</h2>
+            <p className="mt-2 text-sm text-[#CBD5E1]">
+              Review this event and take the next action based on your role.
+            </p>
+
+            <div className="mt-5">
+              {isOwner ? (
+                <Button variant="primary" className="w-full" onClick={() => router.push("/events")}>
+                  Go to My Events
+                </Button>
+              ) : user?.role === "SPONSOR" ? (
+                <Button variant="primary" className="w-full" onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}>
+                  Start Deal
+                </Button>
+              ) : (
+                <Button asChild variant="primary" className="w-full">
+                  <Link href={`/login?redirect=/events/${eventId}`}>Login as Sponsor</Link>
+                </Button>
+              )}
+            </div>
+          </section>
+        </aside>
       </div>
-    </main>
+    </div>
+
+    {previewMedia ? (
+      <div
+        className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/85 px-4 py-8 backdrop-blur-md"
+        onClick={() => setPreviewMedia(null)}
+      >
+        <div className="relative h-[82vh] w-full max-w-6xl overflow-hidden rounded-3xl border border-white/10 bg-[#020617]">
+          {previewMedia.type === "video" ? (
+            <video controls autoPlay className="h-full w-full object-contain" src={previewMedia.url} />
+          ) : (
+            <Image
+              src={previewMedia.url}
+              alt={previewMedia.title || "Event media preview"}
+              fill
+              className="object-contain"
+              sizes="100vw"
+            />
+          )}
+
+          <button
+            type="button"
+            onClick={() => setPreviewMedia(null)}
+            className="absolute right-4 top-4 rounded-full border border-white/10 bg-black/60 px-4 py-2 text-sm font-semibold text-white"
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    ) : null}
+  </main>
+);
+}
+function InfoTile({
+  label,
+  value,
+  accent = false,
+}: {
+  label: string;
+  value: string;
+  accent?: boolean;
+}) {
+  return (
+    <div className="rounded-2xl border border-white/10 bg-[#020617]/50 p-4">
+      <p className="text-xs uppercase tracking-[0.16em] text-text-muted">
+        {label}
+      </p>
+      <p
+        className={`mt-2 text-sm font-semibold ${
+          accent ? "text-accent-orange" : "text-white"
+        }`}
+      >
+        {value}
+      </p>
+    </div>
   );
 }

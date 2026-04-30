@@ -40,6 +40,7 @@ export interface DealEvent {
 // 🔹 Main Deal Object (frontend safe version)
 export interface Deal {
   _id: string;
+  createdBy?: string;
 
   title: string;
   description: string;

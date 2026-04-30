@@ -116,13 +116,10 @@ function getRoleInDeal(
 function isAllowedStatusTransition(
   currentStatus: string,
   nextStatus: string,
-  role: "ORGANIZER" | "SPONSOR"
+  isCreator: boolean
 ) {
-  const roleTransitions: Record<
-    "ORGANIZER" | "SPONSOR",
-    Record<string, string[]>
-  > = {
-    ORGANIZER: {
+  if (isCreator) {
+    const creatorTransitions: Record<string, string[]> = {
       pending: ["cancelled", "disputed"],
       negotiating: ["cancelled", "disputed"],
       accepted: ["completed", "disputed"],
@@ -130,20 +127,22 @@ function isAllowedStatusTransition(
       completed: [],
       cancelled: [],
       disputed: ["cancelled"],
-    },
-    SPONSOR: {
-      pending: ["negotiating", "accepted", "rejected", "cancelled", "disputed"],
-      negotiating: ["accepted", "rejected", "cancelled", "disputed"],
-      accepted: ["disputed"],
-      rejected: [],
-      completed: [],
-      cancelled: [],
-      disputed: ["negotiating", "cancelled"],
-    },
+    };
+
+    return (creatorTransitions[currentStatus] || []).includes(nextStatus);
+  }
+
+  const receiverTransitions: Record<string, string[]> = {
+    pending: ["negotiating", "accepted", "rejected", "cancelled", "disputed"],
+    negotiating: ["accepted", "rejected", "cancelled", "disputed"],
+    accepted: ["completed", "disputed"],
+    rejected: [],
+    completed: [],
+    cancelled: [],
+    disputed: ["negotiating", "cancelled"],
   };
 
-  const allowedNextStatuses = roleTransitions[role]?.[currentStatus] || [];
-  return allowedNextStatuses.includes(nextStatus);
+  return (receiverTransitions[currentStatus] || []).includes(nextStatus);
 }
 
 function applyLifecycleTimestamps(deal: any, nextStatus: string) {
@@ -371,8 +370,9 @@ export async function PATCH(
     }
 
     const roleInDeal = getRoleInDeal(currentUserId, deal);
+const isCreator = String(deal.createdBy) === currentUserId;
 
-    if (!roleInDeal) {
+if (!roleInDeal) {
       return NextResponse.json(
         { success: false, message: "Unable to determine user role in this deal" },
         { status: 403 }
@@ -683,7 +683,7 @@ const safeDeal = sanitizeDealContactsForResponse(updatedDeal);
         );
       }
 
-      if (!isAllowedStatusTransition(currentStatus, nextStatus, roleInDeal)) {
+      if (!isAllowedStatusTransition(currentStatus, nextStatus, isCreator)) {
         return NextResponse.json(
           {
             success: false,

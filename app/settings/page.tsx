@@ -366,7 +366,13 @@ export default function SettingsPage() {
       }
 
       setCurrentUser(data.user || currentUser);
-      setSaveSuccess("Settings saved successfully.");
+
+if (data.user) {
+  localStorage.setItem("user", JSON.stringify(data.user));
+  window.dispatchEvent(new Event("sponexus-auth-change"));
+}
+
+setSaveSuccess("Settings saved successfully.");
     } catch (err: any) {
       setSaveError(err?.message || "Failed to save organizer settings");
     } finally {
@@ -423,8 +429,14 @@ export default function SettingsPage() {
       }
 
       setCurrentUser(data.user || currentUser);
-      setSponsorProfile(data.sponsorProfile || null);
-      setSaveSuccess("Settings saved successfully.");
+setSponsorProfile(data.sponsorProfile || null);
+
+if (data.user) {
+  localStorage.setItem("user", JSON.stringify(data.user));
+  window.dispatchEvent(new Event("sponexus-auth-change"));
+}
+
+setSaveSuccess("Settings saved successfully.");
     } catch (err: any) {
       setSaveError(err?.message || "Failed to save sponsor profile");
     } finally {

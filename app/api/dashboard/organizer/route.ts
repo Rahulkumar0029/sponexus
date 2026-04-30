@@ -22,8 +22,8 @@ export async function GET() {
     }
 
     const user = await User.findById(currentUser._id).select(
-      "_id firstName lastName name email role organizationName companyName isProfileComplete"
-    );
+  "_id firstName lastName name email role phone organizationName organizerLocation companyName isProfileComplete"
+);
 
     if (!user) {
       return NextResponse.json(
@@ -145,7 +145,14 @@ export async function GET() {
   organizationName: user.organizationName || "",
   companyName: user.companyName || "",
   role: user.role,
-  isProfileComplete: Boolean(user.isProfileComplete),
+ isProfileComplete: Boolean(
+  user.isProfileComplete ||
+    (user.firstName &&
+      user.lastName &&
+      user.phone &&
+      user.organizationName &&
+      user.organizerLocation)
+),
 },
       },
       { status: 200 }

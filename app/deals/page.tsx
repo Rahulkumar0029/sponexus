@@ -211,13 +211,12 @@ export default function DealsPage() {
               <div className="mb-3 inline-flex items-center rounded-full border border-[#FF7A18]/20 bg-[#FF7A18]/10 px-3 py-1 text-xs font-medium text-[#FFB347]">
                 Deal Management
               </div>
-              <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">
-                Your Deals
-              </h1>
-              <p className="mt-3 max-w-2xl text-sm leading-6 text-[#94A3B8] sm:text-base">
-                Track active conversations, review deal status, and move sponsor–
-                organizer agreements toward closure.
-              </p>
+              <h1 className="text-3xl font-bold tracking-tight sm:text-5xl">
+  Deal Room
+</h1>
+<p className="mt-3 max-w-2xl text-sm leading-6 text-[#CBD5E1] sm:text-base">
+  Manage sponsorship requests, review agreement progress, and close trusted sponsor–organizer partnerships.
+</p>
             </div>
 
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -321,16 +320,16 @@ export default function DealsPage() {
                   <Link
                     key={deal._id}
                     href={`/deals/${deal._id}`}
-                    className="group rounded-3xl border border-white/10 bg-white/[0.03] p-5 transition hover:border-[#FF7A18]/30 hover:bg-white/[0.05]"
+                    className="group rounded-[28px] border border-white/10 bg-[linear-gradient(180deg,rgba(255,255,255,0.06),rgba(255,255,255,0.025))] p-5 shadow-[0_20px_60px_rgba(0,0,0,0.25)] transition hover:border-[#FF7A18]/40 hover:shadow-[0_0_35px_rgba(255,122,24,0.14)]"
                   >
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
-                        <h3 className="line-clamp-2 text-lg font-semibold text-white transition group-hover:text-[#FFB347]">
-                          {deal.title || "Untitled deal"}
-                        </h3>
-                        <p className="mt-2 text-sm text-[#94A3B8]">
-                          Event: {deal.event.title || "Linked event unavailable"}
-                        </p>
+                        <h3 className="line-clamp-2 text-xl font-bold text-white transition group-hover:text-[#FFB347]">
+  {deal.title || "Untitled deal"}
+</h3>
+<p className="mt-2 line-clamp-1 text-sm text-[#CBD5E1]">
+  {deal.event.title || "Linked event unavailable"}
+</p>
                       </div>
 
                       <span
@@ -342,7 +341,7 @@ export default function DealsPage() {
                       </span>
                     </div>
 
-                    <div className="mt-5 grid grid-cols-2 gap-3">
+                    <div className="mt-5 grid grid-cols-2 gap-3 rounded-3xl border border-white/10 bg-[#020617]/40 p-3">
                       <div className="rounded-2xl border border-white/10 bg-[#07152F]/70 p-3">
                         <p className="text-xs text-[#94A3B8]">Proposed</p>
                         <p className="mt-2 text-sm font-semibold text-white">
@@ -379,12 +378,12 @@ export default function DealsPage() {
                     </div>
 
                     <div className="mt-6 flex items-center justify-between border-t border-white/10 pt-4">
-                      <span className="text-sm text-[#94A3B8]">
-                        Open details
-                      </span>
-                      <span className="inline-flex items-center rounded-full bg-gradient-to-r from-[#FF7A18] to-[#FFB347] px-4 py-2 text-sm font-semibold text-[#020617]">
-                        View Deal
-                      </span>
+                      <span className="text-sm text-[#CBD5E1]">
+  Review agreement
+</span>
+<span className="inline-flex items-center rounded-full bg-gradient-to-r from-[#FF7A18] to-[#FFB347] px-5 py-2 text-sm font-bold text-[#020617] shadow-[0_8px_28px_rgba(255,122,24,0.28)]">
+  Open Deal →
+</span>
                     </div>
                   </Link>
                 );

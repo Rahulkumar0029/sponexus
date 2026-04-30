@@ -8,6 +8,7 @@ import { checkUsageLimit } from "@/lib/subscription/checkUsageLimit";
 import { incrementUsage } from "@/lib/subscription/enforceLimits";
 import { CreateEventInput, EventDeliverable } from "@/types/event";
 import { createNotification } from "@/lib/notifications/createNotification";
+import User from "@/lib/models/User";
 
 type UploadedMedia = {
   url: string;
@@ -153,7 +154,20 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!currentUser.isProfileComplete) {
+   const dbUser = await User.findById(currentUser._id).select(
+  "firstName lastName phone organizationName organizerLocation isProfileComplete"
+);
+
+const isProfileComplete = Boolean(
+  dbUser?.isProfileComplete ||
+    (dbUser?.firstName &&
+      dbUser?.lastName &&
+      dbUser?.phone &&
+      dbUser?.organizationName &&
+      dbUser?.organizerLocation)
+);
+
+if (!isProfileComplete) {
   return buildNoStoreResponse(
     {
       success: false,
@@ -426,6 +440,16 @@ export async function POST(request: NextRequest) {
     let publishBlockedMessage = "";
     let accessSubscriptionId: string | null = null;
     let accessPlanId: string | null = null;
+
+    if (safeRequestedStatus === "PUBLISHED" && !isProfileComplete) {
+  return buildNoStoreResponse(
+    {
+      success: false,
+      message: "Please complete your organizer profile before publishing events.",
+    },
+    403
+  );
+}
 
     if (safeRequestedStatus === "PUBLISHED") {
   const usage = await checkUsageLimit({
