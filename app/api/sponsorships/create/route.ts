@@ -23,7 +23,18 @@ const MAX_CATEGORY_LENGTH = 80;
 const MAX_LOCATION_LENGTH = 120;
 const MAX_CITY_LENGTH = 120;
 const MAX_CAMPAIGN_GOAL_LENGTH = 500;
-const MAX_DELIVERABLES_LENGTH = 2000;
+const ALLOWED_DELIVERABLES = new Set([
+  "Stage Branding",
+  "Stall Space",
+  "Social Media Promotion",
+  "Product Display",
+  "Announcements / Stage Mentions",
+  "Email Promotion",
+  "Title Sponsorship",
+  "Co-Branding",
+]);
+
+const REQUIRED_DELIVERABLE_COUNT = 3;
 const MAX_CUSTOM_MESSAGE_LENGTH = 3000;
 const MAX_CONTACT_PERSON_LENGTH = 120;
 const MAX_PHONE_LENGTH = 20;
@@ -70,8 +81,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const sponsorProfile = await Sponsor.findOne({ userId: user._id }).select(
-      "_id userId isProfileComplete"
+        const sponsorProfile = await Sponsor.findOne({ userId: user._id }).select(
+      "_id userId isProfileComplete baseLocation"
     );
 
     if (!sponsorProfile || !sponsorProfile.isProfileComplete) {
@@ -86,11 +97,19 @@ export async function POST(request: NextRequest) {
     const sponsorshipTitle = clean(body.sponsorshipTitle);
     const sponsorshipType = clean(body.sponsorshipType);
     const category = clean(body.category);
-    const locationPreference = clean(body.locationPreference);
-    const campaignGoal = clean(body.campaignGoal);
-    const contactPhone = clean(body.contactPhone);
-    const city = clean(body.city);
-    const deliverablesExpected = clean(body.deliverablesExpected);
+   const locationPreference = clean(body.locationPreference);
+const campaignGoal = clean(body.campaignGoal);
+const coverImage = clean(body.coverImage);
+const contactPhone = clean(body.contactPhone);
+const cityFromBody = clean(body.city);
+const sponsorBaseLocation = clean((sponsorProfile as any).baseLocation);
+const city = cityFromBody || sponsorBaseLocation;
+const deliverablesExpected = Array.isArray(body.deliverablesExpected)
+  ? body.deliverablesExpected
+      .filter((item: unknown): item is string => typeof item === "string")
+      .map((item: string) => item.trim())
+      .filter(Boolean)
+  : [];
     const customMessage = clean(body.customMessage);
     const contactPersonName = clean(body.contactPersonName);
 
@@ -131,6 +150,16 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+
+    if (coverImage && !isSafeLength(coverImage, 2000)) {
+  return NextResponse.json(
+    {
+      success: false,
+      message: "Cover image URL is too long",
+    },
+    { status: 400 }
+  );
+}
 
     if (!category) {
       return NextResponse.json(
@@ -183,28 +212,42 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (city && !isSafeLength(city, MAX_CITY_LENGTH)) {
+       if (!city) {
       return NextResponse.json(
         {
           success: false,
-          message: `City cannot exceed ${MAX_CITY_LENGTH} characters`,
+          message: "Sponsor base location is required. Please update it from settings.",
         },
         { status: 400 }
       );
     }
 
-    if (
-      deliverablesExpected &&
-      !isSafeLength(deliverablesExpected, MAX_DELIVERABLES_LENGTH)
-    ) {
+    if (!isSafeLength(city, MAX_CITY_LENGTH)) {
       return NextResponse.json(
         {
           success: false,
-          message: `Deliverables expected cannot exceed ${MAX_DELIVERABLES_LENGTH} characters`,
+          message: `Sponsor base location cannot exceed ${MAX_CITY_LENGTH} characters`,
         },
         { status: 400 }
       );
     }
+
+   const uniqueDeliverables: string[] = Array.from(
+  new Set<string>(deliverablesExpected)
+);
+
+if (
+  uniqueDeliverables.length !== REQUIRED_DELIVERABLE_COUNT ||
+  !uniqueDeliverables.every((item) => ALLOWED_DELIVERABLES.has(item))
+) {
+  return NextResponse.json(
+    {
+      success: false,
+      message: "Select exactly 3 valid sponsor deliverables.",
+    },
+    { status: 400 }
+  );
+}
 
     if (
       customMessage &&
@@ -315,17 +358,20 @@ export async function POST(request: NextRequest) {
     }
 
     const selectedDate = new Date(applicationDeadline);
-    const now = new Date();
+selectedDate.setHours(0, 0, 0, 0);
 
-    if (Number.isNaN(selectedDate.getTime()) || selectedDate <= now) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Application deadline must be in the future",
-        },
-        { status: 400 }
-      );
-    }
+const today = new Date();
+today.setHours(0, 0, 0, 0);
+
+if (Number.isNaN(selectedDate.getTime()) || selectedDate <= today) {
+  return NextResponse.json(
+    {
+      success: false,
+      message: "Application deadline must be from tomorrow onwards",
+    },
+    { status: 400 }
+  );
+}
 
     const sponsorship = await Sponsorship.create({
       sponsorOwnerId: user._id,
@@ -338,14 +384,10 @@ export async function POST(request: NextRequest) {
       city,
       locationPreference,
       campaignGoal,
-      deliverablesExpected,
-      customMessage,
-      bannerRequirement: Boolean(body.bannerRequirement),
-      stallRequirement: Boolean(body.stallRequirement),
-      mikeAnnouncement: Boolean(body.mikeAnnouncement),
-      socialMediaMention: Boolean(body.socialMediaMention),
-      productDisplay: Boolean(body.productDisplay),
-      contactPersonName,
+      coverImage,
+     deliverablesExpected: uniqueDeliverables,
+customMessage,
+contactPersonName,
       contactPhone,
       status: "active",
       expiresAt: selectedDate,

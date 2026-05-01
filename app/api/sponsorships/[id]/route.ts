@@ -223,7 +223,7 @@ export async function DELETE(
     return buildNoStoreResponse(
       {
         success: true,
-        message: "Sponsorship deleted successfully",
+        message: "Sponsorship closed successfully",
       },
       200
     );

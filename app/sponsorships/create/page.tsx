@@ -27,6 +27,7 @@ type SponsorProfile = {
   phone?: string;
   industry?: string;
   companySize?: string;
+  baseLocation?: string;
   about?: string;
   logoUrl?: string;
   targetAudience?: string;
@@ -49,17 +50,14 @@ type FormDataState = {
   sponsorshipType: string;
   budget: string;
   category: string;
+  customCategory: string;
   targetAudience: string;
   city: string;
   locationPreference: string;
   campaignGoal: string;
-  deliverablesExpected: string;
+  coverImage: string;
+  deliverablesExpected: string[];
   customMessage: string;
-  bannerRequirement: boolean;
-  stallRequirement: boolean;
-  mikeAnnouncement: boolean;
-  socialMediaMention: boolean;
-  productDisplay: boolean;
   contactPersonName: string;
   contactPhone: string;
   applicationDeadline: string;
@@ -70,21 +68,52 @@ const initialFormData: FormDataState = {
   sponsorshipType: "",
   budget: "",
   category: "",
+  customCategory: "",
   targetAudience: "",
   city: "",
   locationPreference: "",
   campaignGoal: "",
-  deliverablesExpected: "",
+  coverImage: "",
+  deliverablesExpected: [],
   customMessage: "",
-  bannerRequirement: false,
-  stallRequirement: false,
-  mikeAnnouncement: false,
-  socialMediaMention: false,
-  productDisplay: false,
   contactPersonName: "",
   contactPhone: "",
   applicationDeadline: "",
 };
+
+const DELIVERABLE_OPTIONS = [
+  "Stage Branding",
+  "Stall Space",
+  "Social Media Promotion",
+  "Product Display",
+  "Announcements / Stage Mentions",
+  "Email Promotion",
+  "Title Sponsorship",
+  "Co-Branding",
+];
+
+const SPONSORSHIP_CATEGORY_OPTIONS = [
+  "Technology",
+  "Education",
+  "Sports",
+  "Cultural",
+  "Music & Entertainment",
+  "Startup & Business",
+  "Food & Beverage",
+  "Fashion & Lifestyle",
+  "Health & Wellness",
+  "Finance & Fintech",
+  "Gaming & Esports",
+  "Automobile",
+  "Travel & Tourism",
+  "Social Impact / NGO",
+  "College Fest",
+  "Corporate Event",
+  "Exhibition / Expo",
+  "Influencer / Creator Campaign",
+  "Community Event",
+  "Other",
+];
 
 export default function CreateSponsorshipPage() {
   const router = useRouter();
@@ -95,9 +124,10 @@ export default function CreateSponsorshipPage() {
   const [sponsorProfile, setSponsorProfile] = useState<SponsorProfile | null>(null);
 
   const [formData, setFormData] = useState<FormDataState>(initialFormData);
-  const [submitting, setSubmitting] = useState(false);
-  const [submitError, setSubmitError] = useState("");
-  const [successMessage, setSuccessMessage] = useState("");
+const [submitting, setSubmitting] = useState(false);
+const [uploadingCover, setUploadingCover] = useState(false);
+const [submitError, setSubmitError] = useState("");
+const [successMessage, setSuccessMessage] = useState("");
 
   useEffect(() => {
     if (authLoading) return;
@@ -141,18 +171,19 @@ export default function CreateSponsorshipPage() {
         setSponsorProfile(profile);
 
         setFormData((prev) => ({
-          ...prev,
-          contactPersonName: prev.contactPersonName || data.user?.name || "",
-          contactPhone: prev.contactPhone || profile?.phone || "",
-          category:
-            prev.category ||
-            profile?.preferredCategories?.[0] ||
-            "",
-          locationPreference:
-            prev.locationPreference ||
-            profile?.preferredLocations?.[0] ||
-            "",
-        }));
+  ...prev,
+  contactPersonName: prev.contactPersonName || data.user?.name || "",
+  contactPhone: prev.contactPhone || profile?.phone || "",
+  city: prev.city || profile?.baseLocation || "",
+  category:
+    prev.category ||
+    profile?.preferredCategories?.[0] ||
+    "",
+  locationPreference:
+    prev.locationPreference ||
+    profile?.preferredLocations?.[0] ||
+    "",
+}));
       } catch (err: any) {
         setProfileError(err?.message || "Unable to load sponsor profile");
         setSponsorProfile(null);
@@ -169,24 +200,86 @@ export default function CreateSponsorshipPage() {
   }, [sponsorProfile]);
 
   const handleInputChange = (
-    e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
-  ) => {
-    const { name, value, type } = e.target;
+  e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>
+) => {
+  const { name, value } = e.target;
 
-    if (type === "checkbox") {
-      const checked = (e.target as HTMLInputElement).checked;
-      setFormData((prev) => ({
-        ...prev,
-        [name]: checked,
-      }));
-      return;
+  setFormData((prev) => ({
+    ...prev,
+    [name]: value,
+    ...(name === "category" && value !== "Other" ? { customCategory: "" } : {}),
+  }));
+};
+
+  const handleCoverImageUpload = async (e: ChangeEvent<HTMLInputElement>) => {
+  const file = e.target.files?.[0];
+  if (!file) return;
+
+  try {
+    setUploadingCover(true);
+    setSubmitError("");
+    setSuccessMessage("");
+
+    const formData = new FormData();
+    formData.append("uploadType", "sponsorshipMedia");
+    formData.append("files", file);
+
+    const res = await fetch("/api/upload", {
+      method: "POST",
+      credentials: "include",
+      body: formData,
+    });
+
+    const data = await res.json();
+
+    if (!res.ok || !data.success || !data.files?.[0]?.url) {
+      throw new Error(data.message || "Cover image upload failed");
     }
 
     setFormData((prev) => ({
       ...prev,
-      [name]: value,
+      coverImage: data.files[0].url,
     }));
-  };
+
+    setSuccessMessage("Cover image uploaded. It will be saved when you create the sponsorship.");
+  } catch (err: any) {
+    setSubmitError(err?.message || "Cover image upload failed");
+  } finally {
+    setUploadingCover(false);
+    e.target.value = "";
+  }
+};
+
+     const handleDeliverableToggle = (deliverable: string, checked: boolean) => {
+  setFormData((prev) => {
+    const alreadySelected = prev.deliverablesExpected.includes(deliverable);
+
+    if (checked) {
+      if (alreadySelected) return prev;
+
+      if (prev.deliverablesExpected.length >= 3) {
+        setSubmitError("You can select only 3 sponsor deliverables.");
+        return prev;
+      }
+
+      setSubmitError("");
+
+      return {
+        ...prev,
+        deliverablesExpected: [...prev.deliverablesExpected, deliverable],
+      };
+    }
+
+    setSubmitError("");
+
+    return {
+      ...prev,
+      deliverablesExpected: prev.deliverablesExpected.filter(
+        (item) => item !== deliverable
+      ),
+    };
+  });
+};
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -201,16 +294,72 @@ export default function CreateSponsorshipPage() {
       return;
     }
 
+        if (formData.deliverablesExpected.length !== 3) {
+      setSubmitError("Please select exactly 3 sponsor deliverables.");
+      return;
+    }
+
+    if (Number(formData.budget) < 2000) {
+      setSubmitError("Budget must be at least ₹2000.");
+      return;
+    }
+
+    if (Number(formData.targetAudience) < 50) {
+      setSubmitError("Expected audience must be at least 50.");
+      return;
+    }
+
+    const today = new Date();
+today.setHours(0, 0, 0, 0);
+
+const deadline = new Date(formData.applicationDeadline);
+deadline.setHours(0, 0, 0, 0);
+
+// ❗ must be strictly after today (tomorrow onwards)
+if (deadline <= today) {
+  setSubmitError("Application deadline must be from tomorrow onwards.");
+  return;
+}
+
+const finalCategory =
+  formData.category === "Other"
+    ? formData.customCategory.trim()
+    : formData.category.trim();
+
+if (!finalCategory) {
+  setSubmitError("Please select or enter a valid category.");
+  return;
+}
+
+if (finalCategory.length > 80) {
+  setSubmitError("Category cannot exceed 80 characters.");
+  return;
+}
+
+if (!formData.city && !sponsorProfile?.baseLocation) {
+  setSubmitError("Please add your sponsor base location from Settings first.");
+  return;
+}
+
+if (!formData.contactPersonName.trim()) {
+  setSubmitError("Contact person name is required.");
+  return;
+}
+
     try {
       setSubmitting(true);
       setSubmitError("");
       setSuccessMessage("");
 
       const payload = {
-        ...formData,
-        budget: Number(formData.budget),
-        targetAudience: Number(formData.targetAudience),
-      };
+  ...formData,
+  category: finalCategory,
+  city: formData.city || sponsorProfile?.baseLocation || "",
+  budget: Number(formData.budget),
+  targetAudience: Number(formData.targetAudience),
+};
+
+delete (payload as any).customCategory;
 
       const res = await fetch("/api/sponsorships/create", {
         method: "POST",
@@ -386,26 +535,52 @@ export default function CreateSponsorshipPage() {
                     name="budget"
                     value={formData.budget}
                     onChange={handleInputChange}
-                    min="0"
+                    min="2000"
                     placeholder="Minimum ₹2000"
                     className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none placeholder:text-text-muted"
                     required
                   />
                 </div>
 
-                <div>
-                  <label className="mb-2 block text-sm font-medium text-white">
-                    Category
-                  </label>
-                  <input
-                    name="category"
-                    value={formData.category}
-                    onChange={handleInputChange}
-                    placeholder="Example: Tech / Cultural / Sports"
-                    className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none placeholder:text-text-muted"
-                    required
-                  />
-                </div>
+              <div>
+  <label className="mb-2 block text-sm font-medium text-white">
+    Category
+  </label>
+
+  <select
+    name="category"
+    value={formData.category}
+    onChange={handleInputChange}
+    className="w-full rounded-2xl border border-white/10 bg-[#1E293B] px-4 py-3 text-white outline-none"
+    required
+  >
+    <option className="bg-[#1E293B] text-white" value="">
+      Select category
+    </option>
+
+    {SPONSORSHIP_CATEGORY_OPTIONS.map((option) => (
+      <option className="bg-[#1E293B] text-white" key={option} value={option}>
+        {option}
+      </option>
+    ))}
+  </select>
+</div>
+
+{formData.category === "Other" ? (
+  <div>
+    <label className="mb-2 block text-sm font-medium text-white">
+      Custom Category
+    </label>
+    <input
+      name="customCategory"
+      value={formData.customCategory}
+      onChange={handleInputChange}
+      placeholder="Example: Campus Activation / Rural Marketing / Local Business"
+      className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none placeholder:text-text-muted"
+      required
+    />
+  </div>
+) : null}
 
                 <div>
                   <label className="mb-2 block text-sm font-medium text-white">
@@ -416,7 +591,7 @@ export default function CreateSponsorshipPage() {
                     name="targetAudience"
                     value={formData.targetAudience}
                     onChange={handleInputChange}
-                    min="0"
+                    min="50"
                     placeholder="Minimum 50"
                     className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none placeholder:text-text-muted"
                     required
@@ -438,30 +613,32 @@ export default function CreateSponsorshipPage() {
                 </div>
 
                 <div>
-                  <label className="mb-2 block text-sm font-medium text-white">
-                    City
-                  </label>
-                  <input
-                    name="city"
-                    value={formData.city}
-                    onChange={handleInputChange}
-                    placeholder="Example: Gurugram"
-                    className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none placeholder:text-text-muted"
-                  />
-                </div>
+  <label className="mb-2 block text-sm font-medium text-white">
+    Sponsor Base Location
+  </label>
+
+  <div className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white">
+    {formData.city || "Not added in settings"}
+  </div>
+
+  <p className="mt-2 text-xs text-text-muted">
+    This comes from your sponsor profile settings. Update it from Settings if needed.
+  </p>
+</div>
 
                 <div>
                   <label className="mb-2 block text-sm font-medium text-white">
                     Application Deadline
                   </label>
-                  <input
-                    type="date"
-                    name="applicationDeadline"
-                    value={formData.applicationDeadline}
-                    onChange={handleInputChange}
-                    className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none"
-                    required
-                  />
+                 <input
+  type="date"
+  name="applicationDeadline"
+  value={formData.applicationDeadline}
+  onChange={handleInputChange}
+  min={new Date(Date.now() + 86400000).toISOString().split("T")[0]}
+  className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none"
+  required
+/>
                 </div>
 
                 <div className="md:col-span-2">
@@ -480,20 +657,122 @@ export default function CreateSponsorshipPage() {
                 </div>
 
                 <div className="md:col-span-2">
-                  <label className="mb-2 block text-sm font-medium text-white">
-                    Deliverables Expected
-                  </label>
-                  <textarea
-                    name="deliverablesExpected"
-                    value={formData.deliverablesExpected}
-                    onChange={handleInputChange}
-                    rows={4}
-                    placeholder="Example: logo placement, stage branding, stalls, social promotion"
-                    className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none placeholder:text-text-muted"
-                  />
-                </div>
+  <label className="mb-2 block text-sm font-medium text-white">
+    Campaign Cover Image
+    <span className="ml-2 text-xs font-normal text-text-muted">
+      Optional
+    </span>
+  </label>
 
-                <div className="md:col-span-2">
+  <div className="rounded-[24px] border border-white/10 bg-white/[0.04] p-5">
+    <div className="flex flex-col gap-5 md:flex-row md:items-center">
+      <div className="h-36 w-full overflow-hidden rounded-2xl border border-white/10 bg-white/5 md:w-64">
+        {formData.coverImage ? (
+          <img
+            src={formData.coverImage}
+            alt="Campaign cover"
+            className="h-full w-full object-cover"
+          />
+        ) : sponsorProfile?.logoUrl ? (
+          <img
+            src={sponsorProfile.logoUrl}
+            alt="Sponsor profile logo fallback"
+            className="h-full w-full object-cover"
+          />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center px-4 text-center text-sm text-text-muted">
+            No cover uploaded
+          </div>
+        )}
+      </div>
+
+      <div className="flex-1">
+        <input
+          id="sponsorship-cover-upload"
+          type="file"
+          accept="image/jpeg,image/png,image/webp"
+          onChange={handleCoverImageUpload}
+          className="hidden"
+        />
+
+        <label
+          htmlFor="sponsorship-cover-upload"
+          className="inline-flex cursor-pointer items-center justify-center rounded-xl border border-white/10 bg-white/10 px-4 py-3 text-sm font-semibold text-white transition hover:bg-white/15"
+        >
+          {uploadingCover ? "Uploading..." : "Upload Campaign Cover"}
+        </label>
+
+        {formData.coverImage ? (
+          <button
+            type="button"
+            onClick={() =>
+              setFormData((prev) => ({
+                ...prev,
+                coverImage: "",
+              }))
+            }
+            className="ml-3 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm font-semibold text-red-300"
+          >
+            Remove
+          </button>
+        ) : null}
+
+        <p className="mt-3 text-xs leading-relaxed text-text-muted">
+          JPG, PNG, or WEBP. Maximum 2MB. If you do not upload a campaign cover,
+          your sponsor profile logo will be used automatically.
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+
+                <div className="md:col-span-2 rounded-[24px] border border-white/10 bg-white/[0.04] p-6">
+  <h3 className="text-xl font-semibold text-white">
+    Sponsor Deliverables
+  </h3>
+
+  <p className="mt-2 text-sm text-text-muted">
+    Select your top 3 strongest sponsor deliverables. This helps us match your sponsorship with the right events.
+  </p>
+
+  <p className="mt-3 text-sm font-semibold text-accent-orange">
+    {formData.deliverablesExpected.length}/3 selected
+  </p>
+
+  <div className="mt-6 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+    {DELIVERABLE_OPTIONS.map((deliverable) => {
+      const selected = formData.deliverablesExpected.includes(deliverable);
+      const disabled = !selected && formData.deliverablesExpected.length >= 3;
+
+      return (
+        <label
+          key={deliverable}
+          className={`flex cursor-pointer items-center gap-4 rounded-2xl border px-5 py-4 text-left transition ${
+            selected
+              ? "border-accent-orange bg-accent-orange/10 text-accent-orange"
+              : disabled
+              ? "border-white/10 bg-white/5 text-text-muted opacity-60"
+              : "border-white/10 bg-white/5 text-white hover:border-white/20"
+          }`}
+        >
+          <input
+            type="checkbox"
+            checked={selected}
+            disabled={disabled}
+            onChange={(e) =>
+              handleDeliverableToggle(deliverable, e.target.checked)
+            }
+            className="h-5 w-5 cursor-pointer accent-orange-500"
+          />
+
+          <span className="text-sm font-semibold">{deliverable}</span>
+        </label>
+      );
+    })}
+  </div>
+</div>
+
+  <div className="md:col-span-2">
                   <label className="mb-2 block text-sm font-medium text-white">
                     Custom Message
                   </label>
@@ -505,56 +784,6 @@ export default function CreateSponsorshipPage() {
                     placeholder="Add any specific note for organizers"
                     className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none placeholder:text-text-muted"
                   />
-                </div>
-              </div>
-
-              <div className="my-8">
-                <h3 className="text-xl font-semibold text-white">
-                  Activation Requirements
-                </h3>
-                <p className="mt-2 text-sm text-text-muted">
-                  Select the kind of visibility or execution support you expect.
-                </p>
-
-                <div className="mt-5 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-                  {[
-                    {
-                      key: "bannerRequirement",
-                      label: "Banner Requirement",
-                    },
-                    {
-                      key: "stallRequirement",
-                      label: "Stall Requirement",
-                    },
-                    {
-                      key: "mikeAnnouncement",
-                      label: "Mike Announcement",
-                    },
-                    {
-                      key: "socialMediaMention",
-                      label: "Social Media Mention",
-                    },
-                    {
-                      key: "productDisplay",
-                      label: "Product Display",
-                    },
-                  ].map((item) => (
-                    <label
-                      key={item.key}
-                      className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-4 text-white"
-                    >
-                      <input
-                        type="checkbox"
-                        name={item.key}
-                        checked={Boolean(
-                          formData[item.key as keyof FormDataState]
-                        )}
-                        onChange={handleInputChange}
-                        className="h-4 w-4"
-                      />
-                      <span className="text-sm font-medium">{item.label}</span>
-                    </label>
-                  ))}
                 </div>
               </div>
 
@@ -572,12 +801,13 @@ export default function CreateSponsorshipPage() {
                       Contact Person Name
                     </label>
                     <input
-                      name="contactPersonName"
-                      value={formData.contactPersonName}
-                      onChange={handleInputChange}
-                      placeholder="Example: Rahul / Brand Manager"
-                      className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none placeholder:text-text-muted"
-                    />
+  name="contactPersonName"
+  value={formData.contactPersonName}
+  onChange={handleInputChange}
+  placeholder="Example: Rahul / Brand Manager"
+  className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none placeholder:text-text-muted"
+  required
+/>
                   </div>
 
                   <div>
@@ -609,9 +839,13 @@ export default function CreateSponsorshipPage() {
               ) : null}
 
               <div className="flex flex-col gap-3 sm:flex-row">
-                <Button type="submit" variant="primary" disabled={submitting}>
-                  {submitting ? "Creating..." : "Create Sponsorship"}
-                </Button>
+                <Button type="submit" variant="primary" disabled={submitting || uploadingCover}>
+  {submitting
+    ? "Creating..."
+    : uploadingCover
+    ? "Uploading cover..."
+    : "Create Sponsorship"}
+</Button>
 
                 <Link href="/sponsorships">
                   <Button type="button" variant="secondary">

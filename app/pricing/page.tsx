@@ -289,10 +289,14 @@ const [couponError, setCouponError] = useState<string | null>(null);
   }
 }
 
-  async function handleCheckout(planId: string) {
-    try {
-      setCheckoutLoading(planId);
-      setError(null);
+ async function handleCheckout(planId: string) {
+  if (checkoutLoading) return;
+
+  try {
+    setCheckoutLoading(planId);
+    setError(null);
+
+    const idempotencyKey = createIdempotencyKey();
 
       const scriptLoaded = await loadRazorpayScript();
 
@@ -302,10 +306,10 @@ const [couponError, setCouponError] = useState<string | null>(null);
 
       const checkoutRes = await fetch('/api/subscriptions/checkout', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-idempotency-key': createIdempotencyKey(),
-        },
+       headers: {
+  'Content-Type': 'application/json',
+  'x-idempotency-key': idempotencyKey,
+},
         credentials: 'include',
         body: JSON.stringify({
   planId,
@@ -381,10 +385,13 @@ const keyId =
           const verifyData = await verifyRes.json();
 
           if (!verifyRes.ok || !verifyData.success) {
-            throw new Error(verifyData?.message || 'Payment verification failed');
-          }
+  setError(verifyData?.message || 'Payment verification failed');
+  setCheckoutLoading(null);
+  return;
+}
 
-          await refreshSubscription();
+await refreshSubscription();
+setCheckoutLoading(null);
         },
         modal: {
           ondismiss: function () {

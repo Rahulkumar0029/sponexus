@@ -130,7 +130,11 @@ let couponReservationShouldRelease = false;
       requestHash,
     });
 
-   if (idem.isLocked) {
+   if (idem.isReplay) {
+  return buildNoStoreResponse(idem.response, idem.statusCode || 200);
+}
+
+if (idem.isLocked) {
   return buildNoStoreResponse(
     {
       success: false,
@@ -140,7 +144,7 @@ let couponReservationShouldRelease = false;
   );
 }
 
-    idemRecord = idem.record ?? null;
+idemRecord = idem.record ?? null;
 
     const user = await User.findById(decoded.userId).select(
       "_id email role adminRole firstName name companyName accountStatus isDeleted"
@@ -615,9 +619,18 @@ if (couponReservationShouldRelease && reservedPayment?._id) {
       }
     }
 
-    return buildNoStoreResponse(
+        return buildNoStoreResponse(
       { success: false, message: "Failed to process subscription checkout." },
       500
     );
+  } finally {
+    if (idemRecord?.locked) {
+      try {
+        idemRecord.locked = false;
+        await idemRecord.save();
+      } catch (unlockError) {
+        console.error("Idempotency final unlock error:", unlockError);
+      }
+    }
   }
 }

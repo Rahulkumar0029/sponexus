@@ -20,6 +20,7 @@ type CurrentUser = {
   bio?: string;
   organizationName?: string;
   organizerLocation?: string;
+  isEmailVerified?: boolean;
 };
 
 type SponsorProfile = {
@@ -31,9 +32,10 @@ type SponsorProfile = {
   officialEmail?: string;
   phone?: string;
   industry?: string;
-  companySize?: string;
-  about?: string;
-  logoUrl?: string;
+companySize?: string;
+baseLocation?: string;
+about?: string;
+logoUrl?: string;
   instagramUrl?: string;
   linkedinUrl?: string;
   isProfileComplete?: boolean;
@@ -64,9 +66,10 @@ type SponsorFormState = {
   officialEmail: string;
   phone: string;
   industry: string;
-  companySize: string;
-  about: string;
-  logoUrl: string;
+companySize: string;
+baseLocation: string;
+about: string;
+logoUrl: string;
   instagramUrl: string;
   linkedinUrl: string;
   isPublic: boolean;
@@ -88,10 +91,11 @@ const initialSponsorForm: SponsorFormState = {
   website: "",
   officialEmail: "",
   phone: "",
-  industry: "",
-  companySize: "",
-  about: "",
-  logoUrl: "",
+ industry: "",
+companySize: "",
+baseLocation: "",
+about: "",
+logoUrl: "",
   instagramUrl: "",
   linkedinUrl: "",
   isPublic: true,
@@ -191,10 +195,11 @@ export default function SettingsPage() {
             officialEmail:
               loadedSponsorProfile?.officialEmail || loadedUser?.email || "",
             phone: loadedSponsorProfile?.phone || loadedUser?.phone || "",
-            industry: loadedSponsorProfile?.industry || "",
-            companySize: loadedSponsorProfile?.companySize || "",
-            about: loadedSponsorProfile?.about || loadedUser?.bio || "",
-            logoUrl: loadedSponsorProfile?.logoUrl || "",
+           industry: loadedSponsorProfile?.industry || "",
+companySize: loadedSponsorProfile?.companySize || "",
+baseLocation: loadedSponsorProfile?.baseLocation || "",
+about: loadedSponsorProfile?.about || loadedUser?.bio || "",
+logoUrl: loadedSponsorProfile?.logoUrl || "",
             instagramUrl: loadedSponsorProfile?.instagramUrl || "",
             linkedinUrl: loadedSponsorProfile?.linkedinUrl || "",
             isPublic:
@@ -237,15 +242,16 @@ export default function SettingsPage() {
     if (sponsorForm.companyName.trim()) score += 20;
     if (sponsorForm.officialEmail.trim()) score += 15;
     if (sponsorForm.phone.trim()) score += 15;
-    if (sponsorForm.logoUrl.trim()) score += 15;
-    if (sponsorForm.about.trim()) score += 15;
+    if (sponsorForm.baseLocation.trim()) score += 10;
+if (sponsorForm.logoUrl.trim()) score += 15;
+if (sponsorForm.about.trim()) score += 15;
 
     return Math.min(score, 100);
   }, [role, sponsorForm]);
 
-  const isSponsorProfileReady = useMemo(() => {
-    return Boolean(sponsorProfile?.isProfileComplete) || sponsorCompletion >= 70;
-  }, [sponsorProfile, sponsorCompletion]);
+ const isSponsorProfileReady = useMemo(() => {
+  return Boolean(sponsorProfile?.isProfileComplete) || sponsorCompletion >= 100;
+}, [sponsorProfile, sponsorCompletion]);
 
   const handleAccountChange = (
     e: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>
@@ -388,6 +394,51 @@ setSaveSuccess("Settings saved successfully.");
       return;
     }
 
+    if (!accountForm.firstName.trim()) {
+  setSaveError("First name is required.");
+  return;
+}
+
+if (!accountForm.lastName.trim()) {
+  setSaveError("Last name is required.");
+  return;
+}
+
+if (!sponsorForm.brandName.trim()) {
+  setSaveError("Brand name is required.");
+  return;
+}
+
+if (!sponsorForm.companyName.trim()) {
+  setSaveError("Company name is required.");
+  return;
+}
+
+if (!sponsorForm.officialEmail.trim()) {
+  setSaveError("Official email is required.");
+  return;
+}
+
+if (!sponsorForm.phone.trim()) {
+  setSaveError("Phone number is required.");
+  return;
+}
+
+if (!sponsorForm.baseLocation.trim()) {
+  setSaveError("Sponsor base location is required.");
+  return;
+}
+
+if (!sponsorForm.logoUrl.trim()) {
+  setSaveError("Logo / brand image is required. Please upload it first.");
+  return;
+}
+
+if (!sponsorForm.about.trim()) {
+  setSaveError("About brand is required.");
+  return;
+}
+
     try {
       setSaving(true);
       setSaveError("");
@@ -404,9 +455,10 @@ setSaveSuccess("Settings saved successfully.");
         website: sponsorForm.website,
         officialEmail: sponsorForm.officialEmail,
         industry: sponsorForm.industry,
-        companySize: sponsorForm.companySize,
-        about: sponsorForm.about,
-        logoUrl: sponsorForm.logoUrl,
+companySize: sponsorForm.companySize,
+baseLocation: sponsorForm.baseLocation,
+about: sponsorForm.about,
+logoUrl: sponsorForm.logoUrl,
         instagramUrl: sponsorForm.instagramUrl,
         linkedinUrl: sponsorForm.linkedinUrl,
         isPublic: sponsorForm.isPublic,
@@ -582,12 +634,22 @@ setSaveSuccess("Settings saved successfully.");
                   onChange={handleSponsorChange}
                 />
                 <Input
-                  label="Company Size"
-                  name="companySize"
-                  value={sponsorForm.companySize}
-                  onChange={handleSponsorChange}
-                />
-                <Input
+  label="Company Size"
+  name="companySize"
+  value={sponsorForm.companySize}
+  onChange={handleSponsorChange}
+/>
+
+<Input
+  label="Sponsor Base Location"
+  name="baseLocation"
+  value={sponsorForm.baseLocation}
+  onChange={handleSponsorChange}
+  placeholder="Example: Delhi NCR / Jaipur / Mumbai"
+  required
+/>
+
+<Input
   label="Instagram URL"
   type="url"
   name="instagramUrl"
@@ -646,13 +708,15 @@ setSaveSuccess("Settings saved successfully.");
 
                 <div className="md:col-span-2">
                   <label className="mb-2 block text-sm font-medium text-white">
-                    About Brand
-                  </label>
-                  <textarea
-                    name="about"
-                    value={sponsorForm.about}
-                    onChange={handleSponsorChange}
-                    rows={4}
+  About Brand
+  <span className="ml-1 text-accent-orange">*</span>
+</label>
+<textarea
+  name="about"
+  value={sponsorForm.about}
+  onChange={handleSponsorChange}
+  rows={4}
+  required
                     className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none placeholder:text-text-muted"
                   />
                 </div>
@@ -674,9 +738,9 @@ setSaveSuccess("Settings saved successfully.");
               <SaveMessages error={saveError} success={saveSuccess} />
 
               <div className="mt-6 flex flex-col gap-3 sm:flex-row">
-                <Button type="submit" variant="primary" disabled={saving}>
-                  {saving ? "Saving..." : "Save Profile"}
-                </Button>
+                <Button type="submit" variant="primary" disabled={saving || uploadingLogo}>
+  {saving ? "Saving..." : uploadingLogo ? "Uploading logo..." : "Save Profile"}
+</Button>
 
                 <Link href="/sponsorships/create">
                   <Button type="button" variant="secondary">

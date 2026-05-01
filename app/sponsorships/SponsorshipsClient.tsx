@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 
 import { Button } from "@/components/Button";
 import { EmptyState } from "@/components/EmptyState";
+import { SponsorshipCard } from "@/components/SponsorshipCard";
 import { useAuth } from "@/hooks/useAuth";
 
 type SponsorshipStatus = "active" | "paused" | "closed";
@@ -36,15 +37,11 @@ type SponsorshipItem = {
   targetAudience?: string;
   city?: string;
   locationPreference?: string;
-  campaignGoal?: string;
-  deliverablesExpected?: string;
-  customMessage?: string;
-  bannerRequirement?: boolean;
-  stallRequirement?: boolean;
-  mikeAnnouncement?: boolean;
-  socialMediaMention?: boolean;
-  productDisplay?: boolean;
-  contactPersonName?: string;
+ campaignGoal?: string;
+coverImage?: string;
+deliverablesExpected?: string[];
+customMessage?: string;
+contactPersonName?: string;
   contactPhone?: string;
   status?: SponsorshipStatus;
   expiresAt?: string | null;
@@ -66,39 +63,9 @@ type SponsorshipListResponse = {
   message?: string;
 };
 
-function formatCurrency(value?: number) {
-  if (typeof value !== "number" || Number.isNaN(value)) return "Not specified";
-  return `₹${value.toLocaleString("en-IN")}`;
-}
-
-function formatDate(value?: string | null) {
-  if (!value) return "No expiry";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "No expiry";
-
-  return date.toLocaleDateString("en-IN", {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
-}
-
-function getStatusClasses(status?: SponsorshipStatus) {
-  if (status === "paused") {
-    return "border-yellow-500/30 bg-yellow-500/10 text-yellow-300";
-  }
-
-  if (status === "closed") {
-    return "border-red-500/30 bg-red-500/10 text-red-300";
-  }
-
-  return "border-emerald-500/30 bg-emerald-500/10 text-emerald-300";
-}
-
-
 export default function SponsorshipsClient() {
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
 
   const [items, setItems] = useState<SponsorshipItem[]>([]);
   const [mode, setMode] = useState<
@@ -121,6 +88,8 @@ export default function SponsorshipsClient() {
   });
 
   const fetchSponsorships = useCallback(async () => {
+    if (authLoading) return;
+
     try {
       setPageLoading(true);
       setError("");
@@ -168,7 +137,7 @@ export default function SponsorshipsClient() {
     } finally {
       setPageLoading(false);
     }
-  }, [page, search, category, location, status]);
+  }, [authLoading, page, search, category, location, status]);
 
   useEffect(() => {
     fetchSponsorships();
@@ -215,120 +184,63 @@ export default function SponsorshipsClient() {
   };
 
   const renderCard = (item: SponsorshipItem) => {
-    const sponsorName =
-      item.sponsorProfile?.brandName ||
-      item.sponsorProfile?.companyName ||
-      "Sponsor";
+  if (!item._id) return null;
 
-    const detailHref = `/sponsorships/${item._id}`;
+  const detailHref = `/sponsorships/${item._id}`;
+  const canViewDetails = isSponsorView || user?.role === "ORGANIZER";
 
+  return (
+    <SponsorshipCard
+      key={item._id}
+      sponsorship={{
+        _id: item._id,
+        sponsorshipTitle: item.sponsorshipTitle,
+        sponsorshipType: item.sponsorshipType,
+        category: item.category,
+        budget: item.budget,
+        campaignGoal: item.campaignGoal,
+        locationPreference: item.locationPreference || item.city,
+        targetAudience: item.targetAudience,
+        status: item.status,
+        createdAt: item.createdAt,
+        expiresAt: item.expiresAt,
+        deliverablesExpected: item.deliverablesExpected,
+        coverImage: item.coverImage,
+        brandName: item.sponsorProfile?.brandName,
+        companyName: item.sponsorProfile?.companyName,
+        logoUrl: item.sponsorProfile?.logoUrl,
+      }}
+      href={canViewDetails ? detailHref : "/login"}
+      primaryActionHref={canViewDetails ? detailHref : "/login"}
+      primaryActionLabel={
+        isSponsorView
+          ? "Manage Post"
+          : user?.role === "ORGANIZER"
+          ? "Explore Fit"
+          : "Login to Continue"
+      }
+    />
+  );
+};
+
+ if (authLoading || pageLoading) {
     return (
-      <div
-        key={item._id}
-        className="rounded-[24px] border border-white/10 bg-white/[0.05] p-5 backdrop-blur-xl"
-      >
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <p className="text-xs uppercase tracking-[0.2em] text-text-muted">
-              {item.sponsorshipType || "Sponsorship"}
-            </p>
+      <div className="relative min-h-screen px-4 py-12">
+        <div className="absolute inset-0 -z-20 bg-[radial-gradient(circle_at_20%_30%,rgba(251,191,36,0.08),transparent_40%),radial-gradient(circle_at_80%_70%,rgba(59,130,246,0.08),transparent_40%),linear-gradient(135deg,#020617,#07152f,#020617)]" />
 
-            <h3 className="mt-2 text-xl font-semibold text-white">
-              {item.sponsorshipTitle || "Untitled Sponsorship"}
-            </h3>
-
-            {!isSponsorView && (
-              <p className="mt-2 text-sm text-text-muted">
-                By {sponsorName}
-                {item.sponsorProfile?.industry
-                  ? ` • ${item.sponsorProfile.industry}`
-                  : ""}
-              </p>
-            )}
-          </div>
-
-          <span
-            className={`rounded-full border px-3 py-1 text-xs font-medium uppercase tracking-wide ${getStatusClasses(
-              item.status
-            )}`}
-          >
-            {item.status || "active"}
-          </span>
+        <div className="pointer-events-none absolute inset-0 -z-10">
+          <div className="absolute left-10 top-20 h-72 w-72 rounded-full bg-blue-500/10 blur-3xl" />
+          <div className="absolute bottom-10 right-10 h-80 w-80 rounded-full bg-amber-500/10 blur-3xl" />
         </div>
 
-        <div className="mt-4 grid grid-cols-2 gap-3 text-sm md:grid-cols-4">
-          <div className="rounded-xl bg-white/5 p-3">
-            <p className="text-text-muted">Category</p>
-            <p className="mt-1 font-semibold text-white">
-              {item.category || "Not added"}
-            </p>
+        <div className="container-custom max-w-7xl">
+          <div className="rounded-[24px] border border-white/10 bg-white/[0.05] p-10 text-center text-text-muted backdrop-blur-xl">
+            Loading sponsorships...
           </div>
-
-          <div className="rounded-xl bg-white/5 p-3">
-            <p className="text-text-muted">Location</p>
-            <p className="mt-1 font-semibold text-white">
-              {item.locationPreference || item.city || "Not added"}
-            </p>
-          </div>
-
-          <div className="rounded-xl bg-white/5 p-3">
-            <p className="text-text-muted">Budget</p>
-            <p className="mt-1 font-semibold text-white">
-              {formatCurrency(item.budget)}
-            </p>
-          </div>
-
-          <div className="rounded-xl bg-white/5 p-3">
-            <p className="text-text-muted">Expires</p>
-            <p className="mt-1 font-semibold text-white">
-              {formatDate(item.expiresAt)}
-            </p>
-          </div>
-        </div>
-
-        <p className="mt-4 text-sm leading-relaxed text-text-muted">
-          {item.campaignGoal || "No campaign goal added yet."}
-        </p>
-
-        {item.deliverablesExpected && (
-          <div className="mt-4 rounded-xl bg-white/5 p-3">
-            <p className="text-sm text-text-muted">Deliverables</p>
-            <p className="mt-1 text-sm font-medium text-white">
-              {item.deliverablesExpected}
-            </p>
-          </div>
-        )}
-
-        <div className="mt-5 flex flex-col gap-3 sm:flex-row">
-          <Link href={detailHref} className="flex-1">
-            <Button variant="secondary" fullWidth>
-              View Details
-            </Button>
-          </Link>
-
-          {isSponsorView ? (
-            <Link href="/sponsorships/create" className="flex-1">
-              <Button variant="primary" fullWidth>
-                Create New
-              </Button>
-            </Link>
-          ) : user?.role === "ORGANIZER" ? (
-            <Link href={detailHref} className="flex-1">
-              <Button variant="primary" fullWidth>
-                Explore Fit
-              </Button>
-            </Link>
-          ) : (
-            <Link href="/login" className="flex-1">
-              <Button variant="primary" fullWidth>
-                Login to Continue
-              </Button>
-            </Link>
-          )}
         </div>
       </div>
     );
-  };
+  }
 
   return (
     <div className="relative min-h-screen px-4 py-12">
@@ -481,11 +393,8 @@ export default function SponsorshipsClient() {
           </div>
         </div>
 
-        {pageLoading ? (
-          <div className="rounded-[24px] border border-white/10 bg-white/[0.05] p-10 text-center text-text-muted backdrop-blur-xl">
-            Loading sponsorships...
-          </div>
-        ) : error ? (
+        {error ? (
+          
           <div className="rounded-[24px] border border-red-500/30 bg-red-500/10 p-6 text-center text-red-300">
             {error}
           </div>

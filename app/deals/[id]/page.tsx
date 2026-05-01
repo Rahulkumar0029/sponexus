@@ -96,7 +96,8 @@ function normalizeDeal(raw: any): Deal {
     },
     createdAt: raw?.createdAt || "",
     updatedAt: raw?.updatedAt || "",
-    organizer: {
+createdBy: String(raw?.createdBy?._id || raw?.createdBy || ""),
+organizer: {
       _id: String(raw?.organizerId?._id || raw?.organizer?._id || ""),
       name: raw?.organizerId?.name || raw?.organizer?.name || "",
       email: raw?.organizerId?.email || raw?.organizer?.email || "",
@@ -134,47 +135,36 @@ function isFinalDealState(status: DealStatus) {
 
 function getVisibleActions(
   status: DealStatus,
-  roleInDeal: "ORGANIZER" | "SPONSOR" | null
+  roleInDeal: "ORGANIZER" | "SPONSOR" | null,
+  currentUserId: string,
+  createdBy?: string
 ): DealStatus[] {
-  if (!roleInDeal) return [];
+  if (!roleInDeal || !currentUserId) return [];
 
-  if (roleInDeal === "SPONSOR") {
-    if (status === "pending") {
-      return ["negotiating", "accepted", "rejected", "cancelled"];
+  const isCreator = Boolean(createdBy && createdBy === currentUserId);
+
+  if (status === "pending" || status === "negotiating") {
+    if (isCreator) {
+      return ["cancelled"];
     }
 
-    if (status === "negotiating") {
-      return ["accepted", "rejected", "cancelled"];
-    }
-
-    if (status === "disputed") {
-      return ["negotiating", "cancelled"];
-    }
-
-    return [];
+    return ["negotiating", "accepted", "rejected", "cancelled"];
   }
 
-  if (roleInDeal === "ORGANIZER") {
-    if (status === "pending") {
-      return ["cancelled"];
-    }
-
-    if (status === "negotiating") {
-      return ["cancelled"];
-    }
-
-    if (status === "accepted") {
+  if (status === "accepted") {
+    if (roleInDeal === "ORGANIZER") {
       return ["completed"];
     }
 
-    if (status === "disputed") {
-      return ["cancelled"];
-    }
-
     return [];
   }
 
+  if (status === "disputed") {
+    return ["cancelled"];
+  }
+
   return [];
+
 }
 
 export default function DealDetailPage() {
@@ -300,9 +290,12 @@ const roleInDeal = useMemo<"ORGANIZER" | "SPONSOR" | null>(() => {
   }, [deal, roleInDeal, hasCurrentUserRevealed]);
 
   const visibleActions = useMemo(
-    () => (deal ? getVisibleActions(deal.status, roleInDeal) : []),
-    [deal, roleInDeal]
-  );
+  () =>
+    deal
+      ? getVisibleActions(deal.status, roleInDeal, currentUserId, deal.createdBy)
+      : [],
+  [deal, roleInDeal, currentUserId]
+);
 
   const timelineItems = useMemo(() => {
     if (!deal) return [];

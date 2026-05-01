@@ -9,8 +9,9 @@ export interface ISponsor extends Document {
   officialEmail: string;
   phone: string;
 
-  industry: string;
+    industry: string;
   companySize: string;
+  baseLocation: string;
   about: string;
   logoUrl: string;
 
@@ -31,6 +32,7 @@ const MAX_EMAIL_LENGTH = 320;
 const MAX_PHONE_LENGTH = 20;
 const MAX_INDUSTRY_LENGTH = 80;
 const MAX_COMPANY_SIZE_LENGTH = 50;
+const MAX_BASE_LOCATION_LENGTH = 120;
 const MAX_ABOUT_LENGTH = 3000;
 const MAX_LOGO_URL_LENGTH = 2000;
 const MAX_SOCIAL_URL_LENGTH = 500;
@@ -112,11 +114,19 @@ const SponsorSchema = new Schema<ISponsor>(
       index: true,
     },
 
-    companySize: {
+       companySize: {
       type: String,
       trim: true,
       default: "",
       maxlength: MAX_COMPANY_SIZE_LENGTH,
+    },
+
+    baseLocation: {
+      type: String,
+      trim: true,
+      default: "",
+      maxlength: MAX_BASE_LOCATION_LENGTH,
+      index: true,
     },
 
     about: {
@@ -218,8 +228,12 @@ SponsorSchema.pre("validate", function (next) {
     this.industry = this.industry.trim();
   }
 
-  if (typeof this.companySize === "string") {
+    if (typeof this.companySize === "string") {
     this.companySize = this.companySize.trim();
+  }
+
+  if (typeof this.baseLocation === "string") {
+    this.baseLocation = this.baseLocation.trim();
   }
 
   if (typeof this.about === "string") {
@@ -238,11 +252,14 @@ SponsorSchema.pre("validate", function (next) {
     this.linkedinUrl = this.linkedinUrl.trim();
   }
 
-  this.isProfileComplete = Boolean(
+    this.isProfileComplete = Boolean(
     this.brandName?.trim() &&
       this.companyName?.trim() &&
       this.officialEmail?.trim() &&
-      this.phone?.trim()
+      this.phone?.trim() &&
+      this.baseLocation?.trim() &&
+      this.logoUrl?.trim() &&
+      this.about?.trim()
   );
 
   next();
@@ -253,6 +270,7 @@ SponsorSchema.index({ industry: 1, isPublic: 1 });
 SponsorSchema.index({ isPublic: 1, isProfileComplete: 1, createdAt: -1 });
 SponsorSchema.index({ companyName: 1, isPublic: 1 });
 SponsorSchema.index({ brandName: 1, isPublic: 1 });
+SponsorSchema.index({ baseLocation: 1, isPublic: 1 });
 
 const Sponsor: Model<ISponsor> =
   mongoose.models.Sponsor || mongoose.model<ISponsor>("Sponsor", SponsorSchema);

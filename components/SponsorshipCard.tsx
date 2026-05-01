@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 
 type SponsorshipStatus = "active" | "paused" | "closed";
@@ -16,6 +17,11 @@ interface SponsorshipCardItem {
   status?: SponsorshipStatus;
   createdAt?: string;
   expiresAt?: string | null;
+  deliverablesExpected?: string[];
+  brandName?: string;
+  companyName?: string;
+  logoUrl?: string;
+  coverImage?: string;
 }
 
 interface SponsorshipCardProps {
@@ -52,14 +58,18 @@ function getStatusLabel(status?: SponsorshipStatus) {
 
 function getStatusClasses(status?: SponsorshipStatus) {
   if (status === "paused") {
-    return "border border-white/10 bg-white/5 text-[#94A3B8]";
+    return "border border-white/10 bg-white/10 text-[#CBD5E1]";
   }
 
   if (status === "closed") {
     return "border border-red-500/30 bg-red-500/10 text-red-300";
   }
 
-  return "border border-[#FF7A18]/30 bg-[#FF7A18]/10 text-[#FFB347]";
+  return "border border-emerald-400/30 bg-emerald-400/10 text-emerald-300";
+}
+
+function getCoverFallback() {
+  return "/images/default-sponsorship-cover.png";
 }
 
 export function SponsorshipCard({
@@ -72,65 +82,131 @@ export function SponsorshipCard({
   const resolvedHref = href || `/sponsorships/${sponsorship._id}`;
   const resolvedPrimaryHref = primaryActionHref || resolvedHref;
 
+ const hasCustomCover = Boolean(sponsorship.coverImage);
+const hasLogoOnly = !hasCustomCover && Boolean(sponsorship.logoUrl);
+
+const coverSrc = hasCustomCover
+  ? sponsorship.coverImage!
+  : getCoverFallback();
+
+  const deliverables = Array.isArray(sponsorship.deliverablesExpected)
+    ? sponsorship.deliverablesExpected.slice(0, 3)
+    : [];
+
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/5 p-5 transition hover:border-[#FF7A18]/30 hover:bg-white/[0.07]">
-      <div className="flex items-start justify-between gap-4">
-        <div className="min-w-0">
-          <h3 className="line-clamp-2 text-lg font-semibold text-white">
-            {sponsorship.sponsorshipTitle || "Untitled Sponsorship"}
-          </h3>
+    <article className="group overflow-hidden rounded-[24px] border border-white/10 bg-white/[0.05] shadow-[0_18px_60px_rgba(0,0,0,0.22)] backdrop-blur-xl transition duration-300 hover:-translate-y-1 hover:border-[#FF7A18]/40 hover:bg-white/[0.07]">
+      <Link href={resolvedHref} className="block">
+        <div className="relative h-48 overflow-hidden bg-[#07152F]">
+  <Image
+    src={coverSrc}
+    alt={sponsorship.sponsorshipTitle || "Sponsorship campaign"}
+    fill
+    className={`transition duration-500 group-hover:scale-105 ${
+      hasCustomCover ? "object-cover" : "object-cover opacity-35"
+    }`}
+    sizes="(max-width: 768px) 100vw, 50vw"
+  />
 
-          <p className="mt-2 text-sm text-text-muted">
-            {sponsorship.category || "No category"} •{" "}
-            {sponsorship.locationPreference || "No location"} •{" "}
-            {formatCurrency(sponsorship.budget)}
-          </p>
+  <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(255,179,71,0.20),transparent_35%),linear-gradient(135deg,rgba(2,6,23,0.92),rgba(7,21,47,0.82),rgba(2,6,23,0.95))]" />
+
+  {hasLogoOnly && sponsorship.logoUrl ? (
+    <div className="absolute right-4 top-14 flex h-20 w-20 items-center justify-center overflow-hidden rounded-2xl border border-white/15 bg-white/90 p-2 shadow-[0_12px_35px_rgba(0,0,0,0.35)]">
+      <Image
+        src={sponsorship.logoUrl}
+        alt={sponsorship.brandName || sponsorship.companyName || "Sponsor logo"}
+        width={72}
+        height={72}
+        className="h-full w-full object-contain"
+      />
+    </div>
+  ) : null}
+
+          <div className="absolute left-4 top-4 flex flex-wrap gap-2">
+            <span
+              className={`rounded-full px-3 py-1 text-xs font-semibold uppercase tracking-wide ${getStatusClasses(
+                sponsorship.status
+              )}`}
+            >
+              {getStatusLabel(sponsorship.status)}
+            </span>
+
+            {sponsorship.sponsorshipType ? (
+              <span className="rounded-full border border-[#FF7A18]/30 bg-[#FF7A18]/15 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-[#FFB347]">
+                {sponsorship.sponsorshipType}
+              </span>
+            ) : null}
+          </div>
+
+          <div className="absolute bottom-4 left-4 right-4">
+            <p className="text-xs uppercase tracking-[0.22em] text-[#FFB347]">
+              {sponsorship.brandName ||
+                sponsorship.companyName ||
+                sponsorship.category ||
+                "Sponsor Campaign"}
+            </p>
+
+            <h3 className="mt-1 line-clamp-2 text-xl font-bold text-white">
+              {sponsorship.sponsorshipTitle || "Untitled Sponsorship"}
+            </h3>
+          </div>
         </div>
 
-        <span
-          className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium uppercase tracking-wide ${getStatusClasses(
-            sponsorship.status
-          )}`}
-        >
-          {getStatusLabel(sponsorship.status)}
-        </span>
-      </div>
-
-      <p className="mt-4 line-clamp-3 text-sm leading-relaxed text-text-muted">
-        {sponsorship.campaignGoal || "No campaign goal added yet."}
-      </p>
-
-      <div className="mt-5 grid grid-cols-2 gap-3 text-sm">
-        <div className="rounded-xl bg-[#07152F]/70 p-3">
-          <p className="text-text-muted">Audience</p>
-          <p className="mt-1 line-clamp-2 font-semibold text-white">
-            {sponsorship.targetAudience || "Not added"}
+        <div className="p-5">
+          <p className="line-clamp-2 text-sm leading-relaxed text-text-muted">
+            {sponsorship.campaignGoal || "No campaign goal added yet."}
           </p>
-        </div>
 
-        <div className="rounded-xl bg-[#07152F]/70 p-3">
-          <p className="text-text-muted">Expires</p>
-          <p className="mt-1 font-semibold text-white">
-            {formatDate(sponsorship.expiresAt)}
-          </p>
+          <div className="mt-4 flex flex-wrap gap-2">
+            {deliverables.length ? (
+              deliverables.map((item) => (
+                <span
+                  key={item}
+                  className="rounded-full bg-white/10 px-3 py-1 text-xs font-medium text-white"
+                >
+                  {item}
+                </span>
+              ))
+            ) : (
+              <span className="rounded-full bg-white/10 px-3 py-1 text-xs text-text-muted">
+                No deliverables added
+              </span>
+            )}
+          </div>
+
+          <div className="mt-5 grid grid-cols-3 gap-3 text-sm">
+            <div className="rounded-2xl bg-[#07152F]/80 p-3">
+              <p className="text-xs text-text-muted">Budget</p>
+              <p className="mt-1 truncate font-semibold text-[#FFB347]">
+                {formatCurrency(sponsorship.budget)}
+              </p>
+            </div>
+
+            <div className="rounded-2xl bg-[#07152F]/80 p-3">
+              <p className="text-xs text-text-muted">Location</p>
+              <p className="mt-1 truncate font-semibold text-white">
+                {sponsorship.locationPreference || "Anywhere"}
+              </p>
+            </div>
+
+            <div className="rounded-2xl bg-[#07152F]/80 p-3">
+              <p className="text-xs text-text-muted">Expires</p>
+              <p className="mt-1 truncate font-semibold text-white">
+                {formatDate(sponsorship.expiresAt)}
+              </p>
+            </div>
+          </div>
         </div>
-      </div>
+      </Link>
 
       {showActions && (
-        <div className="mt-5 flex flex-col gap-3 sm:flex-row">
-          <Link href={resolvedPrimaryHref} className="flex-1">
-            <div className="inline-flex w-full items-center justify-center rounded-2xl border border-white/15 bg-white/[0.03] px-6 py-3 text-base font-medium text-white backdrop-blur-md transition-all duration-300 ease-out hover:border-white/25 hover:bg-white/[0.08]">
-              {primaryActionLabel}
-            </div>
-          </Link>
-
-          <Link href="/sponsorships/create" className="flex-1">
-            <div className="inline-flex w-full items-center justify-center rounded-2xl bg-[linear-gradient(135deg,#FF7A18_0%,#FFB347_100%)] px-6 py-3 text-base font-semibold text-[#020617] shadow-[0_6px_30px_rgba(255,122,24,0.22)] transition-all duration-300 ease-out hover:scale-[1.01] hover:shadow-[0_10px_40px_rgba(255,122,24,0.30)]">
-              New Post
-            </div>
-          </Link>
-        </div>
-      )}
-    </div>
+  <div className="border-t border-white/10 p-5">
+    <Link href={resolvedPrimaryHref}>
+      <div className="inline-flex w-full items-center justify-center rounded-2xl border border-white/15 bg-white/[0.03] px-5 py-3 text-sm font-semibold text-white transition hover:border-white/25 hover:bg-white/[0.08]">
+        {primaryActionLabel}
+      </div>
+    </Link>
+  </div>
+)}
+    </article>
   );
 }

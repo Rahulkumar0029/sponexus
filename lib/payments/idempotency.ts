@@ -94,11 +94,11 @@ export async function handleIdempotency({
 
     if (record.locked && !isStaleLock) {
       return {
-        isReplay: false as const,
-        record,
-        isLocked: true,
-        locked: true,
-      };
+  isReplay: false as const,
+  record,
+  isLocked: false,
+  locked: false,
+};
     }
 
     if (isStaleLock) {

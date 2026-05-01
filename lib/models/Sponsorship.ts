@@ -16,14 +16,9 @@ export interface ISponsorship extends Document {
   city: string;
   locationPreference: string;
   campaignGoal: string;
-  deliverablesExpected: string;
-  customMessage: string;
-
-  bannerRequirement: boolean;
-  stallRequirement: boolean;
-  mikeAnnouncement: boolean;
-  socialMediaMention: boolean;
-  productDisplay: boolean;
+  coverImage: string;
+  deliverablesExpected: string[];
+customMessage: string;
 
   contactPersonName: string;
   contactPhone: string;
@@ -119,50 +114,38 @@ const SponsorshipSchema = new Schema<ISponsorship>(
       index: true,
     },
 
-    campaignGoal: {
-      type: String,
-      required: true,
-      trim: true,
-      maxlength: 1000,
-    },
+   campaignGoal: {
+  type: String,
+  required: true,
+  trim: true,
+  maxlength: 1000,
+},
 
-    deliverablesExpected: {
-      type: String,
-      default: "",
-      trim: true,
-      maxlength: 1500,
-    },
+coverImage: {
+  type: String,
+  default: "",
+  trim: true,
+  maxlength: 2000,
+},
+
+deliverablesExpected: {
+  type: [String],
+  required: true,
+  default: [],
+  validate: {
+    validator: (value: string[]) =>
+      Array.isArray(value) &&
+      value.length === 3 &&
+      value.every((item) => typeof item === "string" && item.trim().length > 0),
+    message: "Exactly 3 deliverables are required",
+  },
+},
 
     customMessage: {
       type: String,
       default: "",
       trim: true,
       maxlength: 1500,
-    },
-
-    bannerRequirement: {
-      type: Boolean,
-      default: false,
-    },
-
-    stallRequirement: {
-      type: Boolean,
-      default: false,
-    },
-
-    mikeAnnouncement: {
-      type: Boolean,
-      default: false,
-    },
-
-    socialMediaMention: {
-      type: Boolean,
-      default: false,
-    },
-
-    productDisplay: {
-      type: Boolean,
-      default: false,
     },
 
     contactPersonName: {
@@ -295,12 +278,18 @@ SponsorshipSchema.pre("validate", function (next) {
   }
 
   if (typeof this.campaignGoal === "string") {
-    this.campaignGoal = this.campaignGoal.trim();
-  }
+  this.campaignGoal = this.campaignGoal.trim();
+}
 
-  if (typeof this.deliverablesExpected === "string") {
-    this.deliverablesExpected = this.deliverablesExpected.trim();
-  }
+if (typeof this.coverImage === "string") {
+  this.coverImage = this.coverImage.trim();
+}
+
+if (Array.isArray(this.deliverablesExpected)) {
+  this.deliverablesExpected = this.deliverablesExpected
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
 
   if (typeof this.customMessage === "string") {
     this.customMessage = this.customMessage.trim();

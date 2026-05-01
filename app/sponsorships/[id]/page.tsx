@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import type { MouseEvent } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { useParams, useRouter } from "next/navigation";
 
 import { Button } from "@/components/Button";
@@ -42,7 +44,8 @@ type SponsorshipDetail = {
   city?: string;
   locationPreference?: string;
   campaignGoal?: string;
-  deliverablesExpected?: string;
+  coverImage?: string;
+  deliverablesExpected?: string[];
   customMessage?: string;
   bannerRequirement?: boolean;
   stallRequirement?: boolean;
@@ -114,6 +117,8 @@ export default function SponsorshipDetailPage() {
     "public_view"
   );
   const [item, setItem] = useState<SponsorshipDetail | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [activeImageIndex, setActiveImageIndex] = useState(0);
 
   const [events, setEvents] = useState<OrganizerEvent[]>([]);
   const [selectedEvent, setSelectedEvent] = useState("");
@@ -183,6 +188,49 @@ export default function SponsorshipDetailPage() {
   }, [user]);
 
   const sponsorProfile = item?.sponsorProfile || null;
+
+    const coverImage =
+    typeof item?.coverImage === "string" && item.coverImage.trim()
+      ? item.coverImage.trim()
+      : "";
+
+  const sponsorLogo =
+    typeof sponsorProfile?.logoUrl === "string" && sponsorProfile.logoUrl.trim()
+      ? sponsorProfile.logoUrl.trim()
+      : "";
+
+  const galleryImages = [coverImage, sponsorLogo].filter(
+    (url, index, array) => Boolean(url) && array.indexOf(url) === index
+  );
+
+  const activeImage = galleryImages[activeImageIndex] || "";
+
+  const showPreviousImage = (e: MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    setActiveImageIndex((prev) =>
+      prev === 0 ? galleryImages.length - 1 : prev - 1
+    );
+  };
+
+  const showNextImage = (e: MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    setActiveImageIndex((prev) =>
+      prev === galleryImages.length - 1 ? 0 : prev + 1
+    );
+  };
+
+  const openPreview = (index = 0) => {
+    setActiveImageIndex(index);
+    setPreviewOpen(true);
+  };
+
+  const closePreview = () => {
+    setPreviewOpen(false);
+  };
 
   const pageTitle = useMemo(() => {
     if (mode === "owner_view") return "My Sponsorship Detail";
@@ -420,6 +468,104 @@ export default function SponsorshipDetailPage() {
               </div>
             </div>
 
+            <div className="mb-8 overflow-hidden rounded-[28px] border border-white/10 bg-white/[0.05] backdrop-blur-xl">
+              <div
+                onClick={() => activeImage && openPreview(0)}
+                role="button"
+                tabIndex={0}
+                className="relative h-72 cursor-pointer overflow-hidden bg-[#07152F] md:h-96"
+              >
+                {activeImage ? (
+                  <Image
+                    src={activeImage}
+                    alt={item.sponsorshipTitle || "Sponsorship image"}
+                    fill
+                    className="object-cover transition duration-500 hover:scale-105"
+                    sizes="100vw"
+                  />
+                ) : (
+                  <div className="flex h-full w-full items-center justify-center bg-[radial-gradient(circle_at_20%_20%,rgba(255,179,71,0.18),transparent_35%),linear-gradient(135deg,#020617,#07152F,#020617)] px-6 text-center text-text-muted">
+                    No campaign cover or sponsor logo available
+                  </div>
+                )}
+
+                <div className="absolute inset-0 bg-gradient-to-t from-[#020617]/95 via-[#020617]/30 to-transparent" />
+
+                <div className="absolute left-5 top-5 flex flex-wrap gap-2">
+                  <span
+                    className={`rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-wide ${getStatusClasses(
+                      item.status
+                    )}`}
+                  >
+                    {item.status || "active"}
+                  </span>
+
+                  {item.sponsorshipType ? (
+                    <span className="rounded-full border border-[#FF7A18]/30 bg-[#FF7A18]/15 px-3 py-1 text-xs font-semibold uppercase tracking-wide text-[#FFB347]">
+                      {item.sponsorshipType}
+                    </span>
+                  ) : null}
+                </div>
+
+                {sponsorLogo ? (
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      openPreview(galleryImages.indexOf(sponsorLogo));
+                    }}
+                    className="absolute right-5 top-5 flex h-20 w-20 items-center justify-center overflow-hidden rounded-2xl border border-white/15 bg-white/90 p-2 shadow-[0_12px_35px_rgba(0,0,0,0.35)]"
+                  >
+                    <Image
+                      src={sponsorLogo}
+                      alt={sponsorProfile?.brandName || "Sponsor logo"}
+                      width={72}
+                      height={72}
+                      className="h-full w-full object-contain"
+                    />
+                  </button>
+                ) : null}
+
+                {galleryImages.length > 1 ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={showPreviousImage}
+                      className="absolute left-4 top-1/2 z-20 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-black/50 text-2xl font-bold text-white backdrop-blur transition hover:bg-accent-orange hover:text-black"
+                    >
+                      ‹
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={showNextImage}
+                      className="absolute right-4 top-1/2 z-20 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full bg-black/50 text-2xl font-bold text-white backdrop-blur transition hover:bg-accent-orange hover:text-black"
+                    >
+                      ›
+                    </button>
+                  </>
+                ) : null}
+
+                <div className="absolute bottom-5 left-5 right-5">
+                  <p className="text-xs uppercase tracking-[0.22em] text-[#FFB347]">
+                    {sponsorProfile?.brandName ||
+                      sponsorProfile?.companyName ||
+                      item.category ||
+                      "Sponsor Campaign"}
+                  </p>
+
+                  <h2 className="mt-2 line-clamp-2 text-3xl font-bold text-white md:text-4xl">
+                    {item.sponsorshipTitle || "Untitled Sponsorship"}
+                  </h2>
+
+                  <p className="mt-2 text-sm text-[#CBD5E1]">
+                    Click image to view full size
+                  </p>
+                </div>
+              </div>
+            </div>
+
             <div className="mb-8 grid grid-cols-1 gap-6 md:grid-cols-3">
               <div className="rounded-[24px] border border-white/10 bg-white/[0.05] p-6 backdrop-blur-xl">
                 <p className="text-sm text-text-muted">Status</p>
@@ -512,9 +658,23 @@ export default function SponsorshipDetailPage() {
               <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-2">
                 <div className="rounded-2xl bg-white/5 p-5">
                   <p className="text-sm text-text-muted">Deliverables Expected</p>
-                  <p className="mt-2 text-base leading-relaxed text-white">
-                    {item.deliverablesExpected || "No deliverables specified yet."}
-                  </p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+  {Array.isArray(item.deliverablesExpected) &&
+  item.deliverablesExpected.length > 0 ? (
+    item.deliverablesExpected.map((deliverable) => (
+      <span
+        key={deliverable}
+        className="rounded-full border border-white/10 bg-white/10 px-3 py-1 text-sm font-medium text-white"
+      >
+        {deliverable}
+      </span>
+    ))
+  ) : (
+    <span className="text-sm text-text-muted">
+      No deliverables specified yet.
+    </span>
+  )}
+</div>
                 </div>
 
                 <div className="rounded-2xl bg-white/5 p-5">
@@ -647,6 +807,55 @@ export default function SponsorshipDetailPage() {
           </>
         )}
       </div>
+
+            {previewOpen && activeImage ? (
+        <div
+          onClick={closePreview}
+          className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 px-4 py-8 backdrop-blur-sm"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="relative h-[80vh] w-full max-w-5xl overflow-hidden rounded-2xl border border-white/10 bg-dark-layer"
+          >
+            <Image
+              src={activeImage}
+              alt={item?.sponsorshipTitle || "Sponsorship image preview"}
+              fill
+              className="object-contain"
+              sizes="100vw"
+            />
+
+            {galleryImages.length > 1 ? (
+              <>
+                <button
+                  type="button"
+                  onClick={showPreviousImage}
+                  className="absolute left-4 top-1/2 z-20 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/60 text-2xl font-bold text-white backdrop-blur transition hover:bg-black/80"
+                >
+                  ‹
+                </button>
+
+                <button
+                  type="button"
+                  onClick={showNextImage}
+                  className="absolute right-4 top-1/2 z-20 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/60 text-2xl font-bold text-white backdrop-blur transition hover:bg-black/80"
+                >
+                  ›
+                </button>
+              </>
+            ) : null}
+
+            <button
+              type="button"
+              onClick={closePreview}
+              className="absolute right-4 top-4 z-20 rounded-full bg-black/60 px-4 py-2 text-sm font-semibold text-white"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      ) : null}
+
     </div>
   );
 }
