@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { MouseEvent } from "react";
 import Link from "next/link";
 import Image from "next/image";
@@ -47,14 +47,9 @@ type SponsorshipDetail = {
   coverImage?: string;
   deliverablesExpected?: string[];
   customMessage?: string;
-  bannerRequirement?: boolean;
-  stallRequirement?: boolean;
-  mikeAnnouncement?: boolean;
-  socialMediaMention?: boolean;
-  productDisplay?: boolean;
   contactPersonName?: string;
   contactPhone?: string;
-  status?: "active" | "paused" | "closed";
+  status?: "active" | "paused" | "closed" | "expired";
   expiresAt?: string | null;
   createdAt?: string;
   updatedAt?: string;
@@ -101,6 +96,10 @@ function getStatusClasses(status?: string) {
     return "border-red-500/30 bg-red-500/10 text-red-300";
   }
 
+  if (status === "expired") {
+    return "border-slate-500/30 bg-slate-500/10 text-slate-300";
+  }
+
   return "border-emerald-500/30 bg-emerald-500/10 text-emerald-300";
 }
 
@@ -127,50 +126,55 @@ export default function SponsorshipDetailPage() {
   const [dealLoading, setDealLoading] = useState(false);
   const [dealError, setDealError] = useState("");
   const [dealSuccess, setDealSuccess] = useState("");
+  const [ownerActionLoading, setOwnerActionLoading] = useState("");
+const [ownerActionError, setOwnerActionError] = useState("");
+const [ownerActionSuccess, setOwnerActionSuccess] = useState("");
 
-  useEffect(() => {
-    const loadSponsorship = async () => {
-      if (!sponsorshipId) {
-        setError("Invalid sponsorship ID");
-        setLoading(false);
-        return;
-      }
+const loadSponsorship = useCallback(async () => {
+  if (!sponsorshipId) {
+    setError("Invalid sponsorship ID");
+    setLoading(false);
+    return;
+  }
 
-      try {
-        setLoading(true);
-        setError("");
+  try {
+    setLoading(true);
+    setError("");
 
-        const res = await fetch(`/api/sponsorships/${sponsorshipId}`, {
-          method: "GET",
-          credentials: "include",
-          cache: "no-store",
-        });
+    const res = await fetch(`/api/sponsorships/${sponsorshipId}`, {
+      method: "GET",
+      credentials: "include",
+      cache: "no-store",
+    });
 
-        const data: SponsorshipDetailResponse = await res.json();
+    const data: SponsorshipDetailResponse = await res.json();
 
-        if (!res.ok || !data.success) {
-          throw new Error(data.message || "Failed to load sponsorship");
-        }
+    if (!res.ok || !data.success) {
+      throw new Error(data.message || "Failed to load sponsorship");
+    }
 
-        setItem(data.data || null);
-        setMode(data.mode || "public_view");
-      } catch (err: any) {
-        setError(err?.message || "Failed to load sponsorship");
-        setItem(null);
-      } finally {
-        setLoading(false);
-      }
-    };
+    setItem(data.data || null);
+    setMode(data.mode || "public_view");
+  } catch (err: any) {
+    setError(err?.message || "Failed to load sponsorship");
+    setItem(null);
+  } finally {
+    setLoading(false);
+  }
+}, [sponsorshipId]);
 
-    loadSponsorship();
-  }, [sponsorshipId]);
+useEffect(() => {
+  loadSponsorship();
+}, [loadSponsorship]);
 
   useEffect(() => {
     const loadEvents = async () => {
       if (!user || user.role !== "ORGANIZER") return;
 
       try {
-        const res = await fetch("/api/events/my", {
+                const res = await fetch("/api/events/my", {
+          method: "GET",
+          credentials: "include",
           cache: "no-store",
         });
 
@@ -250,16 +254,6 @@ export default function SponsorshipDetailPage() {
     return "This is a limited public sponsorship preview. Login for deeper marketplace access.";
   }, [mode]);
 
-  const activationItems = [
-    { label: "Banner Requirement", value: Boolean(item?.bannerRequirement) },
-    { label: "Stall Requirement", value: Boolean(item?.stallRequirement) },
-    { label: "Mike Announcement", value: Boolean(item?.mikeAnnouncement) },
-    { label: "Social Media Mention", value: Boolean(item?.socialMediaMention) },
-    { label: "Product Display", value: Boolean(item?.productDisplay) },
-  ];
-
-  const visibleActivationItems = activationItems.filter((entry) => entry.value);
-
   const handleCreateDeal = async () => {
     if (!isAuthenticated) {
       router.push(`/login?redirect=/sponsorships/${sponsorshipId}`);
@@ -302,11 +296,13 @@ export default function SponsorshipDetailPage() {
       setDealSuccess("");
 
       const res = await fetch("/api/deals", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+  },
+  credentials: "include",
+  cache: "no-store",
+  body: JSON.stringify({
           organizerId: user._id,
           sponsorId: item.sponsorOwnerId,
           eventId: selectedEvent,
@@ -343,6 +339,78 @@ export default function SponsorshipDetailPage() {
       setDealLoading(false);
     }
   };
+
+  const handleOwnerAction = async (
+  action: "pause" | "resume" | "close" | "repost"
+) => {
+  if (!item?._id) {
+    setOwnerActionError("Sponsorship details missing.");
+    return;
+  }
+
+  if (mode !== "owner_view") {
+    setOwnerActionError("Only the sponsor owner can manage this post.");
+    return;
+  }
+
+  const confirmMessage =
+    action === "close"
+      ? "Are you sure you want to close this sponsorship? It will stop showing publicly."
+      : action === "repost"
+      ? "Create this sponsorship again as a new active post?"
+      : "";
+
+  if (confirmMessage && !window.confirm(confirmMessage)) {
+    return;
+  }
+
+  try {
+    setOwnerActionLoading(action);
+    setOwnerActionError("");
+    setOwnerActionSuccess("");
+
+    const body: Record<string, unknown> = {
+      action,
+    };
+
+    if (action === "repost") {
+      const tomorrow = new Date(Date.now() + 86400000)
+        .toISOString()
+        .split("T")[0];
+
+      body.applicationDeadline = tomorrow;
+    }
+
+    const res = await fetch(`/api/sponsorships/${item._id}`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      credentials: "include",
+      cache: "no-store",
+      body: JSON.stringify(body),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok || !data.success) {
+      throw new Error(data.message || "Action failed");
+    }
+
+    setOwnerActionSuccess(data.message || "Action completed successfully.");
+
+    if (action === "repost" && data.data?._id) {
+      router.push(`/sponsorships/${data.data._id}`);
+      return;
+    }
+
+    await loadSponsorship();
+  } catch (err: any) {
+    setOwnerActionError(err?.message || "Action failed");
+  } finally {
+    setOwnerActionLoading("");
+  }
+};
 
   if (loading || authLoading) {
     return (
@@ -382,7 +450,7 @@ export default function SponsorshipDetailPage() {
           </div>
         ) : (
           <>
-            <div className="mb-10 flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">
+           <div className="mb-10 flex flex-col gap-8 lg:flex-row lg:items-start lg:justify-between">
               <div>
                 <p className="mb-3 inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-text-muted backdrop-blur-md">
                   <span className="h-2 w-2 rounded-full bg-accent-orange" />
@@ -403,16 +471,93 @@ export default function SponsorshipDetailPage() {
               </div>
 
               <div className="flex flex-col gap-3 sm:flex-row">
-                {mode === "owner_view" ? (
-                  <>
-                    <Link href="/sponsorships">
-                      <Button variant="secondary">My Sponsorships</Button>
-                    </Link>
-                    <Link href="/sponsorships/create">
-                      <Button variant="primary">Create New</Button>
-                    </Link>
-                  </>
-                ) : mode === "organizer_view" ? (
+               {mode === "owner_view" ? (
+  <div className="w-full max-w-lg rounded-[24px] border border-white/10 bg-white/[0.04] p-5 backdrop-blur-xl">
+    <div className="mb-4">
+  <h2 className="text-lg font-bold text-white">Manage Sponsorship</h2>
+  <p className="mt-1 text-xs text-text-muted">
+    Control this post visibility and lifecycle.
+  </p>
+</div>
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      <Link href="/sponsorships">
+        <Button variant="secondary" className="w-full">
+          My Sponsorships
+        </Button>
+      </Link>
+
+      <Link href="/sponsorships/create">
+        <Button variant="primary" className="w-full">
+          Create New
+        </Button>
+      </Link>
+
+      {(item.status === "active" || item.status === "paused") ? (
+        <Link href={`/sponsorships/${item._id}/edit`}>
+          <Button variant="secondary" className="w-full">
+            Edit Post
+          </Button>
+        </Link>
+      ) : null}
+
+      {item.status === "active" ? (
+        <Button
+          variant="secondary"
+          loading={ownerActionLoading === "pause"}
+          onClick={() => handleOwnerAction("pause")}
+          className="w-full"
+        >
+          Pause
+        </Button>
+      ) : null}
+
+      {item.status === "paused" ? (
+        <Button
+          variant="primary"
+          loading={ownerActionLoading === "resume"}
+          onClick={() => handleOwnerAction("resume")}
+          className="w-full"
+        >
+          Resume
+        </Button>
+      ) : null}
+
+      {item.status === "active" || item.status === "paused" ? (
+        <Button
+          variant="secondary"
+          loading={ownerActionLoading === "close"}
+          onClick={() => handleOwnerAction("close")}
+          className="w-full"
+        >
+          Close
+        </Button>
+      ) : null}
+
+      {item.status === "closed" || item.status === "expired" ? (
+        <Button
+          variant="primary"
+          loading={ownerActionLoading === "repost"}
+          onClick={() => handleOwnerAction("repost")}
+          className="w-full sm:col-span-2"
+        >
+          Create Again
+        </Button>
+      ) : null}
+    </div>
+
+    {ownerActionError ? (
+      <p className="text-sm text-red-300">{ownerActionError}</p>
+    ) : null}
+
+    {ownerActionSuccess ? (
+      <p className="text-sm text-emerald-300">{ownerActionSuccess}</p>
+    ) : null}
+
+    <p className="mt-4 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-3 text-xs leading-relaxed text-text-muted">
+  Active posts can be edited, paused, or closed. Closed/expired posts can be created again as a new copy.
+</p>
+  </div>
+) : mode === "organizer_view" ? (
                   <div className="w-full max-w-md space-y-3 rounded-2xl border border-white/10 bg-white/[0.04] p-4">
                     <select
                       value={selectedEvent}
@@ -686,38 +831,14 @@ export default function SponsorshipDetailPage() {
               </div>
             </div>
 
-            <div className="mb-8 grid grid-cols-1 gap-8 xl:grid-cols-2">
-              <div className="rounded-[24px] border border-white/10 bg-white/[0.05] p-6 backdrop-blur-xl">
-                <h2 className="text-2xl font-bold text-white">Brand Requirements</h2>
-                <p className="mt-2 text-sm text-text-muted">
-                  These are the current activation requirements expected from the organizer side.
-                </p>
-
-                <div className="mt-5 flex flex-wrap gap-3">
-                  {visibleActivationItems.length > 0 ? (
-                    visibleActivationItems.map((entry) => (
-                      <span
-                        key={entry.label}
-                        className="rounded-full border border-white/10 bg-white/5 px-4 py-2 text-sm text-white"
-                      >
-                        {entry.label}
-                      </span>
-                    ))
-                  ) : (
-                    <span className="text-sm text-text-muted">
-                      No specific activation requirements selected yet.
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              <div className="rounded-[24px] border border-white/10 bg-white/[0.05] p-6 backdrop-blur-xl">
+                                      {mode === "owner_view" || mode === "organizer_view" ? (
+              <div className="mb-8 rounded-[24px] border border-white/10 bg-white/[0.05] p-6 backdrop-blur-xl">
                 <h2 className="text-2xl font-bold text-white">Contact Details</h2>
                 <p className="mt-2 text-sm text-text-muted">
                   Key contact information currently attached to this sponsorship post.
                 </p>
 
-                <div className="mt-5 grid grid-cols-1 gap-4">
+                <div className="mt-5 grid grid-cols-1 gap-4 md:grid-cols-2">
                   <div className="rounded-2xl bg-white/5 p-4">
                     <p className="text-sm text-text-muted">Contact Person</p>
                     <p className="mt-1 font-semibold text-white">
@@ -733,7 +854,7 @@ export default function SponsorshipDetailPage() {
                   </div>
                 </div>
               </div>
-            </div>
+            ) : null}
 
             <div className="rounded-[24px] border border-white/10 bg-white/[0.05] p-6 backdrop-blur-xl">
               <div className="mb-6">

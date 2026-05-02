@@ -115,6 +115,10 @@ const SPONSORSHIP_CATEGORY_OPTIONS = [
   "Other",
 ];
 
+function RequiredStar() {
+  return <span className="ml-1 text-accent-orange">*</span>;
+}
+
 export default function CreateSponsorshipPage() {
   const router = useRouter();
   const { user, loading: authLoading } = useAuth();
@@ -500,8 +504,8 @@ delete (payload as any).customCategory;
               <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
                 <div>
                   <label className="mb-2 block text-sm font-medium text-white">
-                    Sponsorship Title
-                  </label>
+  Sponsorship Title <RequiredStar />
+</label>
                   <input
                     name="sponsorshipTitle"
                     value={formData.sponsorshipTitle}
@@ -514,7 +518,7 @@ delete (payload as any).customCategory;
 
                 <div>
                   <label className="mb-2 block text-sm font-medium text-white">
-                    Sponsorship Type
+                    Sponsorship Type <RequiredStar />
                   </label>
                   <input
                     name="sponsorshipType"
@@ -528,7 +532,7 @@ delete (payload as any).customCategory;
 
                 <div>
                   <label className="mb-2 block text-sm font-medium text-white">
-                    Budget
+                    Budget <RequiredStar />
                   </label>
                   <input
                     type="number"
@@ -544,7 +548,7 @@ delete (payload as any).customCategory;
 
               <div>
   <label className="mb-2 block text-sm font-medium text-white">
-    Category
+    Category <RequiredStar />
   </label>
 
   <select
@@ -569,7 +573,7 @@ delete (payload as any).customCategory;
 {formData.category === "Other" ? (
   <div>
     <label className="mb-2 block text-sm font-medium text-white">
-      Custom Category
+      Custom Category <RequiredStar />
     </label>
     <input
       name="customCategory"
@@ -584,7 +588,7 @@ delete (payload as any).customCategory;
 
                 <div>
                   <label className="mb-2 block text-sm font-medium text-white">
-                    Expected Audience
+                    Expected Audience <RequiredStar />
                   </label>
                   <input
                     type="number"
@@ -600,7 +604,7 @@ delete (payload as any).customCategory;
 
                 <div>
                   <label className="mb-2 block text-sm font-medium text-white">
-                    Location Preference
+                    Location Preference <RequiredStar />
                   </label>
                   <input
                     name="locationPreference"
@@ -628,7 +632,7 @@ delete (payload as any).customCategory;
 
                 <div>
                   <label className="mb-2 block text-sm font-medium text-white">
-                    Application Deadline
+                    Application Deadline <RequiredStar />
                   </label>
                  <input
   type="date"
@@ -643,7 +647,7 @@ delete (payload as any).customCategory;
 
                 <div className="md:col-span-2">
                   <label className="mb-2 block text-sm font-medium text-white">
-                    Campaign Goal
+                    Campaign Goal <RequiredStar />
                   </label>
                   <textarea
                     name="campaignGoal"
@@ -728,7 +732,7 @@ delete (payload as any).customCategory;
 
                 <div className="md:col-span-2 rounded-[24px] border border-white/10 bg-white/[0.04] p-6">
   <h3 className="text-xl font-semibold text-white">
-    Sponsor Deliverables
+    Sponsor Deliverables <RequiredStar />
   </h3>
 
   <p className="mt-2 text-sm text-text-muted">
@@ -789,7 +793,7 @@ delete (payload as any).customCategory;
 
               <div className="mb-8">
                 <h3 className="text-xl font-semibold text-white">
-                  Contact Details
+                  Contact Details <RequiredStar />
                 </h3>
                 <p className="mt-2 text-sm text-text-muted">
                   This helps organizers contact the right person for partnership discussion.
@@ -798,7 +802,7 @@ delete (payload as any).customCategory;
                 <div className="mt-5 grid grid-cols-1 gap-5 md:grid-cols-2">
                   <div>
                     <label className="mb-2 block text-sm font-medium text-white">
-                      Contact Person Name
+                      Contact Person Name <RequiredStar />
                     </label>
                     <input
   name="contactPersonName"
@@ -812,7 +816,7 @@ delete (payload as any).customCategory;
 
                   <div>
                     <label className="mb-2 block text-sm font-medium text-white">
-                      Contact Phone
+                      Contact Phone <RequiredStar />
                     </label>
                     <input
                       name="contactPhone"

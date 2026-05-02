@@ -1,10 +1,13 @@
 import mongoose from "mongoose";
-import { Event } from "@/types/event";
+import {
+  EVENT_CATEGORY_OPTIONS,
+  EVENT_DELIVERABLE_OPTIONS,
+} from "@/types/event";
 
 const MAX_TITLE_LENGTH = 150;
 const MAX_DESCRIPTION_LENGTH = 5000;
 const MAX_LOCATION_LENGTH = 200;
-const MAX_CATEGORY_LENGTH = 60;
+const MAX_CATEGORY_LENGTH = 80;
 const MAX_AUDIENCE_ITEM_LENGTH = 60;
 const MAX_DELIVERABLE_LENGTH = 80;
 const MAX_ARRAY_ITEMS = 20;
@@ -14,6 +17,38 @@ const MAX_URL_LENGTH = 2000;
 const MAX_PUBLIC_ID_LENGTH = 300;
 const MAX_BUDGET = 100000000;
 const MAX_ATTENDEE_COUNT = 1000000;
+const ALLOWED_EVENT_CATEGORIES = new Set<string>(EVENT_CATEGORY_OPTIONS);
+const ALLOWED_EVENT_DELIVERABLES = new Set<string>(EVENT_DELIVERABLE_OPTIONS);
+const LEGACY_DELIVERABLE_MAP: Record<string, string> = {
+  STAGE_BRANDING: "Stage Branding",
+  STALL_SPACE: "Stall Space",
+  SOCIAL_MEDIA_PROMOTION: "Social Media Promotion",
+  PRODUCT_DISPLAY: "Product Display",
+  ANNOUNCEMENTS: "Announcements / Stage Mentions",
+  EMAIL_PROMOTION: "Email Promotion",
+  TITLE_SPONSORSHIP: "Title Sponsorship",
+  CO_BRANDING: "Co-Branding",
+};
+
+function normalizeDeliverableArray(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+
+  return [
+    ...new Set(
+      value
+        .map((item) => {
+          const cleaned = String(item).trim();
+          return LEGACY_DELIVERABLE_MAP[cleaned] || cleaned;
+        })
+        .filter(
+          (item) =>
+            Boolean(item) &&
+            item.length <= MAX_DELIVERABLE_LENGTH &&
+            ALLOWED_EVENT_DELIVERABLES.has(item)
+        )
+    ),
+  ].slice(0, 3);
+}
 
 function isValidHttpUrl(value: string) {
   try {
@@ -98,7 +133,7 @@ const eventSchema = new mongoose.Schema(
       required: [true, "Organizer is required"],
     },
 
-    categories: {
+       categories: {
       type: [String],
       required: true,
       set: (value: unknown) =>
@@ -112,6 +147,17 @@ const eventSchema = new mongoose.Schema(
           validator: (arr: unknown) =>
             Array.isArray(arr) && arr.length <= MAX_ARRAY_ITEMS,
           message: `Categories cannot exceed ${MAX_ARRAY_ITEMS} items`,
+        },
+        {
+          validator: (arr: unknown) =>
+            Array.isArray(arr) &&
+            arr.every(
+              (item) =>
+                typeof item === "string" &&
+                (ALLOWED_EVENT_CATEGORIES.has(item) ||
+                  (item.trim().length > 0 && item.trim().length <= MAX_CATEGORY_LENGTH))
+            ),
+          message: "Invalid event category",
         },
       ],
     },
@@ -142,19 +188,19 @@ const eventSchema = new mongoose.Schema(
       max: [MAX_BUDGET, `Budget cannot exceed ${MAX_BUDGET}`],
     },
 
-    startDate: {
-      type: Date,
-      required: [true, "Start date is required"],
-    },
+         startDate: {
+  type: Date,
+  required: [true, "Start date is required"],
+},
 
-    endDate: {
+       endDate: {
       type: Date,
       required: [true, "End date is required"],
       validate: {
         validator: function (this: any, value: Date) {
-          return value >= this.startDate;
+          return value && this.startDate && value >= this.startDate;
         },
-        message: "End date must be after start date",
+        message: "End date must be same as or after start date",
       },
     },
 
@@ -165,22 +211,40 @@ const eventSchema = new mongoose.Schema(
       max: [MAX_ATTENDEE_COUNT, `Expected audience cannot exceed ${MAX_ATTENDEE_COUNT}`],
     },
 
-    eventType: {
+        eventType: {
       type: String,
-      enum: ["CONFERENCE", "WORKSHOP", "WEBINAR", "FESTIVAL", "MEETUP", "OTHER"],
       required: [true, "Event type is required"],
+      maxlength: MAX_CATEGORY_LENGTH,
+      validate: {
+        validator: (value: string) =>
+          Boolean(value?.trim()) &&
+          (ALLOWED_EVENT_CATEGORIES.has(value) ||
+            value.trim().length <= MAX_CATEGORY_LENGTH),
+        message: "Invalid event type",
+      },
     },
 
-    providedDeliverables: {
-      type: [String],
-      default: [],
-      set: (value: unknown) =>
-        normalizeStringArray(value, MAX_DELIVERABLE_LENGTH, MAX_ARRAY_ITEMS),
-      validate: {
-        validator: (arr: unknown) =>
-          Array.isArray(arr) && arr.length <= MAX_ARRAY_ITEMS,
-        message: `Provided deliverables cannot exceed ${MAX_ARRAY_ITEMS} items`,
-      },
+      providedDeliverables: {
+  type: [String],
+  default: [],
+  set: (value: unknown) => normalizeDeliverableArray(value),
+  validate: [
+        {
+          validator: (arr: unknown) =>
+            Array.isArray(arr) && arr.length === 3,
+          message: "Exactly 3 provided deliverables are required",
+        },
+        {
+          validator: (arr: unknown) =>
+            Array.isArray(arr) &&
+            arr.every(
+              (item) =>
+                typeof item === "string" &&
+                ALLOWED_EVENT_DELIVERABLES.has(item)
+            ),
+          message: "Invalid event deliverable",
+        },
+      ],
     },
 
     coverImage: {
@@ -216,10 +280,55 @@ const eventSchema = new mongoose.Schema(
       },
     },
 
-    status: {
+       status: {
       type: String,
-      enum: ["DRAFT", "PUBLISHED", "ONGOING", "COMPLETED", "CANCELLED"],
+      enum: [
+        "DRAFT",
+        "PUBLISHED",
+        "ONGOING",
+        "PAUSED",
+        "COMPLETED",
+        "CANCELLED",
+        "EXPIRED",
+      ],
       default: "DRAFT",
+      index: true,
+    },
+
+        pausedAt: {
+      type: Date,
+      default: null,
+      index: true,
+    },
+
+    resumedAt: {
+      type: Date,
+      default: null,
+    },
+
+    cancelledAt: {
+      type: Date,
+      default: null,
+      index: true,
+    },
+
+    completedAt: {
+      type: Date,
+      default: null,
+      index: true,
+    },
+
+    duplicatedFrom: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Event",
+      default: null,
+      index: true,
+    },
+
+    repostCount: {
+      type: Number,
+      default: 0,
+      min: 0,
     },
 
     visibilityStatus: {
@@ -321,6 +430,10 @@ eventSchema.index({ providedDeliverables: 1 });
 eventSchema.index({ visibilityStatus: 1, moderationStatus: 1, isDeleted: 1 });
 eventSchema.index({ status: 1, isDeleted: 1, startDate: 1 });
 eventSchema.index({ organizerId: 1, isDeleted: 1, updatedAt: -1 });
+eventSchema.index({ organizerId: 1, status: 1, createdAt: -1 });
+eventSchema.index({ organizerId: 1, status: 1, startDate: 1 });
+eventSchema.index({ duplicatedFrom: 1, createdAt: -1 });
+eventSchema.index({ status: 1, endDate: 1 });
 
 eventSchema.pre("validate", function (next) {
   if (typeof this.title === "string") {
@@ -360,11 +473,29 @@ eventSchema.pre("validate", function (next) {
     this.hiddenReason = "";
   }
 
-  if (this.moderationStatus !== "FLAGGED") {
+    if (this.moderationStatus !== "FLAGGED") {
     this.flagReason = "";
   }
 
-  next();
+  if (this.status !== "PAUSED") {
+    this.pausedAt = null;
+  }
+
+  if (this.status !== "CANCELLED") {
+    this.cancelledAt = null;
+  }
+
+  if (this.status !== "COMPLETED") {
+    this.completedAt = null;
+  }
+
+  if (typeof this.repostCount !== "number" || this.repostCount < 0) {
+  this.repostCount = 0;
+}
+
+this.providedDeliverables = normalizeDeliverableArray(this.providedDeliverables);
+
+next();
 });
 
 eventSchema.virtual("category").get(function () {
@@ -372,4 +503,4 @@ eventSchema.virtual("category").get(function () {
 });
 
 export const EventModel =
-  mongoose.models.Event || mongoose.model<Event>("Event", eventSchema);
+  mongoose.models.Event || mongoose.model("Event", eventSchema);

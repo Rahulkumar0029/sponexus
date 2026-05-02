@@ -11,8 +11,10 @@ const OWNER_ALLOWED_STATUSES = [
   "DRAFT",
   "PUBLISHED",
   "ONGOING",
+  "PAUSED",
   "COMPLETED",
   "CANCELLED",
+  "EXPIRED",
 ] as const;
 
 const MAX_LIMIT = 50;
@@ -45,6 +47,32 @@ function sanitizeEventForPublicResponse(event: any) {
   return plain;
 }
 
+function getTodayStart() {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return today;
+}
+
+async function expireOldActiveEvents(ownerId?: unknown) {
+  const todayStart = getTodayStart();
+
+  const query: Record<string, any> = {
+    status: { $in: ["PUBLISHED", "ONGOING"] },
+    endDate: { $lt: todayStart },
+    isDeleted: { $ne: true },
+  };
+
+  if (ownerId) {
+    query.organizerId = ownerId;
+  }
+
+  await EventModel.updateMany(query, {
+    $set: {
+      status: "EXPIRED",
+    },
+  });
+}
+
 export async function GET(request: NextRequest) {
   try {
     await connectDB();
@@ -63,13 +91,14 @@ export async function GET(request: NextRequest) {
     const safeLimit =
       Number.isNaN(limit) || limit < 1 ? 10 : Math.min(limit, MAX_LIMIT);
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+const today = getTodayStart();
 
     const query: Record<string, any> = {};
 
-    if (!currentUser) {
-      query.status = { $in: PUBLIC_VISIBLE_STATUSES };
+   if (!currentUser) {
+  await expireOldActiveEvents();
+
+  query.status = { $in: PUBLIC_VISIBLE_STATUSES };
       query.endDate = { $gte: today };
       query.isDeleted = { $ne: true };
       query.visibilityStatus = { $ne: "HIDDEN" };
@@ -100,8 +129,10 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    if (currentUser.role === "ORGANIZER") {
-      query.organizerId = currentUser._id;
+   if (currentUser.role === "ORGANIZER") {
+  await expireOldActiveEvents(currentUser._id);
+
+  query.organizerId = currentUser._id;
       query.isDeleted = { $ne: true };
 
       if (
@@ -122,8 +153,8 @@ export async function GET(request: NextRequest) {
       }
 
       if (pastOnly) {
-        query.$or = [{ status: "COMPLETED" }, { endDate: { $lt: today } }];
-      }
+  query.status = { $in: ["COMPLETED", "CANCELLED", "EXPIRED"] };
+}
 
       const events = await EventModel.find(query)
         .sort({ startDate: -1, createdAt: -1 })
@@ -149,6 +180,8 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    await expireOldActiveEvents();
+
     query.isDeleted = { $ne: true };
     query.visibilityStatus = { $ne: "HIDDEN" };
     query.moderationStatus = { $ne: "FLAGGED" };
@@ -156,12 +189,9 @@ export async function GET(request: NextRequest) {
     if (activeOnly) {
       query.status = { $in: PUBLIC_VISIBLE_STATUSES };
       query.endDate = { $gte: today };
-    } else if (pastOnly) {
-      query.$or = [
-        { status: { $in: PAST_VISIBLE_STATUSES } },
-        { endDate: { $lt: today } },
-      ];
-    } else if (status && status !== "ALL") {
+  } else if (pastOnly) {
+  query.status = { $in: ["COMPLETED"] };
+} else if (status && status !== "ALL") {
       if (
         PUBLIC_VISIBLE_STATUSES.includes(
           status as (typeof PUBLIC_VISIBLE_STATUSES)[number]

@@ -4,7 +4,11 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/Button";
 import { useAuth } from "@/hooks/useAuth";
-import { EventDeliverable } from "@/types/event";
+import {
+  EventDeliverable,
+  EventCategory,
+  EVENT_CATEGORY_OPTIONS,
+} from "@/types/event";
 
 type MediaType = "image" | "video";
 
@@ -16,26 +20,18 @@ type UploadedMedia = {
   uploadedAt?: string;
 };
 
-const EVENT_TYPES = [
-  "CONFERENCE",
-  "WORKSHOP",
-  "WEBINAR",
-  "FESTIVAL",
-  "MEETUP",
-  "OTHER",
-] as const;
-
 const MAX_DELIVERABLES = 3;
 const DELIVERABLE_OPTIONS: { value: EventDeliverable; label: string }[] = [
-  { value: "STAGE_BRANDING", label: "Stage Branding" },
-  { value: "STALL_SPACE", label: "Stall Space" },
-  { value: "SOCIAL_MEDIA_PROMOTION", label: "Social Media Promotion" },
-  { value: "PRODUCT_DISPLAY", label: "Product Display" },
-  { value: "ANNOUNCEMENTS", label: "Announcements / Stage Mentions" },
-  { value: "EMAIL_PROMOTION", label: "Email Promotion" },
-  { value: "TITLE_SPONSORSHIP", label: "Title Sponsorship" },
-  { value: "CO_BRANDING", label: "Co-Branding" },
+  { value: "Stage Branding", label: "Stage Branding" },
+  { value: "Stall Space", label: "Stall Space" },
+  { value: "Social Media Promotion", label: "Social Media Promotion" },
+  { value: "Product Display", label: "Product Display" },
+  { value: "Announcements / Stage Mentions", label: "Announcements / Stage Mentions" },
+  { value: "Email Promotion", label: "Email Promotion" },
+  { value: "Title Sponsorship", label: "Title Sponsorship" },
+  { value: "Co-Branding", label: "Co-Branding" },
 ];
+
 
 function splitCommaValues(value: string): string[] {
   return value
@@ -50,19 +46,20 @@ export default function CreateEventPage() {
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
-  const [categoriesInput, setCategoriesInput] = useState("");
+ const [selectedCategory, setSelectedCategory] =
+  useState<EventCategory>("Technology");
+const [customCategory, setCustomCategory] = useState("");
   const [targetAudienceInput, setTargetAudienceInput] = useState("");
   const [location, setLocation] = useState("");
   const [budget, setBudget] = useState("");
   const [attendeeCount, setAttendeeCount] = useState("");
-  const [eventType, setEventType] =
-    useState<(typeof EVENT_TYPES)[number]>("CONFERENCE");
+  const [eventType, setEventType] = useState<string>("Technology");
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
 
   const [providedDeliverables, setProvidedDeliverables] = useState<EventDeliverable[]>([]);
 
-  const [coverImage, setCoverImage] = useState("");
+  const [coverImage] = useState("");
 const [uploadedMedia, setUploadedMedia] = useState<UploadedMedia[]>([]);
 
   const [publishMode, setPublishMode] = useState<"draft" | "publish">("publish");
@@ -70,7 +67,14 @@ const [uploadedMedia, setUploadedMedia] = useState<UploadedMedia[]>([]);
   const [error, setError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
 
-  const categories = useMemo(() => splitCommaValues(categoriesInput), [categoriesInput]);
+ const categories = useMemo(() => {
+  if (selectedCategory === "Other") {
+    return customCategory.trim() ? [customCategory.trim()] : [];
+  }
+
+  return [selectedCategory];
+}, [selectedCategory, customCategory]);
+
   const targetAudience = useMemo(
     () => splitCommaValues(targetAudienceInput),
     [targetAudienceInput]
@@ -150,8 +154,12 @@ const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     }
 
     if (categories.length === 0) {
-      return "At least one category is required.";
-    }
+  return "Please select a category.";
+}
+
+if (selectedCategory === "Other" && !customCategory.trim()) {
+  return "Please enter your custom category.";
+}
 
     if (!location.trim()) {
       return "Location is required.";
@@ -177,6 +185,10 @@ const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
   return "End date cannot be before start date.";
 }
 
+if (providedDeliverables.length !== MAX_DELIVERABLES) {
+  return "Please select exactly 3 sponsor deliverables.";
+}
+
 if (uploadedMedia.length < 2) {
   return "Please upload at least 2 event images.";
 }
@@ -194,30 +206,31 @@ return "";
       return;
     }
 
-    setSubmitting(true);
-    setPublishMode(mode);
+   setSubmitting(true);
+setPublishMode(mode);
 
-    try {
-      const payload = {
-        title: title.trim(),
-        description: description.trim(),
-        categories,
-        targetAudience,
-        location: location.trim(),
-        budget: Number(budget),
-        startDate,
-        endDate,
-        attendeeCount: Number(attendeeCount),
-        eventType,
-        providedDeliverables,
-       coverImage:
-  coverImage.trim() ||
-  uploadedMedia.find((m) => m.type === "image")?.url ||
-  "",
-        venueImages: uploadedMedia,
-pastEventMedia: [],
-        status: mode === "publish" ? "PUBLISHED" : "DRAFT",
-      };
+try {
+  const payload = {
+  title: title.trim(),
+  description: description.trim(),
+  categories,
+  customCategory: selectedCategory === "Other" ? customCategory.trim() : "",
+  targetAudience,
+  location: location.trim(),
+  budget: Number(budget),
+  startDate,
+  endDate,
+  attendeeCount: Number(attendeeCount),
+  eventType: selectedCategory === "Other" ? customCategory.trim() : eventType,
+  providedDeliverables,
+  coverImage:
+    coverImage.trim() ||
+    uploadedMedia.find((m) => m.type === "image")?.url ||
+    "",
+  venueImages: uploadedMedia,
+  pastEventMedia: [],
+  status: mode === "publish" ? "PUBLISHED" : "DRAFT",
+};
 
       const response = await fetch("/api/events/create", {
         method: "POST",
@@ -365,19 +378,46 @@ pastEventMedia: [],
               </div>
 
               <div>
-                <label className="mb-2 block text-sm font-medium text-text-light">
-                  Categories
-                </label>
-                <input
-                  value={categoriesInput}
-                  onChange={(e) => setCategoriesInput(e.target.value)}
-                  placeholder="Tech, College Fest, Sports"
-                  className="w-full rounded-2xl border border-white/10 bg-dark-layer px-4 py-3 text-text-light outline-none transition focus:border-accent-orange"
-                />
-                <p className="mt-2 text-xs text-text-muted">
-                  Use comma separated values.
-                </p>
-              </div>
+  <label className="mb-2 block text-sm font-medium text-text-light">
+    Category
+  </label>
+
+  <select
+    value={selectedCategory}
+    onChange={(e) => {
+      const value = e.target.value as EventCategory;
+      setSelectedCategory(value);
+      setEventType(value);
+
+      if (value !== "Other") {
+        setCustomCategory("");
+      }
+    }}
+    className="w-full rounded-2xl border border-white/10 bg-dark-layer px-4 py-3 text-text-light outline-none transition focus:border-accent-orange"
+  >
+    {EVENT_CATEGORY_OPTIONS.map((category) => (
+      <option key={category} value={category}>
+        {category}
+      </option>
+    ))}
+  </select>
+
+  {selectedCategory === "Other" ? (
+    <input
+      value={customCategory}
+      onChange={(e) => {
+        setCustomCategory(e.target.value);
+        setEventType("Other");
+      }}
+      placeholder="Enter custom category"
+      className="mt-3 w-full rounded-2xl border border-white/10 bg-dark-layer px-4 py-3 text-text-light outline-none transition focus:border-accent-orange"
+    />
+  ) : null}
+
+  <p className="mt-2 text-xs text-text-muted">
+    Category is used for matching events with sponsorships.
+  </p>
+</div>
 
               <div>
                 <label className="mb-2 block text-sm font-medium text-text-light">
@@ -399,18 +439,16 @@ pastEventMedia: [],
                   Event Type
                 </label>
                 <select
-                  value={eventType}
-                  onChange={(e) =>
-                    setEventType(e.target.value as (typeof EVENT_TYPES)[number])
-                  }
-                  className="w-full rounded-2xl border border-white/10 bg-dark-layer px-4 py-3 text-text-light outline-none transition focus:border-accent-orange"
-                >
-                  {EVENT_TYPES.map((type) => (
-                    <option key={type} value={type}>
-                      {type}
-                    </option>
-                  ))}
-                </select>
+  value={eventType}
+  onChange={(e) => setEventType(e.target.value)}
+  className="w-full rounded-2xl border border-white/10 bg-dark-layer px-4 py-3 text-text-light outline-none transition focus:border-accent-orange"
+>
+  {categories.map((type) => (
+    <option key={type} value={type}>
+      {type}
+    </option>
+  ))}
+</select>
               </div>
 
               <div>
@@ -524,17 +562,21 @@ event with the right sponsors more accurately.
           <section className="rounded-3xl border border-white/10 bg-white/[0.04] p-6 sm:p-8">
             <h2 className="text-xl font-semibold">Media & Trust Proof</h2>
             <div className="mt-6 grid gap-5">
-              <div>
-                <label className="mb-2 block text-sm font-medium text-text-light">
-                  Cover Image URL (Optional)
-                </label>
-                <input
-                  value={coverImage}
-                  onChange={(e) => setCoverImage(e.target.value)}
-                  placeholder="Optional. If empty, first uploaded photo becomes cover."
-                  className="w-full rounded-2xl border border-white/10 bg-dark-layer px-4 py-3 text-text-light outline-none transition focus:border-accent-orange"
-                />
-              </div>
+              {coverImage ? (
+  <div className="rounded-2xl border border-white/10 bg-dark-layer p-4">
+    <p className="mb-3 text-sm font-medium text-text-light">
+      Cover Image Preview
+    </p>
+
+    <div className="relative h-48 w-full overflow-hidden rounded-2xl border border-white/10">
+      <img
+        src={coverImage}
+        alt="Event cover preview"
+        className="h-full w-full object-cover"
+      />
+    </div>
+  </div>
+) : null}
 <div>
               <label className="flex w-full cursor-pointer items-center justify-between rounded-2xl border border-white/10 bg-dark-layer px-4 py-4 text-sm transition hover:border-accent-orange">
   

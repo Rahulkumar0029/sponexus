@@ -5,18 +5,12 @@ import { connectDB } from "@/lib/db";
 import Sponsor from "@/lib/models/Sponsor";
 import User from "@/lib/models/User";
 import { getCurrentUser } from "@/lib/current-user";
-import { EventDeliverable } from "@/types/event";
+import {
+  EventDeliverable,
+  EVENT_DELIVERABLE_OPTIONS,
+} from "@/types/event";
 
-const ALLOWED_DELIVERABLES: EventDeliverable[] = [
-  "STAGE_BRANDING",
-  "STALL_SPACE",
-  "SOCIAL_MEDIA_PROMOTION",
-  "PRODUCT_DISPLAY",
-  "ANNOUNCEMENTS",
-  "EMAIL_PROMOTION",
-  "TITLE_SPONSORSHIP",
-  "CO_BRANDING",
-];
+const ALLOWED_DELIVERABLES = new Set<string>(EVENT_DELIVERABLE_OPTIONS);
 
 const MAX_BRAND_NAME_LENGTH = 120;
 const MAX_COMPANY_NAME_LENGTH = 120;
@@ -64,8 +58,9 @@ function normalizeArray(value: unknown): string[] {
 
 function normalizeDeliverables(value: unknown): EventDeliverable[] {
   const items = normalizeArray(value);
+
   return items.filter((item): item is EventDeliverable =>
-    ALLOWED_DELIVERABLES.includes(item as EventDeliverable)
+    ALLOWED_DELIVERABLES.has(item)
   );
 }
 

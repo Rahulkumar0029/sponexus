@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Button } from "@/components/Button";
 import { useAuth } from "@/hooks/useAuth";
@@ -63,55 +63,60 @@ export default function EventDetailPage() {
   const [dealSuccess, setDealSuccess] = useState("");
 const [previewMedia, setPreviewMedia] = useState<MediaItem | null>(null);
 
-  useEffect(() => {
-    const fetchEvent = async () => {
-      if (!eventId) {
-        setError("Invalid event ID.");
-        setLoading(false);
-        return;
-      }
+const [ownerActionLoading, setOwnerActionLoading] = useState("");
+const [ownerActionError, setOwnerActionError] = useState("");
+const [ownerActionSuccess, setOwnerActionSuccess] = useState("");
 
-      try {
-        setLoading(true);
-        setError("");
+  const loadEvent = useCallback(async () => {
+  if (!eventId) {
+    setError("Invalid event ID.");
+    setLoading(false);
+    return;
+  }
 
-        const response = await fetch(`/api/events/${eventId}`, {
-          method: "GET",
-          cache: "no-store",
-        });
+  try {
+    setLoading(true);
+    setError("");
 
-        const data = await response.json();
+    const response = await fetch(`/api/events/${eventId}`, {
+      method: "GET",
+      cache: "no-store",
+      credentials: "include",
+    });
 
-        if (!response.ok) {
-          setError(data.message || "Failed to load event.");
-          setEvent(null);
-          return;
-        }
+    const data = await response.json();
 
-        setEvent(data.data || null);
-      } catch {
-        setError("Something went wrong while loading the event.");
-        setEvent(null);
-      } finally {
-        setLoading(false);
-      }
-    };
+    if (!response.ok) {
+      setError(data.message || "Failed to load event.");
+      setEvent(null);
+      return;
+    }
 
-    fetchEvent();
-  }, [eventId]);
+    setEvent(data.data || null);
+  } catch {
+    setError("Something went wrong while loading the event.");
+    setEvent(null);
+  } finally {
+    setLoading(false);
+  }
+}, [eventId]);
 
-  const isOwner = useMemo(() => {
-    if (!user || !event?.organizerId) return false;
+useEffect(() => {
+  loadEvent();
+}, [loadEvent]);
 
-    const organizer =
-      typeof event.organizerId === "string"
-        ? event.organizerId
-        : event.organizerId?._id;
+const isOwner = useMemo(() => {
+  if (!user || !event?.organizerId) return false;
 
-    return organizer === user._id;
-  }, [user, event]);
+  const organizer =
+    typeof event.organizerId === "string"
+      ? event.organizerId
+      : event.organizerId?._id;
 
-  const organizerDisplay = useMemo(() => {
+  return String(organizer) === String(user._id);
+}, [user, event]);
+
+const organizerDisplay = useMemo(() => {
     if (!event?.organizerId) return "Organizer not available";
 
     if (typeof event.organizerId === "string") return "Organizer";
@@ -288,6 +293,65 @@ const [previewMedia, setPreviewMedia] = useState<MediaItem | null>(null);
     }
   };
 
+  const handleOwnerAction = async (
+  action: "pause" | "resume" | "cancel" | "complete"
+) => {
+  if (!event?._id) {
+    setOwnerActionError("Event details missing.");
+    return;
+  }
+
+  if (!isOwner) {
+    setOwnerActionError("Only the event owner can manage this event.");
+    return;
+  }
+
+ const confirmMessage =
+  action === "cancel"
+    ? "Are you sure you want to cancel this event? It will stop showing publicly."
+    : action === "complete"
+    ? "Mark this event as completed?"
+    : "";
+
+  if (confirmMessage && !window.confirm(confirmMessage)) {
+    return;
+  }
+
+  try {
+    setOwnerActionLoading(action);
+    setOwnerActionError("");
+    setOwnerActionSuccess("");
+
+    const body: Record<string, unknown> = {
+      action,
+    };
+
+    const res = await fetch(`/api/events/${event._id}`, {
+      method: "PATCH",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      credentials: "include",
+      cache: "no-store",
+      body: JSON.stringify(body),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok || !data.success) {
+      throw new Error(data.message || "Action failed");
+    }
+
+    setOwnerActionSuccess(data.message || "Action completed successfully.");
+
+    await loadEvent();
+  } catch (err: any) {
+    setOwnerActionError(err?.message || "Action failed");
+  } finally {
+    setOwnerActionLoading("");
+  }
+};
+
   if (loading || authLoading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-dark-base px-4 text-text-light">
@@ -363,16 +427,111 @@ const [previewMedia, setPreviewMedia] = useState<MediaItem | null>(null);
             </div>
 
             <div className="mt-6 space-y-3">
-              {isOwner ? (
-                <>
-                  <Button variant="primary" className="w-full" onClick={() => router.push("/events")}>
-                    View My Events
-                  </Button>
-                  <Button variant="secondary" className="w-full" onClick={() => router.push("/dashboard/organizer")}>
-                    Back to Dashboard
-                  </Button>
-                </>
-              ) : user?.role === "SPONSOR" ? (
+             {isOwner ? (
+  <div className="space-y-3 rounded-3xl border border-white/10 bg-white/[0.04] p-4">
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      <Button
+        variant="primary"
+        className="w-full"
+        onClick={() => router.push("/events")}
+      >
+        My Events
+      </Button>
+
+      <Button
+        variant="secondary"
+        className="w-full"
+        onClick={() => router.push("/dashboard/organizer")}
+      >
+        Dashboard
+      </Button>
+
+      {event.status === "DRAFT" ||
+      event.status === "PUBLISHED" ||
+      event.status === "ONGOING" ||
+      event.status === "PAUSED" ? (
+        <Button
+          variant="secondary"
+          className="w-full"
+          onClick={() => router.push(`/events/${event._id}/edit`)}
+        >
+          Edit Event
+        </Button>
+      ) : null}
+
+      {event.status === "PUBLISHED" || event.status === "ONGOING" ? (
+        <Button
+          variant="secondary"
+          loading={ownerActionLoading === "pause"}
+          onClick={() => handleOwnerAction("pause")}
+          className="w-full"
+        >
+          Pause
+        </Button>
+      ) : null}
+
+      {event.status === "PAUSED" ? (
+        <Button
+          variant="primary"
+          loading={ownerActionLoading === "resume"}
+          onClick={() => handleOwnerAction("resume")}
+          className="w-full"
+        >
+          Resume
+        </Button>
+      ) : null}
+
+      {event.status === "PUBLISHED" || event.status === "ONGOING" ? (
+        <Button
+          variant="secondary"
+          loading={ownerActionLoading === "complete"}
+          onClick={() => handleOwnerAction("complete")}
+          className="w-full"
+        >
+          Complete
+        </Button>
+      ) : null}
+
+      {event.status !== "CANCELLED" &&
+      event.status !== "COMPLETED" &&
+      event.status !== "EXPIRED" ? (
+        <Button
+          variant="secondary"
+          loading={ownerActionLoading === "cancel"}
+          onClick={() => handleOwnerAction("cancel")}
+          className="w-full"
+        >
+          Cancel
+        </Button>
+      ) : null}
+
+      {event.status === "CANCELLED" ||
+      event.status === "COMPLETED" ||
+      event.status === "EXPIRED" ? (
+        <Button
+  variant="primary"
+  className="w-full sm:col-span-2"
+  onClick={() => router.push(`/events/${event._id}/edit?mode=repost`)}
+>
+  Create Again
+</Button>
+      ) : null}
+    </div>
+
+    {ownerActionError ? (
+      <p className="text-sm text-red-300">{ownerActionError}</p>
+    ) : null}
+
+    {ownerActionSuccess ? (
+      <p className="text-sm text-emerald-300">{ownerActionSuccess}</p>
+    ) : null}
+
+    <p className="text-xs leading-relaxed text-text-muted">
+      Active events can be edited, paused, completed, or cancelled. Cancelled,
+      completed, and expired events can be created again as a new event.
+    </p>
+  </div>
+) : user?.role === "SPONSOR" ? (
                 <div className="space-y-3 rounded-3xl border border-white/10 bg-white/[0.04] p-4">
                   <h2 className="text-lg font-semibold text-white">Start Sponsorship Deal</h2>
 

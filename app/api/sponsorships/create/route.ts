@@ -92,7 +92,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const body = await request.json();
+       const body = await request.json();
+
+    const duplicatedFrom = clean(body.duplicatedFrom);
 
     const sponsorshipTitle = clean(body.sponsorshipTitle);
     const sponsorshipType = clean(body.sponsorshipType);
@@ -116,6 +118,33 @@ const deliverablesExpected = Array.isArray(body.deliverablesExpected)
     const targetAudienceValue = Number(body.targetAudience);
     const budgetValue = Number(body.budget);
     const applicationDeadline = body.applicationDeadline;
+
+        let originalSponsorship = null;
+
+    if (duplicatedFrom) {
+      if (!mongoose.Types.ObjectId.isValid(duplicatedFrom)) {
+        return NextResponse.json(
+          { success: false, message: "Invalid original sponsorship ID" },
+          { status: 400 }
+        );
+      }
+
+      originalSponsorship = await Sponsorship.findOne({
+        _id: duplicatedFrom,
+        sponsorOwnerId: user._id,
+        isDeleted: false,
+      });
+
+      if (!originalSponsorship) {
+        return NextResponse.json(
+          {
+            success: false,
+            message: "Original sponsorship not found or access denied",
+          },
+          { status: 404 }
+        );
+      }
+    }
 
     if (!sponsorshipTitle) {
       return NextResponse.json(
@@ -373,7 +402,7 @@ if (Number.isNaN(selectedDate.getTime()) || selectedDate <= today) {
   );
 }
 
-    const sponsorship = await Sponsorship.create({
+        const sponsorship = await Sponsorship.create({
       sponsorOwnerId: user._id,
       sponsorProfileId: sponsorProfile._id,
       sponsorshipTitle,
@@ -385,14 +414,28 @@ if (Number.isNaN(selectedDate.getTime()) || selectedDate <= today) {
       locationPreference,
       campaignGoal,
       coverImage,
-     deliverablesExpected: uniqueDeliverables,
-customMessage,
-contactPersonName,
+      deliverablesExpected: uniqueDeliverables,
+      customMessage,
+      contactPersonName,
       contactPhone,
       status: "active",
+      pausedAt: null,
+      resumedAt: null,
+      closedAt: null,
+      duplicatedFrom: originalSponsorship?._id || null,
+      repostCount: 0,
       expiresAt: selectedDate,
     });
 
+        if (originalSponsorship) {
+      originalSponsorship.repostCount =
+        typeof originalSponsorship.repostCount === "number"
+          ? originalSponsorship.repostCount + 1
+          : 1;
+
+      await originalSponsorship.save();
+    }
+    
     await incrementUsage({
       userId: String(user._id),
       role: "SPONSOR",
@@ -401,25 +444,34 @@ contactPersonName,
       planId: usage.planId || null,
     });
 
-try {
-  await createNotification({
-    userId: user._id,
-    type: "SPONSORSHIP_CREATED",
-    title: "Sponsorship published",
-    message: "Your sponsorship opportunity is now live on Sponexus.",
-    link: `/sponsorships/${sponsorship._id}`,
-    metadata: {
-      sponsorshipId: String(sponsorship._id),
-    },
-  });
-} catch (notificationError) {
-  console.error("Sponsorship created notification error:", notificationError);
-}
+    try {
+      await createNotification({
+        userId: user._id,
+        type: "SPONSORSHIP_CREATED",
+        title: originalSponsorship
+          ? "Sponsorship reposted"
+          : "Sponsorship published",
+        message: originalSponsorship
+          ? "Your sponsorship opportunity has been reposted as a new active post."
+          : "Your sponsorship opportunity is now live on Sponexus.",
+        link: `/sponsorships/${sponsorship._id}`,
+        metadata: {
+          sponsorshipId: String(sponsorship._id),
+          duplicatedFrom: originalSponsorship
+            ? String(originalSponsorship._id)
+            : null,
+        },
+      });
+    } catch (notificationError) {
+      console.error("Sponsorship created notification error:", notificationError);
+    }
 
-    return NextResponse.json(
+        return NextResponse.json(
       {
         success: true,
-        message: "Sponsorship created successfully",
+        message: originalSponsorship
+          ? "Sponsorship reposted successfully"
+          : "Sponsorship created successfully",
         data: sponsorship,
       },
       { status: 201 }

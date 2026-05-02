@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import type { MouseEvent } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { Event } from "@/types/event";
@@ -19,15 +20,26 @@ type EventMedia = {
 function getStatusBadgeClasses(status?: string) {
   switch ((status || "").toUpperCase()) {
     case "PUBLISHED":
-      return "border border-[#FF7A18]/30 bg-[#FF7A18]/10 text-[#FFB347]";
+      return "border border-emerald-500/30 bg-emerald-500/10 text-emerald-300";
+
     case "ONGOING":
       return "border border-[#FFB347]/30 bg-[#FFB347]/10 text-[#FFB347]";
+
+    case "PAUSED":
+      return "border border-yellow-500/30 bg-yellow-500/10 text-yellow-300";
+
     case "DRAFT":
       return "border border-white/10 bg-white/5 text-[#94A3B8]";
+
     case "COMPLETED":
-      return "border border-white/10 bg-white/5 text-white";
+      return "border border-blue-500/30 bg-blue-500/10 text-blue-300";
+
     case "CANCELLED":
       return "border border-red-500/30 bg-red-500/10 text-red-300";
+
+    case "EXPIRED":
+      return "border border-slate-500/30 bg-slate-500/10 text-slate-300";
+
     default:
       return "border border-white/10 bg-white/5 text-[#94A3B8]";
   }
@@ -35,7 +47,12 @@ function getStatusBadgeClasses(status?: string) {
 
 function getStatusLabel(status?: string) {
   if (!status) return "Unknown";
-  return status.charAt(0).toUpperCase() + status.slice(1).toLowerCase();
+
+  return status
+    .toLowerCase()
+    .split("_")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
 }
 
 export function EventCard({ event, matchScore }: EventCardProps) {
@@ -76,14 +93,14 @@ export function EventCard({ event, matchScore }: EventCardProps) {
     : [];
 
   const galleryImages = [
-  coverImage,
-  ...venueImages
-    .filter((item) => item?.type !== "video" && item?.url)
-    .map((item) => item.url || ""),
-  ...pastEventMedia
-    .filter((item) => item?.type !== "video" && item?.url)
-    .map((item) => item.url || ""),
-].filter((url, index, array) => Boolean(url) && array.indexOf(url) === index);
+    coverImage,
+    ...venueImages
+      .filter((item) => item?.type !== "video" && item?.url)
+      .map((item) => item.url || ""),
+    ...pastEventMedia
+      .filter((item) => item?.type !== "video" && item?.url)
+      .map((item) => item.url || ""),
+  ].filter((url, index, array) => Boolean(url) && array.indexOf(url) === index);
 
   const activeImage = galleryImages[activeImageIndex] || "";
 
@@ -97,7 +114,7 @@ export function EventCard({ event, matchScore }: EventCardProps) {
       ? event.status
       : "";
 
-  const showPreviousImage = (e: React.MouseEvent) => {
+  const showPreviousImage = (e: MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
 
@@ -106,7 +123,7 @@ export function EventCard({ event, matchScore }: EventCardProps) {
     );
   };
 
-  const showNextImage = (e: React.MouseEvent) => {
+  const showNextImage = (e: MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
 
@@ -115,15 +132,13 @@ export function EventCard({ event, matchScore }: EventCardProps) {
     );
   };
 
-  const openPreview = (e: React.MouseEvent) => {
+  const openPreview = (e: MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setPreviewOpen(true);
   };
 
-  const closePreview = (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
+  const closePreview = () => {
     setPreviewOpen(false);
   };
 
@@ -142,20 +157,20 @@ export function EventCard({ event, matchScore }: EventCardProps) {
               </span>
             ) : null}
 
-            {matchScore != null && (
+            {matchScore != null ? (
               <div className="rounded-full bg-accent-orange/90 px-3 py-1 text-sm font-bold text-dark-base">
                 {matchScore}% Match
               </div>
-            )}
+            ) : null}
           </div>
 
           {activeImage ? (
             <div
-  onClick={openPreview}
-  role="button"
-  tabIndex={0}
-  className="relative mb-4 aspect-[16/9] w-full overflow-hidden rounded-2xl border border-white/10 bg-[#07152F]"
->
+              onClick={openPreview}
+              role="button"
+              tabIndex={0}
+              className="relative mb-4 aspect-[16/9] w-full overflow-hidden rounded-2xl border border-white/10 bg-[#07152F]"
+            >
               <Image
                 src={activeImage}
                 alt={event.title || "Event cover image"}
@@ -164,12 +179,14 @@ export function EventCard({ event, matchScore }: EventCardProps) {
                 sizes="(max-width: 768px) 100vw, 400px"
               />
 
+              <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-black/20" />
+
               {galleryImages.length > 1 ? (
                 <>
                   <button
                     type="button"
                     onClick={showPreviousImage}
-                   className="absolute left-2 top-1/2 z-20 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full bg-black/40 text-sm text-white backdrop-blur-sm transition opacity-0 group-hover:opacity-100 hover:bg-accent-orange hover:text-black"
+                    className="absolute left-2 top-1/2 z-20 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full bg-black/40 text-sm text-white opacity-0 backdrop-blur-sm transition group-hover:opacity-100 hover:bg-accent-orange hover:text-black"
                   >
                     ‹
                   </button>
@@ -177,7 +194,7 @@ export function EventCard({ event, matchScore }: EventCardProps) {
                   <button
                     type="button"
                     onClick={showNextImage}
-                    className="absolute right-2 top-1/2 z-20 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full bg-black/40 text-sm text-white backdrop-blur-sm transition opacity-0 group-hover:opacity-100 hover:bg-accent-orange hover:text-black"
+                    className="absolute right-2 top-1/2 z-20 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-full bg-black/40 text-sm text-white opacity-0 backdrop-blur-sm transition group-hover:opacity-100 hover:bg-accent-orange hover:text-black"
                   >
                     ›
                   </button>
@@ -187,10 +204,10 @@ export function EventCard({ event, matchScore }: EventCardProps) {
                       <span
                         key={`${image}-${index}`}
                         className={`h-1.5 rounded-full transition-all ${
-  index === activeImageIndex
-    ? "w-6 bg-accent-orange shadow-[0_0_12px_rgba(255,122,24,0.8)]"
-    : "w-1.5 bg-white/40"
-}`}
+                          index === activeImageIndex
+                            ? "w-6 bg-accent-orange shadow-[0_0_12px_rgba(255,122,24,0.8)]"
+                            : "w-1.5 bg-white/40"
+                        }`}
                       />
                     ))}
                   </div>
@@ -229,14 +246,17 @@ export function EventCard({ event, matchScore }: EventCardProps) {
                       {cat}
                     </span>
                   ))}
-                  {categories.length > 2 && (
+
+                  {categories.length > 2 ? (
                     <span className="text-xs text-text-muted">
                       +{categories.length - 2}
                     </span>
-                  )}
+                  ) : null}
                 </>
               ) : (
-                <span className="text-xs text-text-muted">No categories added</span>
+                <span className="text-xs text-text-muted">
+                  No categories added
+                </span>
               )}
             </div>
 
@@ -248,7 +268,9 @@ export function EventCard({ event, matchScore }: EventCardProps) {
 
               <div>
                 <p className="text-xs text-text-muted">Budget</p>
-                <p className="font-bold text-accent-orange">{formattedBudget}</p>
+                <p className="font-bold text-accent-orange">
+                  {formattedBudget}
+                </p>
               </div>
 
               <div className="col-span-2">
@@ -268,7 +290,10 @@ export function EventCard({ event, matchScore }: EventCardProps) {
           onClick={closePreview}
           className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/80 px-4 py-8 backdrop-blur-sm"
         >
-          <div className="relative h-[80vh] w-full max-w-5xl overflow-hidden rounded-2xl border border-white/10 bg-dark-layer">
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="relative h-[80vh] w-full max-w-5xl overflow-hidden rounded-2xl border border-white/10 bg-dark-layer"
+          >
             <Image
               src={activeImage}
               alt={event.title || "Event image preview"}
@@ -277,25 +302,25 @@ export function EventCard({ event, matchScore }: EventCardProps) {
               sizes="100vw"
             />
 
-{galleryImages.length > 1 ? (
-  <>
-    <button
-      type="button"
-      onClick={showPreviousImage}
-      className="absolute left-4 top-1/2 z-20 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/60 text-2xl font-bold text-white backdrop-blur transition hover:bg-black/80"
-    >
-      ‹
-    </button>
+            {galleryImages.length > 1 ? (
+              <>
+                <button
+                  type="button"
+                  onClick={showPreviousImage}
+                  className="absolute left-4 top-1/2 z-20 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/60 text-2xl font-bold text-white backdrop-blur transition hover:bg-black/80"
+                >
+                  ‹
+                </button>
 
-    <button
-      type="button"
-      onClick={showNextImage}
-      className="absolute right-4 top-1/2 z-20 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/60 text-2xl font-bold text-white backdrop-blur transition hover:bg-black/80"
-    >
-      ›
-    </button>
-  </>
-) : null}
+                <button
+                  type="button"
+                  onClick={showNextImage}
+                  className="absolute right-4 top-1/2 z-20 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full bg-black/60 text-2xl font-bold text-white backdrop-blur transition hover:bg-black/80"
+                >
+                  ›
+                </button>
+              </>
+            ) : null}
 
             <button
               type="button"

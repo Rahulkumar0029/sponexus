@@ -9,7 +9,7 @@ import User from "@/lib/models/User";
 import { getCurrentUser } from "@/lib/current-user";
 
 const PUBLIC_VISIBLE_STATUS = "active";
-const OWNER_ALLOWED_STATUSES = ["active", "paused", "closed"] as const;
+const OWNER_ALLOWED_STATUSES = ["active", "paused", "closed", "expired"] as const;
 const MAX_LIMIT = 50;
 const PREVIEW_LIMIT = 4;
 const MAX_FILTER_LENGTH = 100;
@@ -58,11 +58,35 @@ function sanitizeOwnSponsorProfile(profile: any) {
   return plain;
 }
 
+function getTodayStart() {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return today;
+}
+
+async function expireOldActiveSponsorships(ownerId?: unknown) {
+  const todayStart = getTodayStart();
+
+  const query: Record<string, any> = {
+    status: "active",
+    expiresAt: { $lt: todayStart },
+  };
+
+  if (ownerId) {
+    query.sponsorOwnerId = ownerId;
+  }
+
+  await Sponsorship.updateMany(query, {
+    $set: {
+      status: "expired",
+    },
+  });
+}
 export async function GET(req: NextRequest) {
   try {
-    await connectDB();
+   await connectDB();
 
-    const currentUser = await getCurrentUser();
+const currentUser = await getCurrentUser();
     const { searchParams } = new URL(req.url);
 
     const category = clean(searchParams.get("category"));
@@ -104,39 +128,59 @@ export async function GET(req: NextRequest) {
     const safeLocation = escapeRegex(location);
     const safeQ = escapeRegex(q);
 
-    const buildBaseQuery = (allowedStatus?: string) => {
-      const query: Record<string, any> = {};
+const buildBaseQuery = (allowedStatus?: string) => {
+  const query: Record<string, any> = {};
+  const andConditions: Record<string, any>[] = [];
 
-      if (allowedStatus) {
-        query.status = allowedStatus;
-      }
+  const todayStart = getTodayStart();
 
-      if (safeCategory) {
-        query.category = { $regex: safeCategory, $options: "i" };
-      }
+  if (allowedStatus === "active") {
+    query.status = "active";
+    andConditions.push({
+      $or: [
+        { expiresAt: null },
+        { expiresAt: { $exists: false } },
+        { expiresAt: { $gte: todayStart } },
+      ],
+    });
+  } else if (allowedStatus) {
+    query.status = allowedStatus;
+  }
 
-      if (safeLocation) {
-        query.locationPreference = { $regex: safeLocation, $options: "i" };
-      }
+  if (safeCategory) {
+    query.category = { $regex: safeCategory, $options: "i" };
+  }
 
-      if (safeQ) {
-        query.$or = [
-          { sponsorshipTitle: { $regex: safeQ, $options: "i" } },
-          { campaignGoal: { $regex: safeQ, $options: "i" } },
-          { targetAudience: { $regex: safeQ, $options: "i" } },
-          { category: { $regex: safeQ, $options: "i" } },
-        ];
-      }
+  if (safeLocation) {
+    query.locationPreference = { $regex: safeLocation, $options: "i" };
+  }
 
-      return query;
-    };
+  if (safeQ) {
+    andConditions.push({
+      $or: [
+        { sponsorshipTitle: { $regex: safeQ, $options: "i" } },
+        { campaignGoal: { $regex: safeQ, $options: "i" } },
+        { targetAudience: { $regex: safeQ, $options: "i" } },
+        { category: { $regex: safeQ, $options: "i" } },
+      ],
+    });
+  }
+
+  if (andConditions.length > 0) {
+    query.$and = andConditions;
+  }
+
+  return query;
+};
 
     const sponsorProfileSelect =
       "brandName companyName logoUrl website industry about";
 
     if (!currentUser?._id) {
-      const limit = Math.min(requestedLimit, PREVIEW_LIMIT);
-      const skip = (page - 1) * limit;
+  await expireOldActiveSponsorships();
+
+  const limit = Math.min(requestedLimit, PREVIEW_LIMIT);
+  const skip = (page - 1) * limit;
 
       const visibleSponsorProfiles = await Sponsor.find({
         isPublic: true,
@@ -202,22 +246,24 @@ export async function GET(req: NextRequest) {
     }
 
     if (user.role === "SPONSOR") {
-      const limit = requestedLimit;
-      const skip = (page - 1) * limit;
+  await expireOldActiveSponsorships(user._id);
+
+  const limit = requestedLimit;
+  const skip = (page - 1) * limit;
 
       const query: Record<string, any> = {
         sponsorOwnerId: user._id,
       };
 
       if (
-        status &&
-        status !== "ALL" &&
-        OWNER_ALLOWED_STATUSES.includes(
-          status as (typeof OWNER_ALLOWED_STATUSES)[number]
-        )
-      ) {
-        query.status = status;
-      }
+  status &&
+  status !== "ALL" &&
+  OWNER_ALLOWED_STATUSES.includes(
+    status as (typeof OWNER_ALLOWED_STATUSES)[number]
+  )
+) {
+  query.status = status;
+}
 
       if (safeCategory) {
         query.category = { $regex: safeCategory, $options: "i" };
@@ -274,8 +320,10 @@ export async function GET(req: NextRequest) {
     }
 
     if (user.role === "ORGANIZER") {
-      const limit = requestedLimit;
-      const skip = (page - 1) * limit;
+  await expireOldActiveSponsorships();
+
+  const limit = requestedLimit;
+  const skip = (page - 1) * limit;
 
       const visibleSponsorProfiles = await Sponsor.find({
         isPublic: true,

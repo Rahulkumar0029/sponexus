@@ -9,7 +9,7 @@ import { EmptyState } from "@/components/EmptyState";
 import { SponsorshipCard } from "@/components/SponsorshipCard";
 import { useAuth } from "@/hooks/useAuth";
 
-type SponsorshipStatus = "active" | "paused" | "closed";
+type SponsorshipStatus = "active" | "paused" | "closed" | "expired";
 
 type SponsorProfilePreview = {
   _id?: string;
@@ -78,7 +78,7 @@ export default function SponsorshipsClient() {
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("");
   const [location, setLocation] = useState("");
-  const [status, setStatus] = useState("active");
+  const [status, setStatus] = useState<SponsorshipStatus>("active");
 
   const [pagination, setPagination] = useState({
     total: 0,
@@ -372,15 +372,29 @@ export default function SponsorshipsClient() {
               className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none placeholder:text-text-muted"
             />
 
-            <select
-              value={status}
-              onChange={(e) => setStatus(e.target.value)}
-              className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none"
-            >
-              <option value="active">Active</option>
-              {isSponsorView && <option value="paused">Paused</option>}
-              {isSponsorView && <option value="closed">Closed</option>}
-            </select>
+ <select
+  value={status}
+ onChange={(e) => setStatus(e.target.value as SponsorshipStatus)}
+  className="rounded-2xl border border-white/10 bg-[#1E293B] px-4 py-3 text-white outline-none"
+>
+  <option className="bg-[#1E293B] text-white" value="active">
+    Active
+  </option>
+
+  {isSponsorView ? (
+    <>
+      <option className="bg-[#1E293B] text-white" value="paused">
+        Paused
+      </option>
+      <option className="bg-[#1E293B] text-white" value="closed">
+        Closed
+      </option>
+      <option className="bg-[#1E293B] text-white" value="expired">
+        Expired
+      </option>
+    </>
+  ) : null}
+</select>
 
             <div className="flex gap-3">
               <Button variant="primary" fullWidth onClick={handleApplyFilters}>
@@ -394,7 +408,7 @@ export default function SponsorshipsClient() {
         </div>
 
         {error ? (
-          
+
           <div className="rounded-[24px] border border-red-500/30 bg-red-500/10 p-6 text-center text-red-300">
             {error}
           </div>

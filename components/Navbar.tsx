@@ -3,7 +3,7 @@
 import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from './Button';
 import { useAuth } from '@/hooks/useAuth';
 import { NotificationBell } from '@/components/notifications/NotificationBell';
@@ -28,11 +28,13 @@ export function Navbar() {
   } = useAuth();
 
   const [isOpen, setIsOpen] = useState(false);
-  const [profileOpen, setProfileOpen] = useState(false);
+const [profileOpen, setProfileOpen] = useState(false);
+
+const profileMenuRef = useRef<HTMLDivElement | null>(null);
 
   const publicNav: NavItem[] = [
     { label: 'Events', href: '/events' },
-    { label: 'Sponsors', href: '/sponsors' },
+    { label: 'Sponsorships', href: '/sponsorships' },
     { label: 'Match', href: '/match' },
   ];
 
@@ -43,7 +45,7 @@ export function Navbar() {
       return [
         { label: 'Dashboard', href: '/dashboard/organizer' },
         { label: 'My Events', href: '/events' },
-        { label: 'Find Sponsors', href: '/sponsors' },
+        { label: 'Find Sponsorships', href: '/sponsorships' },
         { label: 'Matches', href: '/match' },
         { label: 'Deals', href: '/deals' },
         { label: 'Create Event', href: '/events/create', cta: true },
@@ -71,16 +73,45 @@ export function Navbar() {
   }, [isAdmin]);
 
   const handleLogout = async () => {
-    try {
-      await logout();
-    } finally {
+  try {
+    await logout();
+  } finally {
+    setProfileOpen(false);
+    setIsOpen(false);
+    router.push('/');
+  }
+};
+
+useEffect(() => {
+  if (!profileOpen) return;
+
+  const handleClickOutside = (event: MouseEvent) => {
+    const target = event.target as Node;
+
+    if (
+      profileMenuRef.current &&
+      !profileMenuRef.current.contains(target)
+    ) {
       setProfileOpen(false);
-      setIsOpen(false);
-      router.push('/');
     }
   };
 
-  const userRoleLabel = isAdmin
+  const handleEscape = (event: KeyboardEvent) => {
+    if (event.key === 'Escape') {
+      setProfileOpen(false);
+    }
+  };
+
+  document.addEventListener('mousedown', handleClickOutside);
+  document.addEventListener('keydown', handleEscape);
+
+  return () => {
+    document.removeEventListener('mousedown', handleClickOutside);
+    document.removeEventListener('keydown', handleEscape);
+  };
+}, [profileOpen]);
+
+const userRoleLabel = isAdmin
     ? 'Admin'
     : isOrganizer
     ? 'Organizer'
@@ -157,7 +188,7 @@ export function Navbar() {
   <div className="flex items-center gap-3">
     <NotificationBell />
 
-    <div className="relative border-l border-white/10 pl-4">
+    <div ref={profileMenuRef} className="relative border-l border-white/10 pl-4">
               <button
                 onClick={() => setProfileOpen((prev) => !prev)}
                 className="group flex items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2.5 text-left text-sm text-text-light shadow-[0_8px_30px_rgba(0,0,0,0.22)] transition-all duration-200 hover:border-white/20 hover:bg-white/[0.07]"

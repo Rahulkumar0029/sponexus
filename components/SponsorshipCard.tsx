@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 
-type SponsorshipStatus = "active" | "paused" | "closed";
+type SponsorshipStatus = "active" | "paused" | "closed" | "expired";
 
 interface SponsorshipCardItem {
   _id: string;
@@ -53,16 +53,21 @@ function formatDate(value?: string | null) {
 function getStatusLabel(status?: SponsorshipStatus) {
   if (status === "paused") return "Paused";
   if (status === "closed") return "Closed";
-  return "Active";
+  if (status === "expired") return "Expired";
+  return "Active";status === "paused"
 }
 
 function getStatusClasses(status?: SponsorshipStatus) {
   if (status === "paused") {
-    return "border border-white/10 bg-white/10 text-[#CBD5E1]";
+    return "border border-yellow-500/30 bg-yellow-500/10 text-yellow-300";
   }
 
   if (status === "closed") {
     return "border border-red-500/30 bg-red-500/10 text-red-300";
+  }
+
+  if (status === "expired") {
+    return "border border-slate-500/30 bg-slate-500/10 text-slate-300";
   }
 
   return "border border-emerald-400/30 bg-emerald-400/10 text-emerald-300";

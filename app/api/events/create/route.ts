@@ -6,7 +6,12 @@ import { getCurrentUser } from "@/lib/current-user";
 import { ACTIONS } from "@/lib/subscription/constants";
 import { checkUsageLimit } from "@/lib/subscription/checkUsageLimit";
 import { incrementUsage } from "@/lib/subscription/enforceLimits";
-import { CreateEventInput, EventDeliverable } from "@/types/event";
+import {
+  CreateEventInput,
+  EventDeliverable,
+  EVENT_CATEGORY_OPTIONS,
+  EVENT_DELIVERABLE_OPTIONS,
+} from "@/types/event";
 import { createNotification } from "@/lib/notifications/createNotification";
 import User from "@/lib/models/User";
 
@@ -18,31 +23,17 @@ type UploadedMedia = {
   uploadedAt?: string | Date;
 };
 
-const ALLOWED_EVENT_TYPES = [
-  "CONFERENCE",
-  "WORKSHOP",
-  "WEBINAR",
-  "FESTIVAL",
-  "MEETUP",
-  "OTHER",
-] as const;
 
-const ALLOWED_DELIVERABLES: EventDeliverable[] = [
-  "STAGE_BRANDING",
-  "STALL_SPACE",
-  "SOCIAL_MEDIA_PROMOTION",
-  "PRODUCT_DISPLAY",
-  "ANNOUNCEMENTS",
-  "EMAIL_PROMOTION",
-  "TITLE_SPONSORSHIP",
-  "CO_BRANDING",
-];
+const ALLOWED_EVENT_CATEGORIES = new Set<string>(EVENT_CATEGORY_OPTIONS);
+const ALLOWED_DELIVERABLES = new Set<string>(EVENT_DELIVERABLE_OPTIONS);
+const REQUIRED_DELIVERABLE_COUNT = 3;
 
 const MAX_TITLE_LENGTH = 150;
 const MAX_DESCRIPTION_LENGTH = 5000;
 const MAX_LOCATION_LENGTH = 200;
-const MAX_CATEGORY_LENGTH = 60;
+const MAX_CATEGORY_LENGTH = 80;
 const MAX_AUDIENCE_LENGTH = 60;
+const MAX_DELIVERABLE_LENGTH = 80;
 const MAX_ARRAY_ITEMS = 20;
 const MAX_MEDIA_ITEMS = 20;
 const MAX_MEDIA_TITLE_LENGTH = 120;
@@ -76,6 +67,12 @@ function isValidHttpUrl(value: string) {
   }
 }
 
+function getTodayStart() {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return today;
+}
+
 function normalizeStringArray(value: unknown, maxItemLength = 100): string[] {
   if (!Array.isArray(value)) return [];
 
@@ -89,11 +86,24 @@ function normalizeStringArray(value: unknown, maxItemLength = 100): string[] {
 }
 
 function normalizeDeliverables(value: unknown): EventDeliverable[] {
-  const items = normalizeStringArray(value, 80);
+  const items = normalizeStringArray(value, MAX_DELIVERABLE_LENGTH);
 
   return items.filter((item): item is EventDeliverable =>
-    ALLOWED_DELIVERABLES.includes(item as EventDeliverable)
+    ALLOWED_DELIVERABLES.has(item)
   );
+}
+
+function getFinalCategory(category: unknown, customCategory: unknown) {
+  const selectedCategory = normalizeString(category);
+  const selectedCustomCategory = normalizeString(customCategory);
+
+  if (!selectedCategory) return "";
+
+  if (selectedCategory === "Other") {
+    return selectedCustomCategory;
+  }
+
+  return selectedCategory;
 }
 
 function normalizeMediaArray(value: unknown): UploadedMedia[] {
@@ -178,31 +188,33 @@ if (!isProfileComplete) {
   );
 }
 
-    const body: CreateEventInput & {
-      coverImage?: string;
-      venueImages?: UploadedMedia[];
-      pastEventMedia?: UploadedMedia[];
-      status?: "DRAFT" | "PUBLISHED";
-      providedDeliverables?: EventDeliverable[];
-    } = await request.json();
+   const body: CreateEventInput & {
+  customCategory?: string;
+  coverImage?: string;
+  venueImages?: UploadedMedia[];
+  pastEventMedia?: UploadedMedia[];
+  status?: "DRAFT" | "PUBLISHED";
+  providedDeliverables?: EventDeliverable[];
+} = await request.json();
 
-    const {
-      title,
-      description,
-      categories,
-      targetAudience,
-      location,
-      budget,
-      startDate,
-      endDate,
-      attendeeCount,
-      eventType,
-      coverImage,
-      venueImages,
-      pastEventMedia,
-      status,
-      providedDeliverables,
-    } = body;
+const {
+  title,
+  description,
+  categories,
+  customCategory,
+  targetAudience,
+  location,
+  budget,
+  startDate,
+  endDate,
+  attendeeCount,
+  eventType,
+  coverImage,
+  venueImages,
+  pastEventMedia,
+  status,
+  providedDeliverables,
+} = body;
 
     const safeTitle = normalizeString(title);
     const safeDescription = normalizeString(description);
@@ -253,7 +265,19 @@ if (!isProfileComplete) {
       );
     }
 
-    const safeCategories = normalizeStringArray(categories, MAX_CATEGORY_LENGTH);
+    const rawCategories = Array.isArray(categories) ? categories : [];
+const finalCategories = rawCategories
+  .map((category) => getFinalCategory(category, customCategory))
+  .filter(Boolean);
+
+const safeCategories = [...new Set(finalCategories)].filter((category) => {
+  if (!isSafeLength(category, MAX_CATEGORY_LENGTH)) return false;
+
+  return (
+    ALLOWED_EVENT_CATEGORIES.has(category) ||
+    category === normalizeString(customCategory)
+  );
+});
     const safeTargetAudience = normalizeStringArray(
       targetAudience,
       MAX_AUDIENCE_LENGTH
@@ -262,20 +286,35 @@ if (!isProfileComplete) {
     const safeVenueImages = normalizeMediaArray(venueImages);
     const safePastEventMedia = normalizeMediaArray(pastEventMedia);
 
-    if (
-      Array.isArray(categories) &&
-      safeCategories.length !==
-        new Set(categories.map((item) => normalizeString(item)).filter(Boolean))
-          .size
-    ) {
-      return buildNoStoreResponse(
-        {
-          success: false,
-          message: "One or more categories are invalid or too long",
-        },
-        400
-      );
+    if (safeCategories.length !== new Set(finalCategories).size) {
+  return buildNoStoreResponse(
+    {
+      success: false,
+      message: "One or more categories are invalid or too long",
+    },
+    400
+  );
+}
+    
+if (
+  rawCategories.some((category) => {
+    const selected = normalizeString(category);
+
+    if (selected === "Other") {
+      return !normalizeString(customCategory);
     }
+
+    return !ALLOWED_EVENT_CATEGORIES.has(selected);
+  })
+) {
+  return buildNoStoreResponse(
+    {
+      success: false,
+      message: "Please select a valid category or enter a custom category.",
+    },
+    400
+  );
+}
 
     if (
       Array.isArray(targetAudience) &&
@@ -338,15 +377,15 @@ if (!isProfileComplete) {
       );
     }
 
-    if (safeProvidedDeliverables.length > MAX_ARRAY_ITEMS) {
-      return buildNoStoreResponse(
-        {
-          success: false,
-          message: `Provided deliverables cannot exceed ${MAX_ARRAY_ITEMS} items`,
-        },
-        400
-      );
-    }
+   if (safeProvidedDeliverables.length !== REQUIRED_DELIVERABLE_COUNT) {
+  return buildNoStoreResponse(
+    {
+      success: false,
+      message: "Please select exactly 3 event deliverables.",
+    },
+    400
+  );
+}
 
     if (Array.isArray(venueImages) && safeVenueImages.length !== venueImages.length) {
       return buildNoStoreResponse(
@@ -404,31 +443,52 @@ if (!isProfileComplete) {
       );
     }
 
-    const parsedStartDate = new Date(startDate);
-    const parsedEndDate = new Date(endDate);
+   const parsedStartDate = new Date(startDate);
+const parsedEndDate = new Date(endDate);
 
-    if (
-      Number.isNaN(parsedStartDate.getTime()) ||
-      Number.isNaN(parsedEndDate.getTime())
-    ) {
-      return buildNoStoreResponse(
-        { success: false, message: "Invalid event dates" },
-        400
-      );
-    }
+if (
+  Number.isNaN(parsedStartDate.getTime()) ||
+  Number.isNaN(parsedEndDate.getTime())
+) {
+  return buildNoStoreResponse(
+    { success: false, message: "Invalid event dates" },
+    400
+  );
+}
 
-    if (parsedEndDate < parsedStartDate) {
-      return buildNoStoreResponse(
-        { success: false, message: "End date cannot be before start date" },
-        400
-      );
-    }
+const startDateOnly = new Date(parsedStartDate);
+startDateOnly.setHours(0, 0, 0, 0);
 
-    const safeEventType = ALLOWED_EVENT_TYPES.includes(
-      eventType as (typeof ALLOWED_EVENT_TYPES)[number]
-    )
-      ? eventType
-      : "CONFERENCE";
+if (startDateOnly < getTodayStart()) {
+  return buildNoStoreResponse(
+    { success: false, message: "Event start date cannot be in the past" },
+    400
+  );
+}
+
+if (parsedEndDate < parsedStartDate) {
+  return buildNoStoreResponse(
+    { success: false, message: "End date cannot be before start date" },
+    400
+  );
+}
+
+const safeEventType = getFinalCategory(eventType, customCategory);
+
+if (
+  !safeEventType ||
+  !isSafeLength(safeEventType, MAX_CATEGORY_LENGTH) ||
+  (!ALLOWED_EVENT_CATEGORIES.has(safeEventType) &&
+    safeEventType !== normalizeString(customCategory))
+) {
+  return buildNoStoreResponse(
+    {
+      success: false,
+      message: "Please select a valid event type or enter a custom event type.",
+    },
+    400
+  );
+}
 
     const normalizedCoverImage = normalizeString(coverImage);
     const safeCoverImage =

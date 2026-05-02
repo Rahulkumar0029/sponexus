@@ -1,8 +1,11 @@
 import mongoose, { Document, Model, Schema, Types } from "mongoose";
 
-export type SponsorshipStatus = "active" | "paused" | "closed";
+export type SponsorshipStatus = "active" | "paused" | "closed" | "expired";
 export type SponsorshipVisibilityStatus = "VISIBLE" | "HIDDEN" | "UNDER_REVIEW";
-export type SponsorshipModerationStatus = "APPROVED" | "FLAGGED" | "PENDING_REVIEW";
+export type SponsorshipModerationStatus =
+  | "APPROVED"
+  | "FLAGGED"
+  | "PENDING_REVIEW";
 
 export interface ISponsorship extends Document {
   sponsorOwnerId: Types.ObjectId;
@@ -18,7 +21,7 @@ export interface ISponsorship extends Document {
   campaignGoal: string;
   coverImage: string;
   deliverablesExpected: string[];
-customMessage: string;
+  customMessage: string;
 
   contactPersonName: string;
   contactPhone: string;
@@ -26,6 +29,13 @@ customMessage: string;
   status: SponsorshipStatus;
   visibilityStatus: SponsorshipVisibilityStatus;
   moderationStatus: SponsorshipModerationStatus;
+
+  pausedAt: Date | null;
+  resumedAt: Date | null;
+  closedAt: Date | null;
+
+  duplicatedFrom: Types.ObjectId | null;
+  repostCount: number;
 
   isDeleted: boolean;
   deletedAt: Date | null;
@@ -73,16 +83,16 @@ const SponsorshipSchema = new Schema<ISponsorship>(
       maxlength: 80,
     },
 
-    budget: {
-      type: Number,
-      required: true,
-      min: 0,
-      max: MAX_BUDGET,
-      validate: {
-        validator: Number.isFinite,
-        message: "Budget must be a valid number",
-      },
-    },
+   budget: {
+  type: Number,
+  required: true,
+  min: 2000,
+  max: MAX_BUDGET,
+  validate: {
+    validator: Number.isFinite,
+    message: "Budget must be a valid number",
+  },
+},
 
     category: {
       type: String,
@@ -114,32 +124,34 @@ const SponsorshipSchema = new Schema<ISponsorship>(
       index: true,
     },
 
-   campaignGoal: {
-  type: String,
-  required: true,
-  trim: true,
-  maxlength: 1000,
-},
+    campaignGoal: {
+      type: String,
+      required: true,
+      trim: true,
+      maxlength: 1000,
+    },
 
-coverImage: {
-  type: String,
-  default: "",
-  trim: true,
-  maxlength: 2000,
-},
+    coverImage: {
+      type: String,
+      default: "",
+      trim: true,
+      maxlength: 2000,
+    },
 
-deliverablesExpected: {
-  type: [String],
-  required: true,
-  default: [],
-  validate: {
-    validator: (value: string[]) =>
-      Array.isArray(value) &&
-      value.length === 3 &&
-      value.every((item) => typeof item === "string" && item.trim().length > 0),
-    message: "Exactly 3 deliverables are required",
-  },
-},
+    deliverablesExpected: {
+      type: [String],
+      required: true,
+      default: [],
+      validate: {
+        validator: (value: string[]) =>
+          Array.isArray(value) &&
+          value.length === 3 &&
+          value.every(
+            (item) => typeof item === "string" && item.trim().length > 0
+          ),
+        message: "Exactly 3 deliverables are required",
+      },
+    },
 
     customMessage: {
       type: String,
@@ -148,13 +160,12 @@ deliverablesExpected: {
       maxlength: 1500,
     },
 
-    contactPersonName: {
-      type: String,
-      default: "",
-      trim: true,
-      maxlength: 120,
-    },
-
+   contactPersonName: {
+  type: String,
+  required: true,
+  trim: true,
+  maxlength: 120,
+},
     contactPhone: {
       type: String,
       required: true,
@@ -168,7 +179,7 @@ deliverablesExpected: {
 
     status: {
       type: String,
-      enum: ["active", "paused", "closed"],
+      enum: ["active", "paused", "closed", "expired"],
       default: "active",
       index: true,
     },
@@ -185,6 +196,36 @@ deliverablesExpected: {
       enum: ["APPROVED", "FLAGGED", "PENDING_REVIEW"],
       default: "APPROVED",
       index: true,
+    },
+
+    pausedAt: {
+      type: Date,
+      default: null,
+      index: true,
+    },
+
+    resumedAt: {
+      type: Date,
+      default: null,
+    },
+
+    closedAt: {
+      type: Date,
+      default: null,
+      index: true,
+    },
+
+    duplicatedFrom: {
+      type: Schema.Types.ObjectId,
+      ref: "Sponsorship",
+      default: null,
+      index: true,
+    },
+
+    repostCount: {
+      type: Number,
+      default: 0,
+      min: 0,
     },
 
     isDeleted: {
@@ -278,18 +319,18 @@ SponsorshipSchema.pre("validate", function (next) {
   }
 
   if (typeof this.campaignGoal === "string") {
-  this.campaignGoal = this.campaignGoal.trim();
-}
+    this.campaignGoal = this.campaignGoal.trim();
+  }
 
-if (typeof this.coverImage === "string") {
-  this.coverImage = this.coverImage.trim();
-}
+  if (typeof this.coverImage === "string") {
+    this.coverImage = this.coverImage.trim();
+  }
 
-if (Array.isArray(this.deliverablesExpected)) {
-  this.deliverablesExpected = this.deliverablesExpected
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
+  if (Array.isArray(this.deliverablesExpected)) {
+    this.deliverablesExpected = this.deliverablesExpected
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
 
   if (typeof this.customMessage === "string") {
     this.customMessage = this.customMessage.trim();
@@ -312,6 +353,10 @@ if (Array.isArray(this.deliverablesExpected)) {
     this.flagReason = "";
   }
 
+  if (typeof this.repostCount !== "number" || this.repostCount < 0) {
+    this.repostCount = 0;
+  }
+
   next();
 });
 
@@ -320,7 +365,14 @@ SponsorshipSchema.index({ sponsorProfileId: 1, createdAt: -1 });
 SponsorshipSchema.index({ status: 1, createdAt: -1 });
 SponsorshipSchema.index({ category: 1, locationPreference: 1, status: 1 });
 SponsorshipSchema.index({ status: 1, expiresAt: 1 });
-SponsorshipSchema.index({ visibilityStatus: 1, moderationStatus: 1, isDeleted: 1 });
+SponsorshipSchema.index({ sponsorOwnerId: 1, status: 1, createdAt: -1 });
+SponsorshipSchema.index({ sponsorOwnerId: 1, status: 1, expiresAt: 1 });
+SponsorshipSchema.index({ duplicatedFrom: 1, createdAt: -1 });
+SponsorshipSchema.index({
+  visibilityStatus: 1,
+  moderationStatus: 1,
+  isDeleted: 1,
+});
 SponsorshipSchema.index({ isDeleted: 1, status: 1, createdAt: -1 });
 
 const Sponsorship: Model<ISponsorship> =
