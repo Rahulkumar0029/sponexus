@@ -175,3 +175,52 @@ export async function sendEmailChangeVerificationEmail({
     `,
   });
 }
+
+interface AgreementOtpEmailArgs {
+  to: string;
+  name: string;
+  dealTitle: string;
+  otp: string;
+  role: "ORGANIZER" | "SPONSOR";
+}
+
+export async function sendAgreementOtpEmail({
+  to,
+  name,
+  dealTitle,
+  otp,
+  role,
+}: AgreementOtpEmailArgs) {
+  const safeName = escapeHtml(name || role.toLowerCase());
+  const safeDealTitle = escapeHtml(dealTitle || "Deal Agreement");
+  const safeOtp = escapeHtml(otp);
+
+  return sendEmail({
+    to,
+    subject: `Sponexus agreement verification code for ${safeDealTitle}`,
+    html: `
+      <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #111827;">
+        <h2>Sponexus Agreement Verification</h2>
+
+        <p>Hi ${safeName},</p>
+
+        <p>
+          Your verification code for signing the deal agreement
+          <strong>${safeDealTitle}</strong> is:
+        </p>
+
+        <div style="font-size:28px;font-weight:700;letter-spacing:6px;padding:14px 18px;background:#f8fafc;border:1px solid #e2e8f0;display:inline-block;border-radius:12px;">
+          ${safeOtp}
+        </div>
+
+        <p>This code will expire in 10 minutes.</p>
+
+        <p>
+          Do not share this code with anyone. Use it only if you are confirming this agreement on Sponexus.
+        </p>
+
+        <p>Team Sponexus</p>
+      </div>
+    `,
+  });
+}

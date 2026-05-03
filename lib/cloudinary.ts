@@ -23,4 +23,4 @@ export function getCloudinary() {
   return cloudinary;
 }
 
-export default cloudinary;
+export default getCloudinary;

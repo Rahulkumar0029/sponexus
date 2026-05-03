@@ -74,10 +74,6 @@ function getStatusClasses(status?: SponsorshipStatus) {
   return "border border-emerald-400/30 bg-emerald-400/10 text-emerald-300";
 }
 
-function getCoverFallback() {
-  return "/images/default-sponsorship-cover.png";
-}
-
 export function SponsorshipCard({
   sponsorship,
   href,
@@ -89,12 +85,12 @@ export function SponsorshipCard({
   const resolvedHref = href || `/sponsorships/${sponsorship._id}`;
   const resolvedPrimaryHref = primaryActionHref || resolvedHref;
 
- const hasCustomCover = Boolean(sponsorship.coverImage);
-const hasLogoOnly = !hasCustomCover && Boolean(sponsorship.logoUrl);
+  const hasCustomCover = Boolean(sponsorship.coverImage);
+  const hasLogoOnly = !hasCustomCover && Boolean(sponsorship.logoUrl);
 
-const coverSrc = hasCustomCover
-  ? sponsorship.coverImage!
-  : getCoverFallback();
+  const coverSrc = hasCustomCover
+    ? sponsorship.coverImage!
+    : sponsorship.logoUrl || "";
 
   const deliverables = Array.isArray(sponsorship.deliverablesExpected)
     ? sponsorship.deliverablesExpected.slice(0, 3)
@@ -102,31 +98,37 @@ const coverSrc = hasCustomCover
 
   return (
     <article className="group relative flex h-full cursor-pointer flex-col rounded-2xl border border-white/10 bg-white/[0.05] p-5 transition-all duration-300 hover:border-accent-orange/40 hover:shadow-[0_0_25px_rgba(255,122,24,0.12)]">
-     <Link href={resolvedHref} className="block h-full">
-       <div className="relative mb-4 aspect-[16/9] w-full overflow-hidden rounded-2xl border border-white/10 bg-[#07152F]">
-  <Image
-    src={coverSrc}
-    alt={sponsorship.sponsorshipTitle || "Sponsorship campaign"}
-    fill
-    className={`transition duration-500 group-hover:scale-105 ${
-      hasCustomCover ? "object-cover" : "object-cover opacity-35"
-    }`}
-    sizes="(max-width: 768px) 100vw, 50vw"
-  />
+      <Link href={resolvedHref} className="block h-full">
+        <div className="relative mb-4 aspect-[16/9] w-full overflow-hidden rounded-2xl border border-white/10 bg-[#07152F]">
+          {coverSrc ? (
+            <Image
+              src={coverSrc}
+              alt={sponsorship.sponsorshipTitle || "Sponsorship campaign"}
+              fill
+              className={`transition duration-500 group-hover:scale-105 ${
+                hasCustomCover ? "object-cover" : "object-contain p-10 opacity-35"
+              }`}
+              sizes="(max-width: 768px) 100vw, 50vw"
+            />
+          ) : null}
 
-  <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(255,179,71,0.20),transparent_35%),linear-gradient(135deg,rgba(2,6,23,0.92),rgba(7,21,47,0.82),rgba(2,6,23,0.95))]" />
+          <div className="absolute inset-0 bg-[radial-gradient(circle_at_20%_20%,rgba(255,179,71,0.20),transparent_35%),linear-gradient(135deg,rgba(2,6,23,0.92),rgba(7,21,47,0.82),rgba(2,6,23,0.95))]" />
 
-  {hasLogoOnly && sponsorship.logoUrl ? (
-    <div className="absolute right-4 top-14 flex h-20 w-20 items-center justify-center overflow-hidden rounded-2xl border border-white/15 bg-white/90 p-2 shadow-[0_12px_35px_rgba(0,0,0,0.35)]">
-      <Image
-        src={sponsorship.logoUrl}
-        alt={sponsorship.brandName || sponsorship.companyName || "Sponsor logo"}
-        width={72}
-        height={72}
-        className="h-full w-full object-contain"
-      />
-    </div>
-  ) : null}
+          {hasLogoOnly && sponsorship.logoUrl ? (
+            <div className="absolute right-4 top-14 flex h-20 w-20 items-center justify-center overflow-hidden rounded-2xl border border-white/15 bg-white/90 p-2 shadow-[0_12px_35px_rgba(0,0,0,0.35)]">
+              <Image
+                src={sponsorship.logoUrl}
+                alt={
+                  sponsorship.brandName ||
+                  sponsorship.companyName ||
+                  "Sponsor logo"
+                }
+                width={72}
+                height={72}
+                className="h-full w-full object-contain"
+              />
+            </div>
+          ) : null}
 
           <div className="absolute left-4 top-4 flex flex-wrap gap-2">
             <span
@@ -144,13 +146,13 @@ const coverSrc = hasCustomCover
             ) : null}
           </div>
 
-{matchScore != null ? (
-  <div className="absolute right-4 top-4 z-10 rounded-full bg-accent-orange/90 px-3 py-1 text-sm font-bold text-dark-base">
-    {matchScore}% Match
-  </div>
-) : null}
+          {matchScore != null ? (
+            <div className="absolute right-4 top-4 z-10 rounded-full bg-accent-orange/90 px-3 py-1 text-sm font-bold text-dark-base">
+              {matchScore}% Match
+            </div>
+          ) : null}
 
-<div className="absolute bottom-4 left-4 right-4">
+          <div className="absolute bottom-4 left-4 right-4">
             <p className="text-xs uppercase tracking-[0.22em] text-[#FFB347]">
               {sponsorship.brandName ||
                 sponsorship.companyName ||
@@ -186,41 +188,41 @@ const coverSrc = hasCustomCover
             )}
           </div>
 
-        <div className="mt-5 grid grid-cols-2 gap-4 border-t border-white/10 pt-3 text-sm">
-  <div>
-    <p className="text-xs text-text-muted">Budget</p>
-    <p className="font-bold text-accent-orange">
-      {formatCurrency(sponsorship.budget)}
-    </p>
-  </div>
+          <div className="mt-5 grid grid-cols-2 gap-4 border-t border-white/10 pt-3 text-sm">
+            <div>
+              <p className="text-xs text-text-muted">Budget</p>
+              <p className="font-bold text-accent-orange">
+                {formatCurrency(sponsorship.budget)}
+              </p>
+            </div>
 
-  <div>
-    <p className="text-xs text-text-muted">Expires</p>
-    <p className="font-medium text-text-light">
-      {formatDate(sponsorship.expiresAt)}
-    </p>
-  </div>
+            <div>
+              <p className="text-xs text-text-muted">Expires</p>
+              <p className="font-medium text-text-light">
+                {formatDate(sponsorship.expiresAt)}
+              </p>
+            </div>
 
-  <div className="col-span-2">
-    <p className="text-xs text-text-muted">Location • Category</p>
-    <p className="font-medium text-text-light">
-      {sponsorship.locationPreference || "Anywhere"} •{" "}
-      {sponsorship.category || "N/A"}
-    </p>
-  </div>
-</div>
+            <div className="col-span-2">
+              <p className="text-xs text-text-muted">Location • Category</p>
+              <p className="font-medium text-text-light">
+                {sponsorship.locationPreference || "Anywhere"} •{" "}
+                {sponsorship.category || "N/A"}
+              </p>
+            </div>
+          </div>
         </div>
       </Link>
 
       {showActions && (
-  <div className="border-t border-white/10 p-5">
-    <Link href={resolvedPrimaryHref}>
-      <div className="inline-flex w-full items-center justify-center rounded-2xl border border-white/15 bg-white/[0.03] px-5 py-3 text-sm font-semibold text-white transition hover:border-white/25 hover:bg-white/[0.08]">
-        {primaryActionLabel}
-      </div>
-    </Link>
-  </div>
-)}
+        <div className="border-t border-white/10 p-5">
+          <Link href={resolvedPrimaryHref}>
+            <div className="inline-flex w-full items-center justify-center rounded-2xl border border-white/15 bg-white/[0.03] px-5 py-3 text-sm font-semibold text-white transition hover:border-white/25 hover:bg-white/[0.08]">
+              {primaryActionLabel}
+            </div>
+          </Link>
+        </div>
+      )}
     </article>
   );
 }

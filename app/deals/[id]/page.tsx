@@ -6,6 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 
 import type { Deal, DealStatus } from "@/types/deal";
 import { useAuth } from "@/hooks/useAuth";
+import { DealAgreementPanel } from "@/components/deals/DealAgreementPanel";
 
 type DealApiResponse = {
   success: boolean;
@@ -26,6 +27,7 @@ const STATUS_ACTIONS: Array<{
 
 function formatCurrency(amount: number | null | undefined) {
   if (typeof amount !== "number" || Number.isNaN(amount)) return "Not set";
+
   return new Intl.NumberFormat("en-IN", {
     style: "currency",
     currency: "INR",
@@ -35,7 +37,9 @@ function formatCurrency(amount: number | null | undefined) {
 
 function formatDateTime(value: string | null | undefined) {
   if (!value) return "—";
+
   const date = new Date(value);
+
   if (Number.isNaN(date.getTime())) return "—";
 
   return date.toLocaleString("en-IN", {
@@ -96,8 +100,8 @@ function normalizeDeal(raw: any): Deal {
     },
     createdAt: raw?.createdAt || "",
     updatedAt: raw?.updatedAt || "",
-createdBy: String(raw?.createdBy?._id || raw?.createdBy || ""),
-organizer: {
+    createdBy: String(raw?.createdBy?._id || raw?.createdBy || ""),
+    organizer: {
       _id: String(raw?.organizerId?._id || raw?.organizer?._id || ""),
       name: raw?.organizerId?.name || raw?.organizer?.name || "",
       email: raw?.organizerId?.email || raw?.organizer?.email || "",
@@ -120,17 +124,6 @@ organizer: {
       startDate: raw?.eventId?.startDate || raw?.event?.startDate || "",
     },
   };
-}
-
-function parseDeliverablesInput(value: string): string[] {
-  return value
-    .split("\n")
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
-function isFinalDealState(status: DealStatus) {
-  return ["rejected", "completed", "cancelled"].includes(status);
 }
 
 function getVisibleActions(
@@ -164,7 +157,6 @@ function getVisibleActions(
   }
 
   return [];
-
 }
 
 export default function DealDetailPage() {
@@ -181,12 +173,6 @@ export default function DealDetailPage() {
   const [actionSuccess, setActionSuccess] = useState("");
   const [saving, setSaving] = useState(false);
   const [revealLoading, setRevealLoading] = useState(false);
-
-  const [finalAmountInput, setFinalAmountInput] = useState("");
-  const [messageInput, setMessageInput] = useState("");
-  const [notesInput, setNotesInput] = useState("");
-  const [paymentStatusInput, setPaymentStatusInput] = useState("unpaid");
-  const [deliverablesInput, setDeliverablesInput] = useState("");
   const [disputeReasonInput, setDisputeReasonInput] = useState("");
 
   useEffect(() => {
@@ -218,13 +204,6 @@ export default function DealDetailPage() {
         if (!ignore) {
           const normalized = normalizeDeal(data.deal);
           setDeal(normalized);
-          setFinalAmountInput(
-            normalized.finalAmount !== null ? String(normalized.finalAmount) : ""
-          );
-          setMessageInput(normalized.message || "");
-          setNotesInput(normalized.notes || "");
-          setPaymentStatusInput(normalized.paymentStatus || "unpaid");
-          setDeliverablesInput((normalized.deliverables || []).join("\n"));
           setDisputeReasonInput(normalized.disputeReason || "");
         }
       } catch (error) {
@@ -247,25 +226,14 @@ export default function DealDetailPage() {
     };
   }, [dealId]);
 
-const currentUserId = (user as any)?._id || (user as any)?.id || "";
+  const currentUserId = (user as any)?._id || (user as any)?.id || "";
 
-const roleInDeal = useMemo<"ORGANIZER" | "SPONSOR" | null>(() => {
-  if (!currentUserId || !deal) return null;
-  if (currentUserId === deal.organizer._id) return "ORGANIZER";
-  if (currentUserId === deal.sponsor._id) return "SPONSOR";
-  return null;
-}, [currentUserId, deal]);
-
-  const canEditCommercialFields = useMemo(() => {
-    if (!deal || roleInDeal !== "ORGANIZER") return false;
-    if (isFinalDealState(deal.status)) return false;
-    return true;
-  }, [deal, roleInDeal]);
-
-  const canEditPaymentStatus = useMemo(() => {
-    if (!deal || roleInDeal !== "ORGANIZER") return false;
-    return true;
-  }, [deal, roleInDeal]);
+  const roleInDeal = useMemo<"ORGANIZER" | "SPONSOR" | null>(() => {
+    if (!currentUserId || !deal) return null;
+    if (currentUserId === deal.organizer._id) return "ORGANIZER";
+    if (currentUserId === deal.sponsor._id) return "SPONSOR";
+    return null;
+  }, [currentUserId, deal]);
 
   const canRaiseDispute = useMemo(() => {
     if (!deal || !roleInDeal) return false;
@@ -290,12 +258,12 @@ const roleInDeal = useMemo<"ORGANIZER" | "SPONSOR" | null>(() => {
   }, [deal, roleInDeal, hasCurrentUserRevealed]);
 
   const visibleActions = useMemo(
-  () =>
-    deal
-      ? getVisibleActions(deal.status, roleInDeal, currentUserId, deal.createdBy)
-      : [],
-  [deal, roleInDeal, currentUserId]
-);
+    () =>
+      deal
+        ? getVisibleActions(deal.status, roleInDeal, currentUserId, deal.createdBy)
+        : [],
+    [deal, roleInDeal, currentUserId]
+  );
 
   const timelineItems = useMemo(() => {
     if (!deal) return [];
@@ -332,10 +300,10 @@ const roleInDeal = useMemo<"ORGANIZER" | "SPONSOR" | null>(() => {
     if (!dealId) return;
 
     const response = await fetch(`/api/deals/${dealId}`, {
-  method: "GET",
-  credentials: "include",
-  cache: "no-store",
-});
+      method: "GET",
+      credentials: "include",
+      cache: "no-store",
+    });
 
     const data: DealApiResponse = await response.json();
 
@@ -345,17 +313,13 @@ const roleInDeal = useMemo<"ORGANIZER" | "SPONSOR" | null>(() => {
 
     const normalized = normalizeDeal(data.deal);
     setDeal(normalized);
-    setFinalAmountInput(
-      normalized.finalAmount !== null ? String(normalized.finalAmount) : ""
-    );
-    setMessageInput(normalized.message || "");
-    setNotesInput(normalized.notes || "");
-    setPaymentStatusInput(normalized.paymentStatus || "unpaid");
-    setDeliverablesInput((normalized.deliverables || []).join("\n"));
     setDisputeReasonInput(normalized.disputeReason || "");
   }
 
-  async function updateDeal(payload: Record<string, unknown>, successMessage: string) {
+  async function updateDeal(
+    payload: Record<string, unknown>,
+    successMessage: string
+  ) {
     if (!dealId) return;
 
     try {
@@ -364,13 +328,13 @@ const roleInDeal = useMemo<"ORGANIZER" | "SPONSOR" | null>(() => {
       setActionSuccess("");
 
       const response = await fetch(`/api/deals/${dealId}`, {
-  method: "PATCH",
-  headers: {
-    "Content-Type": "application/json",
-  },
-  credentials: "include",
-  body: JSON.stringify(payload),
-});
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        credentials: "include",
+        body: JSON.stringify(payload),
+      });
 
       const data: DealApiResponse = await response.json();
 
@@ -397,14 +361,14 @@ const roleInDeal = useMemo<"ORGANIZER" | "SPONSOR" | null>(() => {
       setActionError("");
       setActionSuccess("");
 
-     const response = await fetch(`/api/deals/${dealId}`, {
-  method: "PATCH",
-  headers: {
-    "Content-Type": "application/json",
-  },
-  credentials: "include",
-  body: JSON.stringify({ revealContact: true }),
-});
+      const response = await fetch(`/api/deals/${dealId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        credentials: "include",
+        body: JSON.stringify({ revealContact: true }),
+      });
 
       const data: DealApiResponse = await response.json();
 
@@ -423,32 +387,6 @@ const roleInDeal = useMemo<"ORGANIZER" | "SPONSOR" | null>(() => {
     } finally {
       setRevealLoading(false);
     }
-  }
-
-  async function handleSaveDetails() {
-    const payload: Record<string, unknown> = {
-      message: messageInput,
-      notes: notesInput,
-      deliverables: parseDeliverablesInput(deliverablesInput),
-    };
-
-    if (canEditPaymentStatus) {
-      payload.paymentStatus = paymentStatusInput;
-    }
-
-    if (finalAmountInput.trim() === "") {
-      payload.finalAmount = null;
-    } else {
-      const parsedFinalAmount = Number(finalAmountInput);
-      if (Number.isNaN(parsedFinalAmount) || parsedFinalAmount < 0) {
-        setActionError("Final amount must be a valid non-negative number");
-        setActionSuccess("");
-        return;
-      }
-      payload.finalAmount = parsedFinalAmount;
-    }
-
-    await updateDeal(payload, "Deal details updated successfully");
   }
 
   async function handleStatusChange(status: DealStatus) {
@@ -580,18 +518,21 @@ const roleInDeal = useMemo<"ORGANIZER" | "SPONSOR" | null>(() => {
                 {deal.event.title || "Linked event unavailable"}
               </p>
             </div>
+
             <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
               <p className="text-xs text-[#94A3B8]">Location</p>
               <p className="mt-2 text-sm font-semibold text-white">
                 {deal.event.location || "Not set"}
               </p>
             </div>
+
             <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
               <p className="text-xs text-[#94A3B8]">Created</p>
               <p className="mt-2 text-sm font-semibold text-white">
                 {formatDateTime(deal.createdAt)}
               </p>
             </div>
+
             <div className="rounded-2xl border border-white/10 bg-white/[0.04] p-4">
               <p className="text-xs text-[#94A3B8]">Payment</p>
               <p className="mt-2 text-sm font-semibold capitalize text-white">
@@ -602,403 +543,334 @@ const roleInDeal = useMemo<"ORGANIZER" | "SPONSOR" | null>(() => {
         </div>
       </section>
 
-      <section className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-        {(actionError || actionSuccess) && (
-          <div
-            className={`mb-6 rounded-2xl p-4 ${
-              actionError
-                ? "border border-red-500/20 bg-red-500/10 text-red-200"
-                : "border border-[#FF7A18]/20 bg-[#FF7A18]/10 text-[#FFB347]"
-            }`}
+<section className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+  {(actionError || actionSuccess) && (
+    <div
+      className={`mb-6 rounded-2xl p-4 ${
+        actionError
+          ? "border border-red-500/20 bg-red-500/10 text-red-200"
+          : "border border-[#FF7A18]/20 bg-[#FF7A18]/10 text-[#FFB347]"
+      }`}
+    >
+      {actionError || actionSuccess}
+    </div>
+  )}
+
+  <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
+    <section className="rounded-3xl border border-white/10 bg-white/[0.03] p-5 shadow-[0_18px_55px_rgba(0,0,0,0.28)]">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold">Parties & Event</h2>
+          <p className="mt-1 text-sm text-[#94A3B8]">
+            Main people and linked event for this deal.
+          </p>
+        </div>
+
+        <span className="rounded-full border border-[#FF7A18]/20 bg-[#FF7A18]/10 px-3 py-1 text-xs font-semibold text-[#FFB347]">
+          Details
+        </span>
+      </div>
+
+      <div className="mt-5 space-y-3">
+        <div className="rounded-2xl border border-white/10 bg-[#07152F]/70 p-4">
+          <p className="text-xs text-[#94A3B8]">Organizer</p>
+          <p className="mt-2 text-sm font-semibold text-white">
+            {deal.organizer.companyName || deal.organizer.name || "Organizer"}
+          </p>
+          <p className="mt-1 truncate text-xs text-[#94A3B8]">
+            {deal.organizer.email || "No email"}
+          </p>
+          <p className="mt-1 text-xs text-[#94A3B8]">
+            {deal.organizer.phone || "No phone"}
+          </p>
+        </div>
+
+        <div className="rounded-2xl border border-white/10 bg-[#07152F]/70 p-4">
+          <p className="text-xs text-[#94A3B8]">Sponsor</p>
+          <p className="mt-2 text-sm font-semibold text-white">
+            {deal.sponsor.companyName || deal.sponsor.name || "Sponsor"}
+          </p>
+          <p className="mt-1 truncate text-xs text-[#94A3B8]">
+            {deal.sponsor.email || "No email"}
+          </p>
+          <p className="mt-1 text-xs text-[#94A3B8]">
+            {deal.sponsor.phone || "No phone"}
+          </p>
+        </div>
+
+        <div className="rounded-2xl border border-white/10 bg-[#07152F]/70 p-4">
+          <p className="text-xs text-[#94A3B8]">Event</p>
+          <p className="mt-2 text-sm font-semibold text-white">
+            {deal.event.title || "Linked event unavailable"}
+          </p>
+          <p className="mt-1 text-xs text-[#94A3B8]">
+            {deal.event.location || "No location"}
+          </p>
+          <p className="mt-1 text-xs text-[#94A3B8]">
+            {formatDateTime(deal.event.startDate)}
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section className="rounded-3xl border border-white/10 bg-white/[0.03] p-5 shadow-[0_18px_55px_rgba(0,0,0,0.28)]">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold">Deal Actions</h2>
+          <p className="mt-1 text-sm text-[#94A3B8]">
+            Move the deal forward with controlled status updates.
+          </p>
+        </div>
+
+        <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs font-semibold text-[#94A3B8]">
+          Action
+        </span>
+      </div>
+
+      <div className="mt-5 grid gap-3">
+        {STATUS_ACTIONS.filter((action) =>
+          visibleActions.includes(action.value)
+        ).map((action) => (
+          <button
+            key={action.value}
+            type="button"
+            onClick={() => handleStatusChange(action.value)}
+            disabled={saving || deal.status === action.value}
+            className={`rounded-2xl px-4 py-3 text-left text-sm font-semibold transition ${
+              action.value === "accepted" || action.value === "completed"
+                ? "bg-gradient-to-r from-[#FF7A18] to-[#FFB347] text-[#020617] disabled:opacity-40"
+                : "border border-white/10 bg-[#07152F]/80 text-white hover:border-[#FF7A18]/30 disabled:opacity-40"
+            } disabled:cursor-not-allowed`}
           >
-            {actionError || actionSuccess}
+            {action.label}
+          </button>
+        ))}
+
+        {visibleActions.length === 0 && (
+          <div className="rounded-2xl border border-white/10 bg-[#07152F]/60 px-4 py-3 text-sm text-[#94A3B8]">
+            No further actions available for this deal state.
           </div>
         )}
+      </div>
+    </section>
 
-        <div className="grid gap-6 lg:grid-cols-3">
-          <div className="space-y-6 lg:col-span-2">
-            <section className="rounded-3xl border border-white/10 bg-white/[0.03] p-6">
-              <h2 className="text-xl font-semibold">Parties & Event</h2>
-              <div className="mt-5 grid gap-4 md:grid-cols-3">
-                <div className="rounded-2xl border border-white/10 bg-[#07152F]/70 p-4">
-                  <p className="text-xs text-[#94A3B8]">Organizer</p>
-                  <p className="mt-2 text-sm font-semibold text-white">
-                    {deal.organizer.companyName ||
-                      deal.organizer.name ||
-                      "Organizer"}
-                  </p>
-                  <p className="mt-1 text-xs text-[#94A3B8]">
-                    {deal.organizer.email || "No email"}
-                  </p>
-                </div>
+    <section className="rounded-3xl border border-white/10 bg-white/[0.03] p-5 shadow-[0_18px_55px_rgba(0,0,0,0.28)]">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold">Contact Exchange</h2>
+          <p className="mt-1 text-sm text-[#94A3B8]">
+            Contact details after both sides unlock access.
+          </p>
+        </div>
 
-                <div className="rounded-2xl border border-white/10 bg-[#07152F]/70 p-4">
-                  <p className="text-xs text-[#94A3B8]">Sponsor</p>
-                  <p className="mt-2 text-sm font-semibold text-white">
-                    {deal.sponsor.companyName || deal.sponsor.name || "Sponsor"}
-                  </p>
-                  <p className="mt-1 text-xs text-[#94A3B8]">
-                    {deal.sponsor.email || "No email"}
-                  </p>
-                </div>
+        <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs font-semibold text-[#94A3B8]">
+          Contact
+        </span>
+      </div>
 
-                <div className="rounded-2xl border border-white/10 bg-[#07152F]/70 p-4">
-                  <p className="text-xs text-[#94A3B8]">Event</p>
-                  <p className="mt-2 text-sm font-semibold text-white">
-                    {deal.event.title || "Linked event unavailable"}
-                  </p>
-                  <p className="mt-1 text-xs text-[#94A3B8]">
-                    {deal.event.location || "No location"}
-                  </p>
-                </div>
-              </div>
-            </section>
-
-            {canEditCommercialFields || canEditPaymentStatus ? (
-              <section className="rounded-3xl border border-white/10 bg-white/[0.03] p-6">
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    <h2 className="text-xl font-semibold">Agreement Details</h2>
-                    <p className="mt-1 text-sm text-[#94A3B8]">
-                      {roleInDeal === "ORGANIZER"
-                        ? "Update deal details and keep the agreement moving."
-                        : "Review agreement details."}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="mt-6 grid gap-5">
-                  <div>
-                    <label className="mb-2 block text-sm font-medium text-white">
-                      Final Amount
-                    </label>
-                    <input
-                      type="number"
-                      min="0"
-                      value={finalAmountInput}
-                      onChange={(e) => setFinalAmountInput(e.target.value)}
-                      placeholder="Enter final agreed amount"
-                      disabled={!canEditCommercialFields}
-                      className="w-full rounded-2xl border border-white/10 bg-[#07152F]/80 px-4 py-3 text-white outline-none transition placeholder:text-[#94A3B8] disabled:cursor-not-allowed disabled:opacity-60 focus:border-[#FF7A18]/40"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="mb-2 block text-sm font-medium text-white">
-                      Message
-                    </label>
-                    <textarea
-                      value={messageInput}
-                      onChange={(e) => setMessageInput(e.target.value)}
-                      rows={4}
-                      placeholder="Add important communication summary"
-                      disabled={!canEditCommercialFields}
-                      className="w-full rounded-2xl border border-white/10 bg-[#07152F]/80 px-4 py-3 text-white outline-none transition placeholder:text-[#94A3B8] disabled:cursor-not-allowed disabled:opacity-60 focus:border-[#FF7A18]/40"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="mb-2 block text-sm font-medium text-white">
-                      Notes
-                    </label>
-                    <textarea
-                      value={notesInput}
-                      onChange={(e) => setNotesInput(e.target.value)}
-                      rows={5}
-                      placeholder="Add internal agreement notes"
-                      disabled={!canEditCommercialFields}
-                      className="w-full rounded-2xl border border-white/10 bg-[#07152F]/80 px-4 py-3 text-white outline-none transition placeholder:text-[#94A3B8] disabled:cursor-not-allowed disabled:opacity-60 focus:border-[#FF7A18]/40"
-                    />
-                  </div>
-
-                  {canEditPaymentStatus ? (
-                    <div>
-                      <label className="mb-2 block text-sm font-medium text-white">
-                        Payment Status
-                      </label>
-                      <select
-                        value={paymentStatusInput}
-                        onChange={(e) => setPaymentStatusInput(e.target.value)}
-                        className="w-full rounded-2xl border border-white/10 bg-[#07152F]/80 px-4 py-3 text-white outline-none transition focus:border-[#FF7A18]/40"
-                      >
-                        <option value="unpaid">Unpaid</option>
-                        <option value="pending">Pending</option>
-                        <option value="paid">Paid</option>
-                      </select>
-                    </div>
-                  ) : null}
-
-                  <div>
-                    <label className="mb-2 block text-sm font-medium text-white">
-                      Deliverables
-                    </label>
-                    <textarea
-                      value={deliverablesInput}
-                      onChange={(e) => setDeliverablesInput(e.target.value)}
-                      rows={6}
-                      placeholder={`One deliverable per line\nLogo on stage backdrop\nInstagram story mention\nStall branding`}
-                      disabled={!canEditCommercialFields}
-                      className="w-full rounded-2xl border border-white/10 bg-[#07152F]/80 px-4 py-3 text-white outline-none transition placeholder:text-[#94A3B8] disabled:cursor-not-allowed disabled:opacity-60 focus:border-[#FF7A18]/40"
-                    />
-                  </div>
-
-                  {(canEditCommercialFields || canEditPaymentStatus) && (
-                    <div className="flex justify-end">
-                      <button
-                        type="button"
-                        onClick={handleSaveDetails}
-                        disabled={saving}
-                        className="rounded-full bg-gradient-to-r from-[#FF7A18] to-[#FFB347] px-6 py-3 text-sm font-semibold text-[#020617] transition hover:opacity-95 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        {saving ? "Saving..." : "Save Details"}
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </section>
-            ) : (
-              <section className="rounded-3xl border border-white/10 bg-white/[0.03] p-6">
-                <h2 className="text-xl font-semibold">Agreement Details</h2>
-                <p className="mt-3 text-sm text-[#94A3B8]">
-                  This deal is currently read-only for your role in its current state.
-                </p>
-              </section>
-            )}
-
-            <section className="rounded-3xl border border-white/10 bg-white/[0.03] p-6">
-              <h2 className="text-xl font-semibold">Deliverables Preview</h2>
-
-              {deal.deliverables.length === 0 ? (
-                <p className="mt-4 text-sm text-[#94A3B8]">
-                  No deliverables added yet.
-                </p>
-              ) : (
-                <div className="mt-4 flex flex-wrap gap-2">
-                  {deal.deliverables.map((item, index) => (
-                    <span
-                      key={`${item}-${index}`}
-                      className="rounded-full border border-white/10 bg-[#07152F]/80 px-3 py-2 text-sm text-white"
-                    >
-                      {item}
-                    </span>
-                  ))}
-                </div>
-              )}
-            </section>
-
-            {deal.status === "disputed" && (
-              <section className="rounded-3xl border border-red-500/20 bg-red-500/10 p-6">
-                <h2 className="text-xl font-semibold text-red-200">
-                  Dispute Reason
-                </h2>
-                <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-red-100/90">
-                  {deal.disputeReason || "No dispute reason available."}
-                </p>
-              </section>
-            )}
+      {deal.status !== "accepted" ? (
+        <p className="mt-5 text-sm text-[#94A3B8]">
+          Contact details will be available after deal acceptance.
+        </p>
+      ) : deal.contactReveal.fullyRevealed ? (
+        <div className="mt-5 space-y-3">
+          <div className="rounded-2xl border border-white/10 bg-[#07152F]/70 p-4">
+            <p className="text-xs text-[#94A3B8]">Organizer Contact</p>
+            <p className="mt-2 text-sm font-semibold text-white">
+              {deal.organizer.companyName || deal.organizer.name || "Organizer"}
+            </p>
+            <p className="mt-1 truncate text-xs text-white">
+              {deal.organizer.email || "No email shared"}
+            </p>
+            <p className="mt-1 text-xs text-white">
+              {deal.organizer.phone || "No phone shared"}
+            </p>
           </div>
 
-          <div className="space-y-6">
-            <section className="rounded-3xl border border-white/10 bg-white/[0.03] p-6">
-              <h2 className="text-xl font-semibold">Deal Actions</h2>
-              <p className="mt-2 text-sm text-[#94A3B8]">
-                Move the deal forward with controlled status updates.
-              </p>
-
-              <div className="mt-5 grid gap-3">
-                {STATUS_ACTIONS.filter((action) =>
-                  visibleActions.includes(action.value)
-                ).map((action) => (
-                  <button
-                    key={action.value}
-                    type="button"
-                    onClick={() => handleStatusChange(action.value)}
-                    disabled={saving || deal.status === action.value}
-                    className={`rounded-2xl px-4 py-3 text-left text-sm font-medium transition ${
-                      action.value === "accepted" || action.value === "completed"
-                        ? "bg-gradient-to-r from-[#FF7A18] to-[#FFB347] text-[#020617] disabled:opacity-40"
-                        : "border border-white/10 bg-[#07152F]/80 text-white hover:border-[#FF7A18]/30 disabled:opacity-40"
-                    } disabled:cursor-not-allowed`}
-                  >
-                    {action.label}
-                  </button>
-                ))}
-
-                {visibleActions.length === 0 && (
-                  <div className="rounded-2xl border border-white/10 bg-[#07152F]/60 px-4 py-3 text-sm text-[#94A3B8]">
-                    No further actions available for this deal state.
-                  </div>
-                )}
-              </div>
-            </section>
-
-            <section className="rounded-3xl border border-white/10 bg-white/[0.03] p-6">
-              <h2 className="text-xl font-semibold">Contact Exchange</h2>
-
-              {deal.status !== "accepted" ? (
-                <p className="mt-3 text-sm text-[#94A3B8]">
-                  Contact details will be available after deal acceptance.
-                </p>
-              ) : deal.contactReveal.fullyRevealed ? (
-                <div className="mt-4 space-y-4">
-                  <div className="rounded-2xl border border-white/10 bg-[#07152F]/70 p-4">
-                    <p className="text-sm text-[#94A3B8]">Organizer Contact</p>
-                    <p className="mt-2 text-sm font-semibold text-white">
-                      {deal.organizer.companyName || deal.organizer.name || "Organizer"}
-                    </p>
-                    <p className="mt-1 text-sm text-white">
-                      {deal.organizer.email || "No email shared"}
-                    </p>
-                    <p className="mt-1 text-sm text-white">
-                      {deal.organizer.phone || "No phone shared"}
-                    </p>
-                  </div>
-
-                  <div className="rounded-2xl border border-white/10 bg-[#07152F]/70 p-4">
-                    <p className="text-sm text-[#94A3B8]">Sponsor Contact</p>
-                    <p className="mt-2 text-sm font-semibold text-white">
-                      {deal.sponsor.companyName || deal.sponsor.name || "Sponsor"}
-                    </p>
-                    <p className="mt-1 text-sm text-white">
-                      {deal.sponsor.email || "No email shared"}
-                    </p>
-                    <p className="mt-1 text-sm text-white">
-                      {deal.sponsor.phone || "No phone shared"}
-                    </p>
-                  </div>
-                </div>
-              ) : (
-                <div className="mt-4 space-y-3">
-                  <p className="text-sm text-[#94A3B8]">
-                    Both parties must reveal contact details to unlock access.
-                  </p>
-
-                  {waitingForOtherParty ? (
-  <div className="rounded-2xl border border-white/10 bg-[#07152F]/60 px-4 py-3 text-sm text-[#94A3B8]">
-    You have revealed your contact details. Waiting for the other party.
-  </div>
-) : canRevealContact ? (
-  <button
-    type="button"
-    onClick={handleRevealContact}
-    disabled={revealLoading}
-    className="rounded-full bg-gradient-to-r from-[#FF7A18] to-[#FFB347] px-5 py-3 text-sm font-semibold text-[#020617] disabled:cursor-not-allowed disabled:opacity-50"
-  >
-    {revealLoading ? "Processing..." : "Reveal My Contact Details"}
-  </button>
-) : (
-  <div className="rounded-2xl border border-white/10 bg-[#07152F]/60 px-4 py-3 text-sm text-[#94A3B8]">
-    Contact reveal is not available right now.
-  </div>
-)}
-
-                  <p className="text-xs text-[#94A3B8]">
-                    Once both parties agree, contact details will be unlocked.
-                  </p>
-                </div>
-              )}
-            </section>
-
-            {canRaiseDispute ? (
-              <section className="rounded-3xl border border-red-500/20 bg-red-500/5 p-6">
-                <h2 className="text-xl font-semibold text-red-200">
-                  Raise Dispute
-                </h2>
-                <p className="mt-2 text-sm text-red-100/80">
-                  Use only when there is a real issue in execution, agreement, or
-                  payment understanding.
-                </p>
-
-                <div className="mt-4">
-                  <textarea
-                    value={disputeReasonInput}
-                    onChange={(e) => setDisputeReasonInput(e.target.value)}
-                    rows={5}
-                    placeholder="Enter dispute reason"
-                    className="w-full rounded-2xl border border-red-500/20 bg-[#07152F]/80 px-4 py-3 text-white outline-none placeholder:text-[#94A3B8] focus:border-red-400/40"
-                  />
-                </div>
-
-                <button
-                  type="button"
-                  onClick={handleRaiseDispute}
-                  disabled={saving}
-                  className="mt-4 w-full rounded-full border border-red-400/30 bg-red-500/10 px-5 py-3 text-sm font-semibold text-red-200 transition hover:bg-red-500/15 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {saving ? "Submitting..." : "Raise Dispute"}
-                </button>
-              </section>
-            ) : null}
-
-            <section className="rounded-3xl border border-white/10 bg-white/[0.03] p-6">
-              <h2 className="text-xl font-semibold">Timeline</h2>
-
-              {timelineItems.length === 0 ? (
-                <p className="mt-4 text-sm text-[#94A3B8]">
-                  No timeline activity available yet.
-                </p>
-              ) : (
-                <div className="mt-5 space-y-4">
-                  {timelineItems.map((item) => (
-                    <div
-                      key={`${item.label}-${item.value}`}
-                      className="rounded-2xl border border-white/10 bg-[#07152F]/70 p-4"
-                    >
-                      <p className="text-xs uppercase tracking-wide text-[#94A3B8]">
-                        {item.label}
-                      </p>
-                      <p className="mt-2 text-sm font-medium text-white">
-                        {formatDateTime(item.value)}
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </section>
-
-            <section className="rounded-3xl border border-white/10 bg-white/[0.03] p-6">
-              <h2 className="text-xl font-semibold">Quick Summary</h2>
-
-              <div className="mt-5 space-y-3 text-sm">
-                <div className="flex items-center justify-between gap-3 text-[#94A3B8]">
-                  <span>Status</span>
-                  <span className="capitalize text-white">{deal.status}</span>
-                </div>
-                <div className="flex items-center justify-between gap-3 text-[#94A3B8]">
-                  <span>Proposed Amount</span>
-                  <span className="text-white">
-                    {formatCurrency(deal.proposedAmount)}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between gap-3 text-[#94A3B8]">
-                  <span>Final Amount</span>
-                  <span className="text-white">
-                    {formatCurrency(deal.finalAmount)}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between gap-3 text-[#94A3B8]">
-                  <span>Payment Status</span>
-                  <span className="capitalize text-white">
-                    {deal.paymentStatus}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between gap-3 text-[#94A3B8]">
-                  <span>Expires At</span>
-                  <span className="text-white">
-                    {formatDateTime(deal.expiresAt)}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between gap-3 text-[#94A3B8]">
-                  <span>Your Role</span>
-                  <span className="capitalize text-white">
-                    {roleInDeal ? roleInDeal.toLowerCase() : "viewer"}
-                  </span>
-                </div>
-              </div>
-            </section>
+          <div className="rounded-2xl border border-white/10 bg-[#07152F]/70 p-4">
+            <p className="text-xs text-[#94A3B8]">Sponsor Contact</p>
+            <p className="mt-2 text-sm font-semibold text-white">
+              {deal.sponsor.companyName || deal.sponsor.name || "Sponsor"}
+            </p>
+            <p className="mt-1 truncate text-xs text-white">
+              {deal.sponsor.email || "No email shared"}
+            </p>
+            <p className="mt-1 text-xs text-white">
+              {deal.sponsor.phone || "No phone shared"}
+            </p>
           </div>
         </div>
+      ) : (
+        <div className="mt-5 space-y-3">
+          <p className="text-sm text-[#94A3B8]">
+            Both parties must reveal contact details to unlock access.
+          </p>
+
+          {waitingForOtherParty ? (
+            <div className="rounded-2xl border border-white/10 bg-[#07152F]/60 px-4 py-3 text-sm text-[#94A3B8]">
+              You have revealed your contact details. Waiting for the other party.
+            </div>
+          ) : canRevealContact ? (
+            <button
+              type="button"
+              onClick={handleRevealContact}
+              disabled={revealLoading}
+              className="w-full rounded-full bg-gradient-to-r from-[#FF7A18] to-[#FFB347] px-5 py-3 text-sm font-semibold text-[#020617] disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {revealLoading ? "Processing..." : "Reveal My Contact Details"}
+            </button>
+          ) : (
+            <div className="rounded-2xl border border-white/10 bg-[#07152F]/60 px-4 py-3 text-sm text-[#94A3B8]">
+              Contact reveal is not available right now.
+            </div>
+          )}
+        </div>
+      )}
+    </section>
+
+    <div className="rounded-3xl border border-white/10 bg-white/[0.03] p-5 shadow-[0_18px_55px_rgba(0,0,0,0.28)]">
+      <DealAgreementPanel
+        dealId={deal._id}
+        dealStatus={deal.status}
+        currentUserId={currentUserId}
+        roleInDeal={roleInDeal}
+      />
+    </div>
+
+    {canRaiseDispute ? (
+      <section className="rounded-3xl border border-red-500/20 bg-red-500/5 p-5 shadow-[0_18px_55px_rgba(0,0,0,0.28)]">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-semibold text-red-200">
+              Raise Dispute
+            </h2>
+            <p className="mt-1 text-sm text-red-100/80">
+              Use only when there is a real issue in execution, agreement, or payment.
+            </p>
+          </div>
+
+          <span className="rounded-full border border-red-400/30 bg-red-500/10 px-3 py-1 text-xs font-semibold text-red-200">
+            Issue
+          </span>
+        </div>
+
+        <div className="mt-4">
+          <textarea
+            value={disputeReasonInput}
+            onChange={(e) => setDisputeReasonInput(e.target.value)}
+            rows={5}
+            placeholder="Enter dispute reason"
+            className="w-full rounded-2xl border border-red-500/20 bg-[#07152F]/80 px-4 py-3 text-white outline-none placeholder:text-[#94A3B8] focus:border-red-400/40"
+          />
+        </div>
+
+        <button
+          type="button"
+          onClick={handleRaiseDispute}
+          disabled={saving}
+          className="mt-4 w-full rounded-full border border-red-400/30 bg-red-500/10 px-5 py-3 text-sm font-semibold text-red-200 transition hover:bg-red-500/15 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {saving ? "Submitting..." : "Raise Dispute"}
+        </button>
       </section>
-    </main>
+    ) : null}
+
+    <section className="rounded-3xl border border-white/10 bg-white/[0.03] p-5 shadow-[0_18px_55px_rgba(0,0,0,0.28)]">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold">Timeline</h2>
+          <p className="mt-1 text-sm text-[#94A3B8]">
+            Deal activity history.
+          </p>
+        </div>
+
+        <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs font-semibold text-[#94A3B8]">
+          History
+        </span>
+      </div>
+
+      {timelineItems.length === 0 ? (
+        <p className="mt-5 text-sm text-[#94A3B8]">
+          No timeline activity available yet.
+        </p>
+      ) : (
+        <div className="mt-5 space-y-3">
+          {timelineItems.map((item) => (
+            <div
+              key={`${item.label}-${item.value}`}
+              className="rounded-2xl border border-white/10 bg-[#07152F]/70 p-4"
+            >
+              <p className="text-xs uppercase tracking-wide text-[#94A3B8]">
+                {item.label}
+              </p>
+              <p className="mt-2 text-sm font-semibold text-white">
+                {formatDateTime(item.value)}
+              </p>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+
+    <section className="rounded-3xl border border-white/10 bg-white/[0.03] p-5 shadow-[0_18px_55px_rgba(0,0,0,0.28)]">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold">Quick Summary</h2>
+          <p className="mt-1 text-sm text-[#94A3B8]">
+            Final commercial snapshot.
+          </p>
+        </div>
+
+        <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs font-semibold text-[#94A3B8]">
+          Summary
+        </span>
+      </div>
+
+      <div className="mt-5 space-y-3 text-sm">
+        <div className="flex items-center justify-between gap-3 text-[#94A3B8]">
+          <span>Status</span>
+          <span className="capitalize text-white">{deal.status}</span>
+        </div>
+
+        <div className="flex items-center justify-between gap-3 text-[#94A3B8]">
+          <span>Proposed Amount</span>
+          <span className="text-white">{formatCurrency(deal.proposedAmount)}</span>
+        </div>
+
+        <div className="flex items-center justify-between gap-3 text-[#94A3B8]">
+          <span>Final Amount</span>
+          <span className="text-white">{formatCurrency(deal.finalAmount)}</span>
+        </div>
+
+        <div className="flex items-center justify-between gap-3 text-[#94A3B8]">
+          <span>Payment Status</span>
+          <span className="capitalize text-white">{deal.paymentStatus}</span>
+        </div>
+
+        <div className="flex items-center justify-between gap-3 text-[#94A3B8]">
+          <span>Expires At</span>
+          <span className="text-white">{formatDateTime(deal.expiresAt)}</span>
+        </div>
+
+        <div className="flex items-center justify-between gap-3 text-[#94A3B8]">
+          <span>Your Role</span>
+          <span className="capitalize text-white">
+            {roleInDeal ? roleInDeal.toLowerCase() : "viewer"}
+          </span>
+        </div>
+      </div>
+    </section>
+
+    {deal.status === "disputed" && (
+      <section className="rounded-3xl border border-red-500/20 bg-red-500/10 p-5 shadow-[0_18px_55px_rgba(0,0,0,0.28)]">
+        <h2 className="text-lg font-semibold text-red-200">Dispute Reason</h2>
+        <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-red-100/90">
+          {deal.disputeReason || "No dispute reason available."}
+        </p>
+      </section>
+    )}
+  </div>
+</section>
+</main>
   );
 }

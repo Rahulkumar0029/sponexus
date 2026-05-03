@@ -5,6 +5,7 @@ import { cookies } from "next/headers";
 import { connectDB } from "@/lib/db";
 import { verifyAccessToken } from "@/lib/auth";
 import { DealModel } from "@/lib/models/Deal";
+import { DealAgreementModel } from "@/lib/models/DealAgreement";
 import User from "@/lib/models/User";
 import { checkUsageLimit } from "@/lib/subscription/checkUsageLimit";
 import { incrementUsage } from "@/lib/subscription/enforceLimits";
@@ -179,11 +180,11 @@ function canEditCommercialFields(
 ) {
   if (role !== "ORGANIZER") return false;
   if (isFinalDealState(currentStatus)) return false;
-  if (currentStatus === "accepted") return false;
 
   return (
     currentStatus === "pending" ||
     currentStatus === "negotiating" ||
+    currentStatus === "accepted" ||
     currentStatus === "disputed"
   );
 }
@@ -406,7 +407,9 @@ if (!roleInDeal) {
       body.notes !== undefined ||
       deliverables !== undefined;
 
-    const wantsPaymentStatusEdit = body.paymentStatus !== undefined;
+    const wantsPaymentStatusEdit =
+  body.paymentStatus !== undefined &&
+  paymentStatus !== String(deal.paymentStatus || "unpaid");
 
     if (message && !isSafeLength(message, MAX_MESSAGE_LENGTH)) {
       return NextResponse.json(
@@ -634,18 +637,33 @@ const safeDeal = sanitizeDealContactsForResponse(updatedDeal);
       }
     }
 
-    if (
-      wantsCommercialEdit &&
-      !canEditCommercialFields(currentStatus, roleInDeal)
-    ) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "You are not allowed to edit commercial deal details in this state",
-        },
-        { status: 403 }
-      );
-    }
+if (wantsCommercialEdit) {
+  if (!canEditCommercialFields(currentStatus, roleInDeal)) {
+    return NextResponse.json(
+      {
+        success: false,
+        message: "You are not allowed to edit commercial deal details in this state",
+      },
+      { status: 403 }
+    );
+  }
+
+  const existingAgreement = await DealAgreementModel.findOne({
+    dealId: deal._id,
+    isDeleted: { $ne: true },
+  }).select("_id status");
+
+  if (existingAgreement) {
+    return NextResponse.json(
+      {
+        success: false,
+        message:
+          "Agreement already exists. Commercial details cannot be changed after agreement draft creation.",
+      },
+      { status: 409 }
+    );
+  }
+}
 
     if (wantsPaymentStatusEdit) {
       if (!paymentStatus) {

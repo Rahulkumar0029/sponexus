@@ -1,0 +1,841 @@
+import { readFile } from "fs/promises";
+import path from "path";
+import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
+
+type AgreementLike = {
+  agreementNumber?: string;
+  status?: string;
+  signedAt?: Date | string | null;
+  createdAt?: Date | string | null;
+  snapshot?: {
+    title?: string;
+    description?: string;
+    proposedAmount?: number;
+    finalAmount?: number | null;
+    paymentStatus?: "unpaid" | "pending" | "paid";
+    message?: string;
+    notes?: string;
+    deliverables?: string[];
+    organizer?: {
+      name?: string;
+      companyName?: string;
+      email?: string;
+      phone?: string;
+    };
+    sponsor?: {
+      name?: string;
+      companyName?: string;
+      email?: string;
+      phone?: string;
+    };
+    event?: {
+      title?: string;
+      location?: string;
+      startDate?: string | null;
+    };
+  };
+  organizerVerification?: {
+    otpStatus?: string;
+    otpVerifiedAt?: Date | string | null;
+  };
+  sponsorVerification?: {
+    otpStatus?: string;
+    otpVerifiedAt?: Date | string | null;
+  };
+
+  proofFiles?: Array<{
+    label?: string;
+    fileUrl?: string;
+    fileType?: string;
+    transactionId?: string;
+    paidAmount?: number | null;
+    paymentDate?: Date | string | null;
+    paymentMode?: string;
+    note?: string;
+    status?: string;
+    uploadedAt?: Date | string | null;
+  }>;
+};
+
+const PAGE_WIDTH = 595.28;
+const PAGE_HEIGHT = 841.89;
+const MARGIN = 48;
+const LINE_HEIGHT = 14;
+const BRAND_ORANGE = rgb(1, 0.48, 0.09);
+const DARK = rgb(0.02, 0.04, 0.09);
+const MUTED = rgb(0.38, 0.43, 0.5);
+const LIGHT_BORDER = rgb(0.86, 0.88, 0.92);
+
+async function embedSponexusLogo(pdfDoc: PDFDocument) {
+  try {
+    const logoPath = path.join(process.cwd(), "public", "logo-circle.jpeg");
+    const logoBytes = await readFile(logoPath);
+
+    return await pdfDoc.embedJpg(logoBytes);
+  } catch (error) {
+    console.error("Sponexus PDF logo load failed:", error);
+    return null;
+  }
+}
+
+function drawSponexusBrandHeader({
+  page,
+  logoImage,
+  x,
+  y,
+  boldFont,
+  regularFont,
+}: any) {
+  const logoSize = 26;
+  const logoX = x;
+  const logoY = y - 23;
+
+  const brandX = x + 34;
+  const brandY = y - 2;
+
+  if (logoImage) {
+    page.drawImage(logoImage, {
+      x: logoX,
+      y: logoY,
+      width: logoSize,
+      height: logoSize,
+    });
+  } else {
+    page.drawRectangle({
+      x: logoX,
+      y: logoY,
+      width: logoSize,
+      height: logoSize,
+      borderColor: LIGHT_BORDER,
+      borderWidth: 1,
+      color: rgb(0.97, 0.98, 0.99),
+    });
+  }
+
+  page.drawText("Spon", {
+    x: brandX,
+    y: brandY,
+    size: 18,
+    font: boldFont,
+    color: BRAND_ORANGE,
+  });
+
+  page.drawText("Exus", {
+    x: brandX + 43,
+    y: brandY,
+    size: 18,
+    font: boldFont,
+    color: DARK,
+  });
+
+  page.drawText("SMART MATCHING", {
+    x: brandX + 1,
+    y: y - 17,
+    size: 6.2,
+    font: regularFont,
+    color: MUTED,
+  });
+}
+
+function safeText(value: unknown, fallback = "—") {
+  if (typeof value !== "string") return fallback;
+  const trimmed = value.trim();
+  return trimmed || fallback;
+}
+
+function safePdfText(value: unknown, fallback = "—") {
+  const text = safeText(value, fallback);
+
+  return text
+    .replace(/₹/g, "INR ")
+    .replace(/[^\x00-\x7F]/g, "");
+}
+
+function formatCurrency(amount: unknown) {
+  if (typeof amount !== "number" || !Number.isFinite(amount)) return "Not set";
+
+  return `INR ${new Intl.NumberFormat("en-IN", {
+    maximumFractionDigits: 0,
+  }).format(amount)}`;
+}
+
+function formatDate(value: unknown) {
+  if (!value) return "—";
+
+  const date = new Date(value as any);
+
+  if (Number.isNaN(date.getTime())) return "—";
+
+  return date.toLocaleString("en-IN", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function formatGenerationDate() {
+  return new Date().toLocaleString("en-IN", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function splitTextIntoLines(text: string, maxChars: number) {
+  const words = text.replace(/\s+/g, " ").trim().split(" ");
+  const lines: string[] = [];
+  let current = "";
+
+  for (const word of words) {
+    const next = current ? `${current} ${word}` : word;
+
+    if (next.length > maxChars) {
+      if (current) lines.push(current);
+      current = word;
+    } else {
+      current = next;
+    }
+  }
+
+  if (current) lines.push(current);
+
+  return lines.length ? lines : ["—"];
+}
+
+function drawTextBlock({
+  page,
+  text,
+  x,
+  y,
+  size,
+  font,
+  color = DARK,
+  maxChars = 90,
+  lineHeight = LINE_HEIGHT,
+}: any) {
+ const lines = splitTextIntoLines(safePdfText(text), maxChars);
+  let currentY = y;
+
+  for (const line of lines) {
+    page.drawText(line, {
+      x,
+      y: currentY,
+      size,
+      font,
+      color,
+    });
+
+    currentY -= lineHeight;
+  }
+
+  return currentY;
+}
+
+function drawSectionTitle({ page, title, x, y, font }: any) {
+  page.drawText(title, {
+    x,
+    y,
+    size: 10,
+    font,
+    color: BRAND_ORANGE,
+  });
+
+  return y - 18;
+}
+
+function drawKeyValue({
+  page,
+  label,
+  value,
+  x,
+  y,
+  labelFont,
+  valueFont,
+  width = 240,
+}: any) {
+  page.drawRectangle({
+    x,
+    y: y - 46,
+    width,
+    height: 54,
+    borderColor: LIGHT_BORDER,
+    borderWidth: 1,
+  });
+
+  page.drawText(label, {
+    x: x + 12,
+    y: y - 14,
+    size: 8,
+    font: labelFont,
+    color: MUTED,
+  });
+
+  page.drawText(safePdfText(value).slice(0, 38), {
+    x: x + 12,
+    y: y - 32,
+    size: 10,
+    font: valueFont,
+    color: DARK,
+  });
+}function drawPartyBox({
+  page,
+  label,
+  name,
+  companyName,
+  email,
+  phone,
+  x,
+  y,
+  labelFont,
+  valueFont,
+  width = 240,
+}: any) {
+  page.drawRectangle({
+    x,
+    y: y - 74,
+    width,
+    height: 82,
+    borderColor: LIGHT_BORDER,
+    borderWidth: 1,
+  });
+
+  page.drawText(label, {
+    x: x + 12,
+    y: y - 14,
+    size: 8,
+    font: labelFont,
+    color: MUTED,
+  });
+
+  page.drawText(safePdfText(companyName || name || label).slice(0, 34), {
+    x: x + 12,
+    y: y - 31,
+    size: 10,
+    font: valueFont,
+    color: DARK,
+  });
+
+  page.drawText(`Name: ${safePdfText(name, "Not added").slice(0, 42)}`, {
+    x: x + 12,
+    y: y - 46,
+    size: 8,
+    font: labelFont,
+    color: rgb(0.2, 0.23, 0.28),
+  });
+
+  page.drawText(`Email: ${safePdfText(email, "Not added").slice(0, 42)}`, {
+    x: x + 12,
+    y: y - 58,
+    size: 8,
+    font: labelFont,
+    color: rgb(0.2, 0.23, 0.28),
+  });
+
+  page.drawText(`Phone: ${safePdfText(phone, "Not added").slice(0, 32)}`, {
+    x: x + 12,
+    y: y - 70,
+    size: 8,
+    font: labelFont,
+    color: rgb(0.2, 0.23, 0.28),
+  });
+}
+
+function ensurePageSpace(pdfDoc: PDFDocument, currentPage: any, y: number) {
+  if (y > 90) {
+    return { page: currentPage, y };
+  }
+
+  const page = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+  drawWatermark(page);
+
+  return {
+    page,
+    y: PAGE_HEIGHT - MARGIN,
+  };
+}
+
+function drawWatermark(page: any) {
+  page.drawText("SPONEXUS", {
+    x: 120,
+    y: 360,
+    size: 48,
+    rotate: { type: "degrees", angle: -35 },
+    color: rgb(0.93, 0.95, 0.98),
+    opacity: 0.18,
+  });
+}
+
+export async function generateDealAgreementPdf(agreement: AgreementLike) {
+  if (!agreement || agreement.status !== "SIGNED") {
+    throw new Error("PDF can be generated only after agreement is signed");
+  }
+
+  const pdfDoc = await PDFDocument.create();
+
+  const regularFont = await pdfDoc.embedFont(StandardFonts.Helvetica);
+const boldFont = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+const logoImage = await embedSponexusLogo(pdfDoc);
+
+let page = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+drawWatermark(page);
+
+let y = PAGE_HEIGHT - MARGIN;
+
+drawSponexusBrandHeader({
+  page,
+  logoImage,
+  x: MARGIN,
+  y,
+  boldFont,
+  regularFont,
+});
+
+page.drawText("Agreement No.", {
+  x: 390,
+  y,
+  size: 8,
+  font: regularFont,
+  color: MUTED,
+});
+
+page.drawText(safePdfText(agreement.agreementNumber, "Not generated"), {
+  x: 390,
+  y: y - 15,
+  size: 9,
+  font: boldFont,
+  color: DARK,
+});
+
+page.drawText("Generated At", {
+  x: 390,
+  y: y - 33,
+  size: 8,
+  font: regularFont,
+  color: MUTED,
+});
+
+page.drawText(safePdfText(formatGenerationDate()), {
+  x: 390,
+  y: y - 48,
+  size: 8,
+  font: boldFont,
+  color: DARK,
+});
+
+y -= 66;
+
+  page.drawLine({
+    start: { x: MARGIN, y },
+    end: { x: PAGE_WIDTH - MARGIN, y },
+    thickness: 1,
+    color: LIGHT_BORDER,
+  });
+
+  y -= 30;
+
+  y = drawSectionTitle({
+    page,
+    title: "DEAL DETAILS",
+    x: MARGIN,
+    y,
+    font: boldFont,
+  });
+
+ page.drawText(safePdfText(agreement.snapshot?.title, "Untitled deal"), {
+    x: MARGIN,
+    y,
+    size: 16,
+    font: boldFont,
+    color: DARK,
+  });
+
+  y -= 22;
+
+  y = drawTextBlock({
+    page,
+    text: safeText(agreement.snapshot?.description, "No description added."),
+    x: MARGIN,
+    y,
+    size: 9,
+    font: regularFont,
+    color: rgb(0.2, 0.23, 0.28),
+    maxChars: 92,
+  });
+
+  y -= 16;
+
+drawPartyBox({
+  page,
+  label: "Organizer",
+  name: agreement.snapshot?.organizer?.name,
+  companyName: agreement.snapshot?.organizer?.companyName,
+  email: agreement.snapshot?.organizer?.email,
+  phone: agreement.snapshot?.organizer?.phone,
+  x: MARGIN,
+  y,
+  labelFont: regularFont,
+  valueFont: boldFont,
+});
+
+drawPartyBox({
+  page,
+  label: "Sponsor",
+  name: agreement.snapshot?.sponsor?.name,
+  companyName: agreement.snapshot?.sponsor?.companyName,
+  email: agreement.snapshot?.sponsor?.email,
+  phone: agreement.snapshot?.sponsor?.phone,
+  x: 308,
+  y,
+  labelFont: regularFont,
+  valueFont: boldFont,
+});
+
+y -= 100;
+
+  drawKeyValue({
+    page,
+    label: "Event",
+    value: agreement.snapshot?.event?.title || "Event",
+    x: MARGIN,
+    y,
+    labelFont: regularFont,
+    valueFont: boldFont,
+  });
+
+  drawKeyValue({
+    page,
+    label: "Location",
+    value: agreement.snapshot?.event?.location || "No location",
+    x: 308,
+    y,
+    labelFont: regularFont,
+    valueFont: boldFont,
+  });
+
+  y -= 78;
+
+  y = drawSectionTitle({
+    page,
+    title: "COMMERCIAL SUMMARY",
+    x: MARGIN,
+    y,
+    font: boldFont,
+  });
+
+  drawKeyValue({
+    page,
+    label: "Proposed Amount",
+    value: formatCurrency(agreement.snapshot?.proposedAmount),
+    x: MARGIN,
+    y,
+    labelFont: regularFont,
+    valueFont: boldFont,
+    width: 155,
+  });
+
+  drawKeyValue({
+    page,
+    label: "Final Amount",
+    value: formatCurrency(agreement.snapshot?.finalAmount),
+    x: 220,
+    y,
+    labelFont: regularFont,
+    valueFont: boldFont,
+    width: 155,
+  });
+
+  drawKeyValue({
+    page,
+    label: "Payment Status",
+    value: agreement.snapshot?.paymentStatus || "unpaid",
+    x: 390,
+    y,
+    labelFont: regularFont,
+    valueFont: boldFont,
+    width: 155,
+  });
+
+  y -= 78;
+
+  let pageSpace = ensurePageSpace(pdfDoc, page, y);
+  page = pageSpace.page;
+  y = pageSpace.y;
+
+  y = drawSectionTitle({
+    page,
+    title: "FINAL DELIVERABLES",
+    x: MARGIN,
+    y,
+    font: boldFont,
+  });
+
+  const deliverables = Array.isArray(agreement.snapshot?.deliverables)
+    ? agreement.snapshot?.deliverables
+    : [];
+
+  if (deliverables.length === 0) {
+    page.drawText("No deliverables added.", {
+      x: MARGIN,
+      y,
+      size: 9,
+      font: regularFont,
+      color: MUTED,
+    });
+    y -= 18;
+  } else {
+    for (let index = 0; index < deliverables.length; index += 1) {
+      pageSpace = ensurePageSpace(pdfDoc, page, y);
+      page = pageSpace.page;
+      y = pageSpace.y;
+
+      y = drawTextBlock({
+        page,
+        text: `${index + 1}. ${deliverables[index]}`,
+        x: MARGIN,
+        y,
+        size: 9,
+        font: regularFont,
+        color: rgb(0.2, 0.23, 0.28),
+        maxChars: 92,
+      });
+
+      y -= 4;
+    }
+  }
+
+  y -= 18;
+
+  pageSpace = ensurePageSpace(pdfDoc, page, y);
+  page = pageSpace.page;
+  y = pageSpace.y;
+
+  y = drawSectionTitle({
+    page,
+    title: "NOTES / TERMS",
+    x: MARGIN,
+    y,
+    font: boldFont,
+  });
+
+  y = drawTextBlock({
+    page,
+    text:
+      agreement.snapshot?.notes ||
+      agreement.snapshot?.message ||
+      "No additional terms added in deal record.",
+    x: MARGIN,
+    y,
+    size: 9,
+    font: regularFont,
+    color: rgb(0.2, 0.23, 0.28),
+    maxChars: 92,
+  });
+
+  y -= 24;
+
+  pageSpace = ensurePageSpace(pdfDoc, page, y);
+  page = pageSpace.page;
+  y = pageSpace.y;
+
+  y = drawSectionTitle({
+    page,
+    title: "EMAIL OTP VERIFICATION",
+    x: MARGIN,
+    y,
+    font: boldFont,
+  });
+
+  drawKeyValue({
+    page,
+    label: "Organizer Verification",
+    value:
+      agreement.organizerVerification?.otpStatus === "VERIFIED"
+        ? `Verified - ${formatDate(
+            agreement.organizerVerification?.otpVerifiedAt
+          )}`
+        : "Not verified",
+    x: MARGIN,
+    y,
+    labelFont: regularFont,
+    valueFont: boldFont,
+    width: 240,
+  });
+
+  drawKeyValue({
+    page,
+    label: "Sponsor Verification",
+    value:
+      agreement.sponsorVerification?.otpStatus === "VERIFIED"
+        ? `Verified - ${formatDate(agreement.sponsorVerification?.otpVerifiedAt)}`
+        : "Not verified",
+    x: 308,
+    y,
+    labelFont: regularFont,
+    valueFont: boldFont,
+    width: 240,
+  });
+
+   y -= 82;
+
+  pageSpace = ensurePageSpace(pdfDoc, page, y);
+  page = pageSpace.page;
+  y = pageSpace.y;
+
+  y = drawSectionTitle({
+    page,
+    title: "PAYMENT PROOF SUMMARY",
+    x: MARGIN,
+    y,
+    font: boldFont,
+  });
+
+  const proofFiles = Array.isArray(agreement.proofFiles)
+    ? agreement.proofFiles
+    : [];
+
+  if (proofFiles.length === 0) {
+    page.drawText("No payment proof uploaded in this agreement record.", {
+      x: MARGIN,
+      y,
+      size: 9,
+      font: regularFont,
+      color: MUTED,
+    });
+
+    y -= 24;
+  } else {
+    for (let index = 0; index < proofFiles.length; index += 1) {
+      pageSpace = ensurePageSpace(pdfDoc, page, y);
+      page = pageSpace.page;
+      y = pageSpace.y;
+
+      const proof = proofFiles[index];
+
+      y = drawTextBlock({
+        page,
+        text: `${index + 1}. ${safeText(
+          proof.label,
+          "Payment Proof"
+        )} | Transaction ID: ${safeText(
+          proof.transactionId,
+          "—"
+        )} | Amount: ${formatCurrency(proof.paidAmount)} | Mode: ${safeText(
+          proof.paymentMode,
+          "—"
+        )} | Date: ${formatDate(proof.paymentDate)} | Status: ${safeText(
+          proof.status,
+          "SUBMITTED"
+        )}`,
+        x: MARGIN,
+        y,
+        size: 8.5,
+        font: regularFont,
+        color: rgb(0.2, 0.23, 0.28),
+        maxChars: 105,
+        lineHeight: 12,
+      });
+
+      if (proof.fileUrl) {
+        y = drawTextBlock({
+          page,
+          text: `Proof file: ${proof.fileUrl}`,
+          x: MARGIN,
+          y,
+          size: 7.5,
+          font: regularFont,
+          color: MUTED,
+          maxChars: 110,
+          lineHeight: 11,
+        });
+      }
+
+      y -= 6;
+    }
+  }
+
+  // Give clean space after payment proof summary before important note
+  y -= 28;
+
+  pageSpace = ensurePageSpace(pdfDoc, page, y);
+  page = pageSpace.page;
+  y = pageSpace.y;
+
+  // Keep important note safely above footer area
+  if (y < 150) {
+    const newPage = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+    drawWatermark(newPage);
+    page = newPage;
+    y = PAGE_HEIGHT - MARGIN;
+  }
+
+page.drawRectangle({
+  x: MARGIN,
+  y: y - 76,
+  width: PAGE_WIDTH - MARGIN * 2,
+  height: 86,
+  borderColor: LIGHT_BORDER,
+  borderWidth: 1,
+  color: rgb(0.97, 0.98, 0.99),
+});
+
+page.drawText("Important Note", {
+  x: MARGIN + 14,
+  y: y - 12,
+  size: 9,
+  font: boldFont,
+  color: DARK,
+});
+
+page.drawText(
+  "This document is generated from Sponexus records and verified by both parties using email OTP.",
+  {
+    x: MARGIN + 14,
+    y: y - 28,
+    size: 7,
+    font: regularFont,
+    color: rgb(0.25, 0.28, 0.34),
+  }
+);
+
+page.drawText(
+  "Payment proof is not manually verified by admin by default.",
+  {
+    x: MARGIN + 14,
+    y: y - 40,
+    size: 7,
+    font: regularFont,
+    color: rgb(0.25, 0.28, 0.34),
+  }
+);
+
+page.drawText(
+  "Once both parties sign using OTP, uploaded payment proof is treated as mutually acknowledged by both parties.",
+  {
+    x: MARGIN + 14,
+    y: y - 52,
+    size: 7,
+    font: regularFont,
+    color: rgb(0.25, 0.28, 0.34),
+  }
+);
+
+page.drawText(
+  "Sponexus admin may audit records in case of dispute, fraud suspicion, or policy violation.",
+  {
+    x: MARGIN + 14,
+    y: y - 64,
+    size: 7,
+    font: regularFont,
+    color: rgb(0.25, 0.28, 0.34),
+  }
+);
+
+
+  const pdfBytes = await pdfDoc.save();
+
+  return Buffer.from(pdfBytes);
+}
