@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/Button";
 import { EmptyState } from "@/components/EmptyState";
 import { EventCard } from "@/components/EventCard";
-import { SponsorCard } from "@/components/SponsorCard";
+import { SponsorshipCard } from "@/components/SponsorshipCard";
 import { MatchWeights } from "@/types/match";
 import { useMatch } from "@/hooks/useMatch";
 import { useSubscription } from "@/hooks/useSubscription";
@@ -58,10 +58,30 @@ type MatchBreakdown = {
 type MatchItem = {
   score: number;
   event?: any;
-  sponsor?: any;
+  sponsorship?: any;
   breakdown: MatchBreakdown;
   reasons?: string[];
   weakPoints?: string[];
+};
+
+type SelectableEvent = {
+  _id: string;
+  title?: string;
+  status?: string;
+  endDate?: string | Date;
+  isDeleted?: boolean;
+  visibilityStatus?: string;
+  moderationStatus?: string;
+};
+
+type SelectableSponsorship = {
+  _id: string;
+  sponsorshipTitle?: string;
+  status?: string;
+  expiresAt?: string | Date | null;
+  isDeleted?: boolean;
+  visibilityStatus?: string;
+  moderationStatus?: string;
 };
 
 const BALANCED_WEIGHTS: MatchWeights = {
@@ -111,7 +131,12 @@ export default function MatchPage() {
   const [emptyMessage, setEmptyMessage] = useState("");
   const [activeSourceLabel, setActiveSourceLabel] = useState("");
   const [pageError, setPageError] = useState("");
-  const [currentEventId, setCurrentEventId] = useState("");
+  const [selectedEventId, setSelectedEventId] = useState("");
+  const [selectedSponsorshipId, setSelectedSponsorshipId] = useState("");
+  const [organizerEvents, setOrganizerEvents] = useState<SelectableEvent[]>([]);
+  const [sponsorSponsorships, setSponsorSponsorships] = useState<
+    SelectableSponsorship[]
+  >([]);
   const [weights, setWeights] = useState<MatchWeights>(BALANCED_WEIGHTS);
 
   const { matches, loading, error, findMatches, resetMatches } = useMatch();
@@ -136,6 +161,41 @@ const { hasAccess } = useSubscription();
   }, [weights]);
 
   const weightsValid = totalWeight === 100;
+
+    const isActiveEvent = useCallback((event: SelectableEvent) => {
+    const status = String(event?.status || "").toUpperCase();
+    const endDate = event?.endDate ? new Date(event.endDate) : null;
+
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+
+    return (
+      Boolean(event?._id) &&
+      ["PUBLISHED", "ONGOING"].includes(status) &&
+      event?.isDeleted !== true &&
+      event?.visibilityStatus !== "HIDDEN" &&
+      event?.moderationStatus !== "FLAGGED" &&
+      (!endDate || endDate >= todayStart)
+    );
+  }, []);
+
+  const isActiveSponsorship = useCallback((sponsorship: SelectableSponsorship) => {
+    const expiryDate = sponsorship?.expiresAt
+      ? new Date(sponsorship.expiresAt)
+      : null;
+
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+
+    return (
+      Boolean(sponsorship?._id) &&
+      sponsorship?.status === "active" &&
+      sponsorship?.isDeleted !== true &&
+      sponsorship?.visibilityStatus !== "HIDDEN" &&
+      sponsorship?.moderationStatus !== "FLAGGED" &&
+      (!expiryDate || expiryDate >= todayStart)
+    );
+  }, []);
 
   useEffect(() => {
     const bootstrap = async () => {
@@ -171,8 +231,8 @@ const { hasAccess } = useSubscription();
   }, []);
 
   const fetchOrganizerEventAndMatch = useCallback(
-    async (userId: string, nextWeights: MatchWeights) => {
-      const response = await fetch(`/api/events/get?organizer=${userId}&limit=1`, {
+    async (userId: string, nextWeights: MatchWeights, preferredEventId?: string) => {
+      const response = await fetch(`/api/events/get?organizer=${userId}&limit=50`, {
         method: "GET",
         credentials: "include",
         cache: "no-store",
@@ -184,106 +244,190 @@ const { hasAccess } = useSubscription();
         throw new Error(data.message || "Failed to load your event data");
       }
 
-      if (data.events?.length > 0) {
-        const latestEvent = data.events[0];
-        setCurrentEventId(latestEvent._id || "");
-        setActiveSourceLabel(latestEvent.title || "Your latest event");
+      const activeEvents: SelectableEvent[] = Array.isArray(data.events)
+        ? data.events.filter(isActiveEvent)
+        : [];
+
+      setOrganizerEvents(activeEvents);
+
+      const selectedEvent =
+        activeEvents.find((event) => event._id === preferredEventId) ||
+        activeEvents[0];
+
+      if (selectedEvent?._id) {
+        setSelectedEventId(selectedEvent._id);
+        setActiveSourceLabel(
+          `${selectedEvent.title || "Your active event"}${
+            preferredEventId ? " (selected event)" : " (latest active event)"
+          }`
+        );
         setEmptyMessage("");
 
         await findMatches({
-          eventId: latestEvent._id,
-          mode: "event_to_sponsors",
+          eventId: selectedEvent._id,
+          mode: "event_to_sponsorships",
           weights: nextWeights,
         });
+
         return;
       }
 
-      setCurrentEventId("");
+      setSelectedEventId("");
+      setOrganizerEvents([]);
       setActiveSourceLabel("");
-      setEmptyMessage("Create your first event to receive sponsor recommendations.");
+      setEmptyMessage(
+        "Create or publish an active event to receive sponsorship recommendations."
+      );
       resetMatches();
     },
-    [findMatches, resetMatches]
+    [findMatches, isActiveEvent, resetMatches]
   );
 
   const fetchSponsorMatches = useCallback(
-    async (userId: string, nextWeights: MatchWeights) => {
+    async (_userId: string, nextWeights: MatchWeights, preferredSponsorshipId?: string) => {
       if (!sponsorProfileComplete) {
+        setSelectedSponsorshipId("");
+        setSponsorSponsorships([]);
         setActiveSourceLabel("");
         setEmptyMessage(
-          "Complete your sponsor profile in Settings to receive event recommendations."
+          "Complete your sponsor profile in Settings before matching events."
         );
         resetMatches();
         return;
       }
 
-      setActiveSourceLabel(
-        sponsorProfile?.brandName || sponsorProfile?.companyName || "Your sponsor profile"
-      );
-      setEmptyMessage("");
-
-      await findMatches({
-        sponsorOwnerId: userId,
-        mode: "sponsor_to_events",
-        weights: nextWeights,
+      const response = await fetch("/api/sponsorships/get?status=active&limit=50", {
+        method: "GET",
+        credentials: "include",
+        cache: "no-store",
       });
+
+      const contentType = response.headers.get("content-type") || "";
+
+      if (!contentType.includes("application/json")) {
+        throw new Error("Sponsorship API route returned HTML instead of JSON. Check API path.");
+      }
+
+      const data = await response.json();
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || "Failed to load your sponsorship posts");
+      }
+
+      const activeSponsorships: SelectableSponsorship[] = Array.isArray(data.data)
+        ? data.data.filter(isActiveSponsorship)
+        : [];
+
+      setSponsorSponsorships(activeSponsorships);
+
+      const selectedSponsorship =
+        activeSponsorships.find(
+          (sponsorship) => sponsorship._id === preferredSponsorshipId
+        ) || activeSponsorships[0];
+
+      if (selectedSponsorship?._id) {
+        setSelectedSponsorshipId(selectedSponsorship._id);
+        setActiveSourceLabel(
+          `${selectedSponsorship.sponsorshipTitle || "Your sponsorship post"}${
+            preferredSponsorshipId
+              ? " (selected sponsorship)"
+              : " (latest active sponsorship)"
+          }`
+        );
+        setEmptyMessage("");
+
+        await findMatches({
+          sponsorshipId: selectedSponsorship._id,
+          mode: "sponsorship_to_events",
+          weights: nextWeights,
+        });
+
+        return;
+      }
+
+      setSelectedSponsorshipId("");
+      setSponsorSponsorships([]);
+      setActiveSourceLabel("");
+      setEmptyMessage(
+        "Create your first active sponsorship post to receive event recommendations."
+      );
+      resetMatches();
     },
-    [findMatches, resetMatches, sponsorProfile, sponsorProfileComplete]
+    [findMatches, isActiveSponsorship, resetMatches, sponsorProfileComplete]
   );
 
   const loadMatches = useCallback(
-  async (nextWeights: MatchWeights): Promise<void> => {
-    if (!user) return;
+    async (
+      nextWeights: MatchWeights,
+      options?: {
+        eventId?: string;
+        sponsorshipId?: string;
+      }
+    ): Promise<void> => {
+      if (!user) return;
 
-    const userId = getUserId();
+      const userId = getUserId();
 
-    if (!userId) {
-      setPageError("User session is missing a valid ID.");
-      return;
-    }
-
-    setPageError("");
-    setEmptyMessage("");
-
-    try {
-      if (isSponsor) {
-        await fetchSponsorMatches(userId, nextWeights);
+      if (!userId) {
+        setPageError("User session is missing a valid ID.");
         return;
       }
 
-      if (isOrganizer) {
-        await fetchOrganizerEventAndMatch(userId, nextWeights);
-        return;
+      setPageError("");
+      setEmptyMessage("");
+
+      try {
+        if (isSponsor) {
+          await fetchSponsorMatches(userId, nextWeights, options?.sponsorshipId);
+          return;
+        }
+
+        if (isOrganizer) {
+          await fetchOrganizerEventAndMatch(userId, nextWeights, options?.eventId);
+          return;
+        }
+
+        setPageError("Unsupported account role.");
+      } catch (err: any) {
+        setPageError(err?.message || "Failed to load matches.");
       }
+    },
+    [
+      user,
+      getUserId,
+      isSponsor,
+      isOrganizer,
+      fetchOrganizerEventAndMatch,
+      fetchSponsorMatches,
+    ]
+  );
 
-      setPageError("Unsupported account role.");
-      return;
-    } catch (err: any) {
-      setPageError(err?.message || "Failed to load matches.");
-      return;
-    }
-  },
-  [
-    user,
-    getUserId,
-    isSponsor,
-    isOrganizer,
-    fetchOrganizerEventAndMatch,
-    fetchSponsorMatches,
-  ]
-);
+   useEffect(() => {
+    if (!user || !hasAccess) return;
 
-  useEffect(() => {
-    loadMatches(weights);
-  }, [loadMatches]);
+    loadMatches(BALANCED_WEIGHTS);
+  }, [user, hasAccess, loadMatches]);
 
-  const handleRefresh = async () => {
+    const handleRefresh = async () => {
     if (!weightsValid) {
       setPageError("Your weight total must equal 100 before matching.");
       return;
     }
 
-    await loadMatches(weights);
+    if (isOrganizer && !selectedEventId) {
+      setPageError("Select an active event before applying match settings.");
+      return;
+    }
+
+    if (isSponsor && !selectedSponsorshipId) {
+      setPageError("Select an active sponsorship post before applying match settings.");
+      return;
+    }
+
+    await loadMatches(weights, {
+      eventId: isOrganizer ? selectedEventId : undefined,
+      sponsorshipId: isSponsor ? selectedSponsorshipId : undefined,
+    });
   };
 
   const updateWeight = (key: keyof MatchWeights, value: number) => {
@@ -297,36 +441,6 @@ const { hasAccess } = useSubscription();
     setWeights(preset);
     setPageError("");
   };
-
-  const stepOneTitle = useMemo(() => {
-    if (isOrganizer) return "Step 1: Create an Event";
-    if (isSponsor) return "Step 1: Complete Sponsor Profile";
-    return "Step 1";
-  }, [isOrganizer, isSponsor]);
-
-  const stepOneDescription = useMemo(() => {
-    if (isOrganizer) {
-      return "Add clear category, audience, location, and event details so we can recommend the right sponsors.";
-    }
-
-    if (isSponsor) {
-      return "Complete your sponsor profile in Settings so Sponexus can recommend the best-fit events for your brand.";
-    }
-
-    return "Set up your profile and marketplace data to unlock smart matching.";
-  }, [isOrganizer, isSponsor]);
-
-  const stepOneHref = useMemo(() => {
-    if (isOrganizer) return "/events/create";
-    if (isSponsor) return "/settings";
-    return "/login";
-  }, [isOrganizer, isSponsor]);
-
-  const stepOneButton = useMemo(() => {
-    if (isOrganizer) return "Create Event";
-    if (isSponsor) return sponsorProfileComplete ? "Manage Profile" : "Complete Profile";
-    return "Log In";
-  }, [isOrganizer, isSponsor, sponsorProfileComplete]);
 
   if (bootLoading) {
     return (
@@ -386,76 +500,88 @@ if (user && !hasAccess) {
           </p>
         </div>
 
-        <div className="mb-12 grid grid-cols-1 gap-8 md:grid-cols-2">
-          <div className="rounded-2xl border border-white/10 bg-white/[0.05] p-6 backdrop-blur-xl">
-            <div className="mb-4 text-4xl">{isOrganizer ? "📅" : "🏢"}</div>
-            <h3 className="mb-3 text-xl font-semibold text-text-light">{stepOneTitle}</h3>
-            <p className="mb-6 text-text-muted">{stepOneDescription}</p>
-            <Link href={stepOneHref}>
-              <Button variant="primary" className="w-full">
-                {stepOneButton}
+        <div className="mb-8 rounded-2xl border border-white/10 bg-white/[0.05] p-6 backdrop-blur-xl">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-accent-orange">
+                Smart Matching Setup
+              </p>
+              <h2 className="mt-2 text-2xl font-bold text-text-light">
+                {isOrganizer
+                  ? "Match your active event with sponsorship opportunities"
+                  : "Match your active sponsorship with relevant events"}
+              </h2>
+              <p className="mt-2 max-w-3xl text-sm text-text-muted">
+                Balanced matching runs automatically for your latest active item.
+                Change weights or choose another item, then press Apply to refresh results.
+              </p>
+            </div>
+
+            <Link href={isOrganizer ? "/events/create" : "/sponsorships/create"}>
+              <Button variant="primary" className="w-full lg:w-auto">
+                {isOrganizer ? "Create Event" : "Create Sponsorship"}
               </Button>
             </Link>
-          </div>
-
-          <div className="rounded-2xl border border-white/10 bg-white/[0.05] p-6 backdrop-blur-xl">
-            <div className="mb-4 text-4xl">🎯</div>
-            <h3 className="mb-3 text-xl font-semibold text-text-light">
-              Step 2: Run Weighted Matching
-            </h3>
-            <p className="mb-6 text-text-muted">
-              Adjust your weight mix, keep the total at 100, and refresh recommendations
-              anytime to see what matters most to you.
-            </p>
-            <Button
-              variant="secondary"
-              className="w-full"
-              onClick={handleRefresh}
-              disabled={!weightsValid || loading}
-            >
-              {loading
-                ? "Refreshing Matches..."
-                : isOrganizer
-                ? "Find Sponsors"
-                : "Find Events"}
-            </Button>
           </div>
         </div>
 
         <div className="mb-12 rounded-2xl border border-white/10 bg-white/[0.05] p-8 backdrop-blur-xl">
-          <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+          <div className="mb-6 flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
             <div>
               <h2 className="text-2xl font-bold text-white">Live Match Weights</h2>
               <p className="mt-2 text-sm text-text-muted">
-                Control how much each factor influences your results.
+                Change weights or select another item, then press Apply to refresh matches.
               </p>
             </div>
 
-            <div className="flex flex-wrap gap-3">
-              <Button size="sm" variant="secondary" onClick={() => applyPreset(PRESETS.balanced)}>
-                Balanced
-              </Button>
+            <div className="flex flex-col gap-3 lg:items-end">
+              <div className="flex flex-wrap gap-3">
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => applyPreset(PRESETS.balanced)}
+                >
+                  Balanced
+                </Button>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => applyPreset(PRESETS.audience_first)}
+                >
+                  Audience First
+                </Button>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => applyPreset(PRESETS.budget_first)}
+                >
+                  Budget First
+                </Button>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => applyPreset(PRESETS.deliverables_first)}
+                >
+                  Deliverables First
+                </Button>
+              </div>
+
               <Button
-                size="sm"
-                variant="secondary"
-                onClick={() => applyPreset(PRESETS.audience_first)}
+                variant="primary"
+                className="w-full lg:w-auto"
+                onClick={handleRefresh}
+                disabled={!weightsValid || loading}
               >
-                Audience First
+                {loading
+                  ? "Applying Changes..."
+                  : isOrganizer
+                  ? "Apply Changes & Find Sponsorships"
+                  : "Apply Changes & Find Events"}
               </Button>
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={() => applyPreset(PRESETS.budget_first)}
-              >
-                Budget First
-              </Button>
-              <Button
-                size="sm"
-                variant="secondary"
-                onClick={() => applyPreset(PRESETS.deliverables_first)}
-              >
-                Deliverables First
-              </Button>
+
+              <p className="text-xs text-text-muted">
+                Default results use Balanced weights and your latest active item.
+              </p>
             </div>
           </div>
 
@@ -513,11 +639,49 @@ if (user && !hasAccess) {
           </div>
         </div>
 
+        {(isOrganizer && organizerEvents.length > 1) ||
+        (isSponsor && sponsorSponsorships.length > 1) ? (
+          <div className="mb-6 rounded-2xl border border-white/10 bg-white/[0.04] p-5">
+            <label className="mb-2 block text-sm font-medium text-text-light">
+              {isOrganizer ? "Choose Event for Matching" : "Choose Sponsorship for Matching"}
+            </label>
+
+            {isOrganizer ? (
+              <select
+                value={selectedEventId}
+                onChange={(event) => setSelectedEventId(event.target.value)}
+                className="w-full rounded-xl border border-white/10 bg-dark-base px-4 py-3 text-text-light outline-none focus:border-accent-orange"
+              >
+                {organizerEvents.map((event) => (
+                  <option key={event._id} value={event._id}>
+                    {event.title || "Untitled Event"}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <select
+                value={selectedSponsorshipId}
+                onChange={(event) => setSelectedSponsorshipId(event.target.value)}
+                className="w-full rounded-xl border border-white/10 bg-dark-base px-4 py-3 text-text-light outline-none focus:border-accent-orange"
+              >
+                {sponsorSponsorships.map((sponsorship) => (
+                  <option key={sponsorship._id} value={sponsorship._id}>
+                    {sponsorship.sponsorshipTitle || "Untitled Sponsorship"}
+                  </option>
+                ))}
+              </select>
+            )}
+
+            <p className="mt-2 text-xs text-text-muted">
+              Latest active item is selected by default. Choose another item, then press Apply Changes above to refresh matches.
+            </p>
+          </div>
+        ) : null}
+
         {activeSourceLabel && !loading && (
           <div className="mb-6 rounded-2xl border border-white/10 bg-white/[0.04] px-5 py-4 text-sm text-text-muted">
             Matching based on:{" "}
             <span className="font-semibold text-text-light">{activeSourceLabel}</span>
-            {isOrganizer && currentEventId ? " (latest event)" : ""}
           </div>
         )}
 
@@ -568,11 +732,30 @@ if (user && !hasAccess) {
                 </div>
 
                 <div className="space-y-4 p-6">
-                  {isOrganizer ? (
-                    <SponsorCard sponsor={match.sponsor} matchScore={match.score} />
-                  ) : (
-                    <EventCard event={match.event} matchScore={match.score} />
-                  )}
+{isOrganizer && match.sponsorship ? (
+  <SponsorshipCard
+    sponsorship={{
+      ...match.sponsorship,
+      _id: String(match.sponsorship._id || ""),
+      brandName:
+        match.sponsorship.brandName ||
+        match.sponsorship.sponsorProfile?.brandName ||
+        "",
+      companyName:
+        match.sponsorship.companyName ||
+        match.sponsorship.sponsorProfile?.companyName ||
+        "",
+      logoUrl:
+        match.sponsorship.logoUrl ||
+        match.sponsorship.sponsorProfile?.logoUrl ||
+        "",
+    }}
+    matchScore={match.score}
+    showActions={false}
+  />
+) : !isOrganizer && match.event ? (
+  <EventCard event={match.event} matchScore={match.score} />
+) : null}
 
                   <div className="rounded-2xl bg-white/5 p-4">
                     <p className="mb-2 text-sm font-semibold text-text-light">
@@ -648,11 +831,13 @@ if (user && !hasAccess) {
         )}
 
         {!loading && matches.length === 0 && emptyMessage && (
-          <EmptyState
+            <EmptyState
             title="No matches available yet"
             description={emptyMessage}
-            actionLabel={isOrganizer ? "Create Event" : "Complete Profile"}
-            onAction={() => router.push(isOrganizer ? "/events/create" : "/settings")}
+            actionLabel={isOrganizer ? "Create Event" : "Create Sponsorship"}
+            onAction={() =>
+              router.push(isOrganizer ? "/events/create" : "/sponsorships/create")
+            }
           />
         )}
 
@@ -661,11 +846,13 @@ if (user && !hasAccess) {
             title="No matches found"
             description={
               isOrganizer
-                ? "Try improving your event details or adjusting your weight mix to discover more relevant sponsors."
-                : "Try adjusting your weight mix or improving your sponsor profile to discover stronger event matches."
+                ?"Try improving your event details or adjusting your weight mix to discover more relevant sponsorship opportunities."
+                : "Create or select an active sponsorship post to discover stronger event matches."
             }
-            actionLabel={isOrganizer ? "Create Event" : "Complete Profile"}
-            onAction={() => router.push(isOrganizer ? "/events/create" : "/settings")}
+           actionLabel={isOrganizer ? "Create Event" : "Create Sponsorship"}
+onAction={() =>
+  router.push(isOrganizer ? "/events/create" : "/sponsorships/create")
+}
           />
         )}
       </div>

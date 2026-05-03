@@ -1,5 +1,4 @@
 import { Event } from "@/types/event";
-import { Sponsor } from "@/types/sponsor";
 
 export type MatchFactor =
   | "category"
@@ -7,6 +6,14 @@ export type MatchFactor =
   | "location"
   | "budget"
   | "deliverables";
+
+export type MatchMode =
+  | "sponsorship_to_events"
+  | "event_to_sponsorships";
+
+export type MatchType =
+  | "sponsorship-to-events"
+  | "event-to-sponsorships";
 
 export interface MatchWeights {
   category: number;
@@ -36,16 +43,58 @@ export interface EventMatchResult extends BaseMatchResult {
   event: Event;
 }
 
-export interface SponsorMatchResult extends BaseMatchResult {
-  sponsor: Sponsor;
+export type MatchedSponsorship = {
+  _id?: string;
+  sponsorOwnerId?: string;
+  sponsorProfileId?: string;
+
+  sponsorshipTitle?: string;
+  sponsorshipType?: string;
+  budget?: number;
+  category?: string;
+  targetAudience?: string;
+  city?: string;
+  locationPreference?: string;
+  campaignGoal?: string;
+  coverImage?: string;
+  deliverablesExpected?: string[];
+
+  status?: string;
+  visibilityStatus?: string;
+  moderationStatus?: string;
+  expiresAt?: string | Date | null;
+
+  sponsorProfile?: {
+    _id?: string;
+    brandName?: string;
+    companyName?: string;
+    logoUrl?: string;
+    website?: string;
+    industry?: string;
+    about?: string;
+    isPublic?: boolean;
+    isProfileComplete?: boolean;
+    [key: string]: any;
+  } | null;
+
+  createdAt?: string | Date;
+  updatedAt?: string | Date;
+
+  [key: string]: any;
+};
+
+export interface SponsorshipMatchResult extends BaseMatchResult {
+  sponsorship: MatchedSponsorship;
 }
 
-export interface MatchResponse<T = EventMatchResult | SponsorMatchResult> {
+export interface MatchResponse<
+  T = EventMatchResult | SponsorshipMatchResult
+> {
   success: boolean;
   matches: T[];
   message?: string;
-  matchType?: "sponsor-to-events" | "event-to-sponsors";
-  mode?: "sponsor_to_events" | "event_to_sponsors";
+  matchType?: MatchType;
+  mode?: MatchMode;
   count?: number;
   weights?: MatchWeights;
 }

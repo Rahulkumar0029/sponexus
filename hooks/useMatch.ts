@@ -3,25 +3,25 @@
 import { useCallback, useState } from "react";
 import {
   EventMatchResult,
-  SponsorMatchResult,
+  SponsorshipMatchResult,
   MatchWeights,
+  MatchMode,
 } from "@/types/match";
 
 interface FindMatchesParams {
-  sponsorId?: string;
-  sponsorOwnerId?: string;
+  sponsorshipId?: string;
   eventId?: string;
-  mode?: "sponsor_to_events" | "event_to_sponsors";
+  mode?: MatchMode;
   weights?: MatchWeights;
 }
 
-type MatchResult = EventMatchResult | SponsorMatchResult;
+type MatchResult = EventMatchResult | SponsorshipMatchResult;
 
 interface FindMatchesResponse {
   success: boolean;
   message?: string;
   matches: MatchResult[];
-  mode?: string;
+  mode?: MatchMode;
 }
 
 const DEFAULT_WEIGHTS: MatchWeights = {
@@ -48,8 +48,7 @@ export function useMatch() {
 
     try {
       const payload = {
-        sponsorId: params.sponsorId,
-        sponsorOwnerId: params.sponsorOwnerId,
+        sponsorshipId: params.sponsorshipId,
         eventId: params.eventId,
         mode: params.mode,
         weights: params.weights || DEFAULT_WEIGHTS,

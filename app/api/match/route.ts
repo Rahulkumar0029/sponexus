@@ -5,11 +5,14 @@ import { connectDB } from "@/lib/db";
 import { verifyAccessToken } from "@/lib/auth";
 import User from "@/lib/models/User";
 import { EventModel } from "@/lib/models/Event";
+import Sponsorship from "@/lib/models/Sponsorship";
 import Sponsor from "@/lib/models/Sponsor";
-import { matchSponsorToEvents, matchEventToSponsors } from "@/lib/matcher";
+import {
+  matchSponsorshipToEvents,
+  matchEventToSponsorships,
+} from "@/lib/matcher";
 import { Event } from "@/types/event";
-import { MatchWeights } from "@/types/match";
-import { Sponsor as SponsorType } from "@/types/sponsor";
+import { MatchWeights, MatchedSponsorship } from "@/types/match";
 import { checkUsageLimit } from "@/lib/subscription/checkUsageLimit";
 import { incrementUsage } from "@/lib/subscription/enforceLimits";
 import { ACTIONS } from "@/lib/subscription/constants";
@@ -23,6 +26,26 @@ const DEFAULT_WEIGHTS: MatchWeights = {
 };
 
 const MAX_MATCH_RESULTS = 50;
+
+const MATCHABLE_EVENT_STATUSES = ["PUBLISHED", "ONGOING"];
+
+function getTodayStartDate() {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  return today;
+}
+
+function isEventExpired(endDate: unknown) {
+  if (!endDate) return false;
+
+  const parsedEndDate = new Date(endDate as any);
+
+  if (Number.isNaN(parsedEndDate.getTime())) {
+    return false;
+  }
+
+  return parsedEndDate < getTodayStartDate();
+}
 
 function normalizeString(value: unknown): string {
   return typeof value === "string" ? value.trim() : "";
@@ -61,46 +84,6 @@ function normalizeWeights(input?: Partial<MatchWeights>): MatchWeights {
   return weights;
 }
 
-function buildSponsorData(sponsorDoc: any): SponsorType {
-  const plain =
-    typeof sponsorDoc?.toObject === "function" ? sponsorDoc.toObject() : sponsorDoc;
-
-  return {
-    ...plain,
-    _id: String(plain._id),
-    userId: plain.userId ? String(plain.userId) : "",
-    brandName: plain.brandName || "",
-    companyName: plain.companyName || "",
-    website: plain.website || "",
-    officialEmail: "",
-    phone: "",
-    industry: plain.industry || "",
-    companySize: plain.companySize || "",
-    about: plain.about || "",
-    logoUrl: plain.logoUrl || "",
-    targetAudience: plain.targetAudience || "",
-    preferredCategories: Array.isArray(plain.preferredCategories)
-      ? plain.preferredCategories
-      : [],
-    preferredLocations: Array.isArray(plain.preferredLocations)
-      ? plain.preferredLocations
-      : [],
-    sponsorshipInterests: Array.isArray(plain.sponsorshipInterests)
-      ? plain.sponsorshipInterests
-      : [],
-    instagramUrl: plain.instagramUrl || "",
-    linkedinUrl: plain.linkedinUrl || "",
-    isProfileComplete: Boolean(plain.isProfileComplete),
-    isPublic: Boolean(plain.isPublic),
-    createdAt: plain.createdAt
-      ? new Date(plain.createdAt).toISOString()
-      : new Date().toISOString(),
-    updatedAt: plain.updatedAt
-      ? new Date(plain.updatedAt).toISOString()
-      : new Date().toISOString(),
-  };
-}
-
 function buildEventData(eventDoc: any): Event {
   const plain =
     typeof eventDoc?.toObject === "function" ? eventDoc.toObject() : eventDoc;
@@ -122,8 +105,9 @@ function buildEventData(eventDoc: any): Event {
     attendeeCount:
       typeof plain.attendeeCount === "number" ? plain.attendeeCount : 0,
     eventType: plain.eventType || "OTHER",
-    image: plain.coverImage || plain.image || "",
-    status: plain.status || "DRAFT",
+    coverImage: plain.coverImage || plain.image || "",
+image: plain.coverImage || plain.image || "",
+status: plain.status || "DRAFT",
     providedDeliverables: Array.isArray(plain.providedDeliverables)
       ? plain.providedDeliverables
       : [],
@@ -132,27 +116,67 @@ function buildEventData(eventDoc: any): Event {
   };
 }
 
+function buildSponsorshipData(sponsorshipDoc: any): MatchedSponsorship {
+  const plain =
+    typeof sponsorshipDoc?.toObject === "function"
+      ? sponsorshipDoc.toObject()
+      : sponsorshipDoc;
+
+  const sponsorProfile = plain.sponsorProfile || {};
+
+  return {
+    ...plain,
+    _id: plain._id ? String(plain._id) : "",
+    sponsorOwnerId: plain.sponsorOwnerId ? String(plain.sponsorOwnerId) : "",
+    sponsorProfileId: plain.sponsorProfileId ? String(plain.sponsorProfileId) : "",
+    sponsorshipTitle: plain.sponsorshipTitle || "",
+    sponsorshipType: plain.sponsorshipType || "",
+    budget: typeof plain.budget === "number" ? plain.budget : 0,
+    category: plain.category || "",
+    targetAudience: plain.targetAudience || "",
+    city: plain.city || "",
+    locationPreference: plain.locationPreference || "",
+    campaignGoal: plain.campaignGoal || "",
+    coverImage: plain.coverImage || "",
+    deliverablesExpected: Array.isArray(plain.deliverablesExpected)
+      ? plain.deliverablesExpected
+      : [],
+    status: plain.status || "active",
+    expiresAt: plain.expiresAt || null,
+    createdAt: plain.createdAt || "",
+   updatedAt: plain.updatedAt || "",
+brandName: sponsorProfile.brandName || plain.brandName || "",
+companyName: sponsorProfile.companyName || plain.companyName || "",
+logoUrl: sponsorProfile.logoUrl || plain.logoUrl || "",
+sponsorProfile: {
+  _id: sponsorProfile._id ? String(sponsorProfile._id) : "",
+  brandName: sponsorProfile.brandName || "",
+  companyName: sponsorProfile.companyName || "",
+  logoUrl: sponsorProfile.logoUrl || "",
+},
+  };
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
 
-    const sponsorId = normalizeString(body?.sponsorId);
-    const sponsorOwnerId = normalizeString(body?.sponsorOwnerId);
+    const sponsorshipId = normalizeString(body?.sponsorshipId);
     const eventId = normalizeString(body?.eventId);
     const weights = normalizeWeights(body?.weights);
 
-    if ((sponsorId || sponsorOwnerId) && eventId) {
+    if (sponsorshipId && eventId) {
       return NextResponse.json(
         {
           success: false,
-          message: "Provide only sponsorId or eventId, not both",
+          message: "Provide only sponsorshipId or eventId, not both",
           matches: [],
         },
         { status: 400 }
       );
     }
 
-    if (!sponsorId && !sponsorOwnerId && !eventId) {
+    if (!sponsorshipId && !eventId) {
       return NextResponse.json(
         {
           success: false,
@@ -217,105 +241,88 @@ export async function POST(request: NextRequest) {
       );
     }
 
-   const usage = await checkUsageLimit({
-  userId: String(user._id),
-  role: user.role,
-  action: ACTIONS.USE_MATCH,
-});
+    const usage = await checkUsageLimit({
+      userId: String(user._id),
+      role: user.role,
+      action: ACTIONS.USE_MATCH,
+    });
 
-if (!usage.allowed) {
-  return NextResponse.json(
-    {
-      success: false,
-      message: usage.message || "Upgrade required to use matching.",
-      code: "SUBSCRIPTION_REQUIRED",
-      requiresUpgrade: true,
-      matches: [],
-    },
-    { status: 403 }
-  );
-}
+    if (!usage.allowed) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: usage.message || "Upgrade required to use matching.",
+          code: "SUBSCRIPTION_REQUIRED",
+          requiresUpgrade: true,
+          matches: [],
+        },
+        { status: 403 }
+      );
+    }
 
-    if (sponsorId || sponsorOwnerId) {
+    if (sponsorshipId) {
       if (user.role !== "SPONSOR") {
         return NextResponse.json(
           {
             success: false,
-            message: "Only sponsors can request sponsor-to-events matches",
+            message: "Only sponsorship owners can request sponsorship-to-events matches",
             matches: [],
           },
           { status: 403 }
         );
       }
 
-      if (sponsorId && !isValidObjectId(sponsorId)) {
+      if (!isValidObjectId(sponsorshipId)) {
         return NextResponse.json(
           {
             success: false,
-            message: "Invalid sponsor ID",
+            message: "Invalid sponsorship ID",
             matches: [],
           },
           { status: 400 }
         );
       }
 
-      if (sponsorOwnerId && !isValidObjectId(sponsorOwnerId)) {
+      const sponsorshipDoc = await Sponsorship.findById(sponsorshipId)
+        .select(
+          "_id sponsorOwnerId sponsorProfileId sponsorshipTitle sponsorshipType budget category targetAudience city locationPreference campaignGoal coverImage deliverablesExpected status visibilityStatus moderationStatus isDeleted expiresAt createdAt updatedAt"
+        )
+        .lean();
+
+      if (!sponsorshipDoc) {
         return NextResponse.json(
           {
             success: false,
-            message: "Invalid sponsor owner ID",
-            matches: [],
-          },
-          { status: 400 }
-        );
-      }
-
-      if (sponsorOwnerId && sponsorOwnerId !== String(user._id)) {
-        return NextResponse.json(
-          {
-            success: false,
-            message: "You can only request matches for your own sponsor profile",
-            matches: [],
-          },
-          { status: 403 }
-        );
-      }
-
-      const sponsorDoc = sponsorId
-        ? await Sponsor.findById(sponsorId).select(
-            "_id userId brandName companyName website officialEmail phone industry companySize about logoUrl targetAudience preferredCategories preferredLocations sponsorshipInterests instagramUrl linkedinUrl isProfileComplete isPublic createdAt updatedAt"
-          )
-        : await Sponsor.findOne({ userId: sponsorOwnerId || String(user._id) }).select(
-            "_id userId brandName companyName website officialEmail phone industry companySize about logoUrl targetAudience preferredCategories preferredLocations sponsorshipInterests instagramUrl linkedinUrl isProfileComplete isPublic createdAt updatedAt"
-          );
-
-      if (!sponsorDoc) {
-        return NextResponse.json(
-          {
-            success: false,
-            message: "Sponsor profile not found",
+            message: "Sponsorship not found",
             matches: [],
           },
           { status: 404 }
         );
       }
 
-      if (String(sponsorDoc.userId) !== String(user._id)) {
+      if (String((sponsorshipDoc as any).sponsorOwnerId) !== String(user._id)) {
         return NextResponse.json(
           {
             success: false,
-            message: "You can only request matches for your own sponsor profile",
+            message: "You can only request matches for your own sponsorship post",
             matches: [],
           },
           { status: 403 }
         );
       }
 
-      if (!sponsorDoc.isProfileComplete) {
+      if (
+        (sponsorshipDoc as any).isDeleted === true ||
+        (sponsorshipDoc as any).status !== "active" ||
+        (sponsorshipDoc as any).visibilityStatus === "HIDDEN" ||
+        (sponsorshipDoc as any).moderationStatus === "FLAGGED" ||
+        isEventExpired((sponsorshipDoc as any).expiresAt)
+      ) {
         return NextResponse.json(
           {
             success: false,
-            message: "Sponsor profile is incomplete",
+            message:
+              "Only active non-expired sponsorship posts are eligible for matching.",
             matches: [],
           },
           { status: 400 }
@@ -323,7 +330,8 @@ if (!usage.allowed) {
       }
 
       const eventDocs = await EventModel.find({
-        status: { $in: ["PUBLISHED", "ONGOING"] },
+        status: { $in: MATCHABLE_EVENT_STATUSES },
+        endDate: { $gte: getTodayStartDate() },
         isDeleted: { $ne: true },
         visibilityStatus: { $ne: "HIDDEN" },
         moderationStatus: { $ne: "FLAGGED" },
@@ -333,27 +341,28 @@ if (!usage.allowed) {
         )
         .lean();
 
-      const sponsorData = buildSponsorData(sponsorDoc);
+      const sponsorship = buildSponsorshipData(sponsorshipDoc);
       const events = (eventDocs || []).map(buildEventData);
 
-      const matches = matchSponsorToEvents(sponsorData, events, weights).slice(
-        0,
-        MAX_MATCH_RESULTS
-      );
+      const matches = matchSponsorshipToEvents(
+        sponsorship,
+        events,
+        weights
+      ).slice(0, MAX_MATCH_RESULTS);
 
       await incrementUsage({
-  userId: String(user._id),
-  role: user.role,
-  action: ACTIONS.USE_MATCH,
-  subscriptionId: usage.subscriptionId || null,
-  planId: usage.planId || null,
-});
+        userId: String(user._id),
+        role: user.role,
+        action: ACTIONS.USE_MATCH,
+        subscriptionId: usage.subscriptionId || null,
+        planId: usage.planId || null,
+      });
 
       return NextResponse.json(
         {
           success: true,
-          matchType: "sponsor-to-events",
-          mode: "sponsor_to_events",
+          matchType: "sponsorship-to-events",
+          mode: "sponsorship_to_events",
           count: matches.length,
           weights,
           matches,
@@ -361,14 +370,13 @@ if (!usage.allowed) {
         { status: 200 }
       );
     }
-
     
     if (eventId) {
       if (user.role !== "ORGANIZER") {
         return NextResponse.json(
           {
             success: false,
-            message: "Only organizers can request event-to-sponsors matches",
+            message: "Only organizers can request event-to-sponsorships matches",
             matches: [],
           },
           { status: 403 }
@@ -417,34 +425,63 @@ if (!usage.allowed) {
       if (
         (eventDoc as any).isDeleted === true ||
         (eventDoc as any).visibilityStatus === "HIDDEN" ||
-        (eventDoc as any).moderationStatus === "FLAGGED"
+        (eventDoc as any).moderationStatus === "FLAGGED" ||
+        !MATCHABLE_EVENT_STATUSES.includes(String((eventDoc as any).status || "").toUpperCase()) ||
+        isEventExpired((eventDoc as any).endDate)
       ) {
         return NextResponse.json(
           {
             success: false,
-            message: "This event is not eligible for matching right now",
+            message:
+              "Only published or ongoing non-expired events are eligible for matching.",
             matches: [],
           },
           { status: 400 }
         );
       }
 
-      const sponsorDocs = await Sponsor.find({
-        isPublic: true,
-        isProfileComplete: true,
+         const sponsorshipDocs = await Sponsorship.find({
+        status: "active",
+        expiresAt: { $gte: getTodayStartDate() },
+        isDeleted: { $ne: true },
+        visibilityStatus: { $ne: "HIDDEN" },
+        moderationStatus: { $ne: "FLAGGED" },
       })
         .select(
-          "_id userId brandName companyName website officialEmail phone industry companySize about logoUrl targetAudience preferredCategories preferredLocations sponsorshipInterests instagramUrl linkedinUrl isProfileComplete isPublic createdAt updatedAt"
+          "_id sponsorOwnerId sponsorProfileId sponsorshipTitle sponsorshipType budget category targetAudience city locationPreference campaignGoal coverImage deliverablesExpected status expiresAt createdAt updatedAt"
         )
         .lean();
 
-      const event = buildEventData(eventDoc);
-      const sponsors = sponsorDocs.map(buildSponsorData);
+      const sponsorProfileIds = sponsorshipDocs
+  .map((doc: any) => doc.sponsorProfileId)
+  .filter(Boolean)
+  .map(String);
 
-      const matches = matchEventToSponsors(event, sponsors, weights).slice(
-        0,
-        MAX_MATCH_RESULTS
-      );
+const sponsorProfiles = sponsorProfileIds.length
+  ? await Sponsor.find({ _id: { $in: sponsorProfileIds } })
+      .select("_id brandName companyName logoUrl")
+      .lean()
+  : [];
+
+const sponsorProfileMap = new Map(
+  sponsorProfiles.map((profile: any) => [String(profile._id), profile])
+);
+
+const event = buildEventData(eventDoc);
+
+const sponsorships = sponsorshipDocs.map((doc: any) =>
+  buildSponsorshipData({
+    ...doc,
+    sponsorProfile:
+      sponsorProfileMap.get(String(doc.sponsorProfileId)) || null,
+  })
+);
+
+const matches = matchEventToSponsorships(
+  event,
+  sponsorships,
+  weights
+).slice(0, MAX_MATCH_RESULTS);
 
       await incrementUsage({
   userId: String(user._id),
@@ -454,11 +491,11 @@ if (!usage.allowed) {
   planId: usage.planId || null,
 });
 
-      return NextResponse.json(
+           return NextResponse.json(
         {
           success: true,
-          matchType: "event-to-sponsors",
-          mode: "event_to_sponsors",
+          matchType: "event-to-sponsorships",
+          mode: "event_to_sponsorships",
           count: matches.length,
           weights,
           matches,

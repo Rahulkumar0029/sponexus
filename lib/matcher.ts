@@ -1,11 +1,28 @@
 import { Event } from "@/types/event";
-import { Sponsor } from "@/types/sponsor";
 import {
   EventMatchResult,
   MatchBreakdown,
   MatchWeights,
-  SponsorMatchResult,
+  SponsorshipMatchResult,
 } from "@/types/match";
+
+type SponsorshipMatchSource = {
+  _id?: string;
+  sponsorshipTitle?: string;
+  sponsorshipType?: string;
+  budget?: number;
+  category?: string;
+  targetAudience?: string;
+  city?: string;
+  locationPreference?: string;
+  campaignGoal?: string;
+  coverImage?: string;
+  deliverablesExpected?: string[];
+  sponsorProfile?: any;
+  createdAt?: string | Date;
+  updatedAt?: string | Date;
+  [key: string]: any;
+};
 
 function normalize(value: string) {
   return value?.toLowerCase().trim() || "";
@@ -27,6 +44,14 @@ function clampScore(value: number) {
 function sanitizeWeight(value: number, fallback: number) {
   return Number.isFinite(value) && value >= 0 ? value : fallback;
 }
+
+export const DEFAULT_MATCH_WEIGHTS: MatchWeights = {
+  category: 20,
+  audience: 20,
+  location: 20,
+  budget: 20,
+  deliverables: 20,
+};
 
 function normalizeWeights(weights?: MatchWeights): MatchWeights {
   const safeWeights: MatchWeights = {
@@ -69,35 +94,38 @@ function arrayOverlapScore(source: string[] = [], target: string[] = []) {
 }
 
 function scoreCategoryMatch(preferredCategories: string[], event: Event) {
-  const sponsorCategories = dedupeNormalized(preferredCategories);
+  const sponsorshipCategories = dedupeNormalized(preferredCategories);
   const eventCategories = dedupeNormalized([
     event.eventType || "",
     ...(event.categories || []),
   ]);
 
-  return arrayOverlapScore(sponsorCategories, eventCategories);
+  return arrayOverlapScore(sponsorshipCategories, eventCategories);
 }
 
 function scoreAudienceMatch(targetAudience: string, event: Event) {
-  const sponsorAudienceTerms = dedupeNormalized(splitTerms(targetAudience));
+  const sponsorshipAudienceTerms = dedupeNormalized(splitTerms(targetAudience));
   const eventAudienceTerms = dedupeNormalized(
     (event.targetAudience || []).flatMap(splitTerms)
   );
 
-  return arrayOverlapScore(sponsorAudienceTerms, eventAudienceTerms);
+  return arrayOverlapScore(sponsorshipAudienceTerms, eventAudienceTerms);
 }
 
 function scoreLocationMatch(preferredLocations: string[], eventLocation: string) {
-  const sponsorLocations = dedupeNormalized(preferredLocations);
+  const sponsorshipLocations = dedupeNormalized(preferredLocations);
   const normalizedEventLocation = normalize(eventLocation);
 
   if (!normalizedEventLocation) return 0;
-  if (!sponsorLocations.length) return 50;
+  if (!sponsorshipLocations.length) return 0;
 
-  const exact = sponsorLocations.some((location) => location === normalizedEventLocation);
+  const exact = sponsorshipLocations.some(
+    (location) => location === normalizedEventLocation
+  );
+
   if (exact) return 100;
 
-  const partial = sponsorLocations.some(
+  const partial = sponsorshipLocations.some(
     (location) =>
       normalizedEventLocation.includes(location) ||
       location.includes(normalizedEventLocation)
@@ -107,60 +135,89 @@ function scoreLocationMatch(preferredLocations: string[], eventLocation: string)
 
   const eventTokens = splitTerms(normalizedEventLocation);
 
-  const tokenOverlap = sponsorLocations.some((location) => {
-    const sponsorTokens = splitTerms(location);
-    return sponsorTokens.some((token) => eventTokens.includes(token));
+  const tokenOverlap = sponsorshipLocations.some((location) => {
+    const sponsorshipTokens = splitTerms(location);
+    return sponsorshipTokens.some((token) => eventTokens.includes(token));
   });
 
-  return tokenOverlap ? 50 : 20;
+  return tokenOverlap ? 50 : 0;
 }
 
-function scoreBudgetMatch(eventBudget: number) {
-  const safeBudget =
-    typeof eventBudget === "number" && Number.isFinite(eventBudget) ? eventBudget : 0;
+function scoreBudgetMatch(eventBudget: number, sponsorshipBudget?: number) {
+  const safeEventBudget =
+    typeof eventBudget === "number" && Number.isFinite(eventBudget)
+      ? eventBudget
+      : 0;
 
-  if (!safeBudget || safeBudget <= 0) return 30;
-  if (safeBudget <= 50000) return 100;
-  if (safeBudget <= 100000) return 75;
-  if (safeBudget <= 200000) return 55;
-  return 35;
+  const safeSponsorshipBudget =
+    typeof sponsorshipBudget === "number" && Number.isFinite(sponsorshipBudget)
+      ? sponsorshipBudget
+      : 0;
+
+  if (!safeEventBudget || safeEventBudget <= 0) return 0;
+
+  if (!safeSponsorshipBudget || safeSponsorshipBudget <= 0) {
+    if (safeEventBudget <= 50000) return 100;
+    if (safeEventBudget <= 100000) return 75;
+    if (safeEventBudget <= 200000) return 55;
+    return 35;
+  }
+
+  const difference = Math.abs(safeEventBudget - safeSponsorshipBudget);
+  const base = Math.max(safeEventBudget, safeSponsorshipBudget);
+  const differenceRatio = difference / base;
+
+  if (differenceRatio <= 0.1) return 100;
+  if (differenceRatio <= 0.25) return 80;
+  if (differenceRatio <= 0.5) return 55;
+  if (differenceRatio <= 0.75) return 30;
+
+  return 0;
 }
 
 function scoreDeliverablesMatch(
-  sponsorInterests: string[] = [],
+  sponsorshipInterests: string[] = [],
   eventDeliverables: string[] = []
 ) {
-  const normalizedSponsorInterests = dedupeNormalized(sponsorInterests);
+  const normalizedSponsorshipInterests = dedupeNormalized(sponsorshipInterests);
   const normalizedEventDeliverables = dedupeNormalized(eventDeliverables);
 
-  if (!normalizedSponsorInterests.length || !normalizedEventDeliverables.length) {
+  if (
+    !normalizedSponsorshipInterests.length ||
+    !normalizedEventDeliverables.length
+  ) {
     return 0;
   }
 
-  const overlap = normalizedSponsorInterests.filter((item) =>
+  const overlap = normalizedSponsorshipInterests.filter((item) =>
     normalizedEventDeliverables.includes(item)
   );
 
-  return clampScore((overlap.length / normalizedSponsorInterests.length) * 100);
+  return clampScore(
+    (overlap.length / normalizedSponsorshipInterests.length) * 100
+  );
 }
 
 function createBreakdown(
-  sponsor: Sponsor,
+  sponsorship: SponsorshipMatchSource,
   event: Event,
   weights?: MatchWeights
 ): MatchBreakdown {
   const safeWeights = normalizeWeights(weights);
 
   return {
-    categoryScore: scoreCategoryMatch(sponsor.preferredCategories || [], event),
-    audienceScore: scoreAudienceMatch(sponsor.targetAudience || "", event),
+    categoryScore: scoreCategoryMatch(
+      sponsorship.category ? [sponsorship.category] : [],
+      event
+    ),
+    audienceScore: scoreAudienceMatch(sponsorship.targetAudience || "", event),
     locationScore: scoreLocationMatch(
-      sponsor.preferredLocations || [],
+      [sponsorship.city || "", sponsorship.locationPreference || ""].filter(Boolean),
       event.location || ""
     ),
-    budgetScore: scoreBudgetMatch(event.budget || 0),
+    budgetScore: scoreBudgetMatch(event.budget || 0, sponsorship.budget),
     deliverablesScore: scoreDeliverablesMatch(
-      sponsor.sponsorshipInterests || [],
+      sponsorship.deliverablesExpected || [],
       event.providedDeliverables || []
     ),
     weights: safeWeights,
@@ -187,10 +244,11 @@ function buildReasons(breakdown: MatchBreakdown): string[] {
   if (breakdown.audienceScore >= 70) reasons.push("Target audience aligns well");
   if (breakdown.locationScore >= 70) reasons.push("Location preference matches");
   if (breakdown.budgetScore >= 70) reasons.push("Budget fit looks practical");
+
   if (breakdown.deliverablesScore >= 70) {
     reasons.push("Requested deliverables are strongly aligned");
   } else if (breakdown.deliverablesScore > 0) {
-    reasons.push("Some sponsor deliverables are available");
+    reasons.push("Some deliverables are aligned");
   }
 
   if (reasons.length === 0) {
@@ -207,37 +265,29 @@ function buildWeakPoints(breakdown: MatchBreakdown): string[] {
   if (breakdown.audienceScore < 50) weakPoints.push("Audience fit is weaker");
   if (breakdown.locationScore < 50) weakPoints.push("Location fit is weaker");
   if (breakdown.budgetScore < 50) weakPoints.push("Budget fit is weaker");
+
   if (breakdown.deliverablesScore < 50) {
     weakPoints.push("Deliverables fit is weaker");
   }
 
   return weakPoints.slice(0, 5);
 }
-
-export const DEFAULT_MATCH_WEIGHTS: MatchWeights = {
-  category: 20,
-  audience: 20,
-  location: 20,
-  budget: 20,
-  deliverables: 20,
-};
-
-export function matchSponsorToEvents(
-  sponsor: Sponsor,
-  events: Event[],
+export function matchEventToSponsorships(
+  event: Event,
+  sponsorships: SponsorshipMatchSource[],
   weights: MatchWeights = DEFAULT_MATCH_WEIGHTS,
   minScore = 0
-): EventMatchResult[] {
+): SponsorshipMatchResult[] {
   const safeWeights = normalizeWeights(weights);
   const safeMinScore = clampScore(minScore);
 
-  return (Array.isArray(events) ? events : [])
-    .map((event) => {
-      const breakdown = createBreakdown(sponsor, event, safeWeights);
+  return (Array.isArray(sponsorships) ? sponsorships : [])
+    .map((sponsorship) => {
+      const breakdown = createBreakdown(sponsorship, event, safeWeights);
       const score = finalWeightedScore(breakdown, safeWeights);
 
       return {
-        event,
+        sponsorship,
         score,
         breakdown,
         reasons: buildReasons(breakdown),
@@ -248,22 +298,22 @@ export function matchSponsorToEvents(
     .sort((a, b) => b.score - a.score);
 }
 
-export function matchEventToSponsors(
-  event: Event,
-  sponsors: Sponsor[],
+export function matchSponsorshipToEvents(
+  sponsorship: SponsorshipMatchSource,
+  events: Event[],
   weights: MatchWeights = DEFAULT_MATCH_WEIGHTS,
   minScore = 0
-): SponsorMatchResult[] {
+): EventMatchResult[] {
   const safeWeights = normalizeWeights(weights);
   const safeMinScore = clampScore(minScore);
 
-  return (Array.isArray(sponsors) ? sponsors : [])
-    .map((sponsor) => {
-      const breakdown = createBreakdown(sponsor, event, safeWeights);
+  return (Array.isArray(events) ? events : [])
+    .map((event) => {
+      const breakdown = createBreakdown(sponsorship, event, safeWeights);
       const score = finalWeightedScore(breakdown, safeWeights);
 
       return {
-        sponsor,
+        event,
         score,
         breakdown,
         reasons: buildReasons(breakdown),

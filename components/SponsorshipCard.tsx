@@ -30,6 +30,7 @@ interface SponsorshipCardProps {
   showActions?: boolean;
   primaryActionHref?: string;
   primaryActionLabel?: string;
+  matchScore?: number;
 }
 
 function formatCurrency(value?: number) {
@@ -54,7 +55,7 @@ function getStatusLabel(status?: SponsorshipStatus) {
   if (status === "paused") return "Paused";
   if (status === "closed") return "Closed";
   if (status === "expired") return "Expired";
-  return "Active";status === "paused"
+  return "Active";
 }
 
 function getStatusClasses(status?: SponsorshipStatus) {
@@ -83,6 +84,7 @@ export function SponsorshipCard({
   showActions = true,
   primaryActionHref,
   primaryActionLabel = "View Details",
+  matchScore,
 }: SponsorshipCardProps) {
   const resolvedHref = href || `/sponsorships/${sponsorship._id}`;
   const resolvedPrimaryHref = primaryActionHref || resolvedHref;
@@ -99,9 +101,9 @@ const coverSrc = hasCustomCover
     : [];
 
   return (
-    <article className="group overflow-hidden rounded-[24px] border border-white/10 bg-white/[0.05] shadow-[0_18px_60px_rgba(0,0,0,0.22)] backdrop-blur-xl transition duration-300 hover:-translate-y-1 hover:border-[#FF7A18]/40 hover:bg-white/[0.07]">
-      <Link href={resolvedHref} className="block">
-        <div className="relative h-48 overflow-hidden bg-[#07152F]">
+    <article className="group relative flex h-full cursor-pointer flex-col rounded-2xl border border-white/10 bg-white/[0.05] p-5 transition-all duration-300 hover:border-accent-orange/40 hover:shadow-[0_0_25px_rgba(255,122,24,0.12)]">
+     <Link href={resolvedHref} className="block h-full">
+       <div className="relative mb-4 aspect-[16/9] w-full overflow-hidden rounded-2xl border border-white/10 bg-[#07152F]">
   <Image
     src={coverSrc}
     alt={sponsorship.sponsorshipTitle || "Sponsorship campaign"}
@@ -142,7 +144,13 @@ const coverSrc = hasCustomCover
             ) : null}
           </div>
 
-          <div className="absolute bottom-4 left-4 right-4">
+{matchScore != null ? (
+  <div className="absolute right-4 top-4 z-10 rounded-full bg-accent-orange/90 px-3 py-1 text-sm font-bold text-dark-base">
+    {matchScore}% Match
+  </div>
+) : null}
+
+<div className="absolute bottom-4 left-4 right-4">
             <p className="text-xs uppercase tracking-[0.22em] text-[#FFB347]">
               {sponsorship.brandName ||
                 sponsorship.companyName ||
@@ -178,28 +186,29 @@ const coverSrc = hasCustomCover
             )}
           </div>
 
-          <div className="mt-5 grid grid-cols-3 gap-3 text-sm">
-            <div className="rounded-2xl bg-[#07152F]/80 p-3">
-              <p className="text-xs text-text-muted">Budget</p>
-              <p className="mt-1 truncate font-semibold text-[#FFB347]">
-                {formatCurrency(sponsorship.budget)}
-              </p>
-            </div>
+        <div className="mt-5 grid grid-cols-2 gap-4 border-t border-white/10 pt-3 text-sm">
+  <div>
+    <p className="text-xs text-text-muted">Budget</p>
+    <p className="font-bold text-accent-orange">
+      {formatCurrency(sponsorship.budget)}
+    </p>
+  </div>
 
-            <div className="rounded-2xl bg-[#07152F]/80 p-3">
-              <p className="text-xs text-text-muted">Location</p>
-              <p className="mt-1 truncate font-semibold text-white">
-                {sponsorship.locationPreference || "Anywhere"}
-              </p>
-            </div>
+  <div>
+    <p className="text-xs text-text-muted">Expires</p>
+    <p className="font-medium text-text-light">
+      {formatDate(sponsorship.expiresAt)}
+    </p>
+  </div>
 
-            <div className="rounded-2xl bg-[#07152F]/80 p-3">
-              <p className="text-xs text-text-muted">Expires</p>
-              <p className="mt-1 truncate font-semibold text-white">
-                {formatDate(sponsorship.expiresAt)}
-              </p>
-            </div>
-          </div>
+  <div className="col-span-2">
+    <p className="text-xs text-text-muted">Location • Category</p>
+    <p className="font-medium text-text-light">
+      {sponsorship.locationPreference || "Anywhere"} •{" "}
+      {sponsorship.category || "N/A"}
+    </p>
+  </div>
+</div>
         </div>
       </Link>
 
