@@ -334,11 +334,31 @@ export default function SponsorDashboardPage() {
       const userId = user._id;
       if (!userId) return;
 
-      try {
-        await findMatches({ sponsorOwnerId: userId });
-      } catch {
-        // hook keeps its own error state
-      }
+    try {
+  const sponsorshipResponse = await fetch(
+    "/api/sponsorships/get?status=active&limit=1",
+    {
+      method: "GET",
+      credentials: "include",
+      cache: "no-store",
+    }
+  );
+
+  const sponsorshipData = await sponsorshipResponse.json();
+
+  const latestSponsorship = Array.isArray(sponsorshipData?.data)
+    ? sponsorshipData.data[0]
+    : null;
+
+  if (latestSponsorship?._id) {
+    await findMatches({
+      sponsorshipId: latestSponsorship._id,
+      mode: "sponsorship_to_events",
+    });
+  }
+} catch {
+  // hook keeps its own error state
+}
     };
 
     loadMatches();
