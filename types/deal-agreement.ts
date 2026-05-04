@@ -116,6 +116,7 @@ export interface DealAgreement {
   proofFiles: DealAgreementProof[];
 
   pdfUrl?: string;
+  pdfGeneratedAt?: string | null;
   signedAt: string | null;
   expiresAt: string | null;
 

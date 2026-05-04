@@ -115,6 +115,7 @@ export async function GET(
     }
 
     const deal = await DealModel.findById(dealId)
+      .select("_id organizerId sponsorId eventId status finalAmount deliverables paymentStatus proposedAmount title description message notes acceptedAt completedAt createdAt updatedAt isDeleted")
       .populate(
         "organizerId",
         "_id name firstName lastName email phone companyName"
@@ -125,7 +126,7 @@ export async function GET(
       )
       .populate("eventId", "_id title location startDate");
 
-    if (!deal) {
+    if (!deal || deal.isDeleted === true) {
       return NextResponse.json(
         { success: false, message: "Deal not found" },
         { status: 404 }
@@ -226,7 +227,7 @@ export async function POST(
       )
       .populate("eventId", "_id title location startDate");
 
-    if (!deal) {
+    if (!deal || deal.isDeleted === true) {
       return NextResponse.json(
         { success: false, message: "Deal not found" },
         { status: 404 }
@@ -259,6 +260,21 @@ export async function POST(
             agreement: existingAgreementBeforeCreate,
           },
           { status: 200 }
+        );
+      }
+
+      if (
+        existingAgreementBeforeCreate.status === "CANCELLED" ||
+        existingAgreementBeforeCreate.status === "EXPIRED"
+      ) {
+        return NextResponse.json(
+          {
+            success: false,
+            message:
+              "Agreement exists but is not active. Please contact support or create a new agreement flow later.",
+            agreement: existingAgreementBeforeCreate,
+          },
+          { status: 400 }
         );
       }
 

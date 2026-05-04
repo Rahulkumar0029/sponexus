@@ -13,7 +13,9 @@ type DealAgreementPanelProps = {
   roleInDeal: "ORGANIZER" | "SPONSOR" | null;
 };
 
-function formatDateTime(value?: string | null) {
+const APP_TIME_ZONE = "Asia/Kolkata";
+
+function formatDateTime(value?: string | Date | null) {
   if (!value) return "—";
 
   const date = new Date(value);
@@ -21,11 +23,14 @@ function formatDateTime(value?: string | null) {
   if (Number.isNaN(date.getTime())) return "—";
 
   return date.toLocaleString("en-IN", {
+    timeZone: APP_TIME_ZONE,
     day: "numeric",
     month: "short",
     year: "numeric",
     hour: "numeric",
     minute: "2-digit",
+    hour12: true,
+    timeZoneName: "short",
   });
 }
 
@@ -72,6 +77,18 @@ function getAgreementStatusClasses(status?: string) {
 
 function canUseAgreement(dealStatus: DealStatus) {
   return dealStatus === "accepted" || dealStatus === "completed";
+}
+
+function getAgreementActionLabel(agreement: DealAgreement | null) {
+  if (!agreement) return "Prepare Agreement";
+
+  if (agreement.status === "SIGNED") return "Review Agreement Record";
+
+  if (agreement.status === "CANCELLED") return "View Cancelled Agreement";
+
+  if (agreement.status === "EXPIRED") return "View Expired Agreement";
+
+  return "Open Agreement";
 }
 
 export function DealAgreementPanel({
@@ -191,6 +208,13 @@ export function DealAgreementPanel({
           </div>
 
           <div className="flex items-center justify-between gap-3">
+            <span className="text-[#94A3B8]">PDF Generated At</span>
+            <span className="text-right font-semibold text-white">
+              {formatDateTime(agreement?.pdfGeneratedAt)}
+            </span>
+          </div>
+
+          <div className="flex items-center justify-between gap-3">
             <span className="text-[#94A3B8]">Your Access</span>
             <span className="text-right font-semibold text-white">
               {roleInDeal ? roleInDeal.toLowerCase() : "viewer"}
@@ -205,7 +229,7 @@ export function DealAgreementPanel({
     href={`/deals/${dealId}/agreement`}
     className="inline-flex w-full items-center justify-center rounded-full bg-gradient-to-r from-[#FF7A18] to-[#FFB347] px-5 py-3 text-sm font-semibold text-[#020617] transition hover:opacity-95"
   >
-    {agreement ? "Open Agreement" : "Prepare Agreement"}
+    {getAgreementActionLabel(agreement)}
   </Link>
 ) : (
   <div className="inline-flex w-full cursor-not-allowed items-center justify-center rounded-full bg-white/10 px-5 py-3 text-sm font-semibold text-[#94A3B8]">
@@ -217,9 +241,10 @@ export function DealAgreementPanel({
   <Link
     href={`/api/deals/${dealId}/agreement/pdf`}
     target="_blank"
+    rel="noopener noreferrer"
     className="inline-flex w-full items-center justify-center rounded-full border border-white/10 bg-white/[0.04] px-5 py-3 text-sm font-semibold text-white transition hover:border-[#FF7A18]/30"
   >
-    View Signed PDF
+    View Final Signed PDF
   </Link>
 ) : null}
       </div>

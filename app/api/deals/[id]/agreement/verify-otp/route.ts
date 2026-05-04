@@ -77,12 +77,13 @@ function getOtherRole(role: "ORGANIZER" | "SPONSOR") {
   return role === "ORGANIZER" ? "SPONSOR" : "ORGANIZER";
 }
 
-function getAgreementStatusAfterVerify(agreement: any) {
-  const organizerVerified =
-    agreement.organizerVerification?.otpStatus === "VERIFIED";
-  const sponsorVerified =
-    agreement.sponsorVerification?.otpStatus === "VERIFIED";
-
+function getAgreementStatusFromVerification({
+  organizerVerified,
+  sponsorVerified,
+}: {
+  organizerVerified: boolean;
+  sponsorVerified: boolean;
+}) {
   if (organizerVerified && sponsorVerified) return "SIGNED";
   if (organizerVerified && !sponsorVerified) return "PENDING_SPONSOR_OTP";
   if (!organizerVerified && sponsorVerified) return "PENDING_ORGANIZER_OTP";
@@ -273,7 +274,20 @@ export async function POST(
     verification.ipAddress = getClientIp(request);
     verification.userAgent = request.headers.get("user-agent") || "";
 
-    agreement.status = getAgreementStatusAfterVerify(agreement);
+    const organizerVerified =
+      role === "ORGANIZER"
+        ? true
+        : agreement.organizerVerification?.otpStatus === "VERIFIED";
+
+    const sponsorVerified =
+      role === "SPONSOR"
+        ? true
+        : agreement.sponsorVerification?.otpStatus === "VERIFIED";
+
+    agreement.status = getAgreementStatusFromVerification({
+      organizerVerified,
+      sponsorVerified,
+    });
 
     if (agreement.status === "SIGNED" && !agreement.signedAt) {
       agreement.signedAt = now;
@@ -289,12 +303,12 @@ export async function POST(
       await createNotification({
         userId: otherPartyId,
         type: "DEAL_UPDATED",
-        title:
-          agreement.status === "SIGNED"
+               title:
+          freshAgreement?.status === "SIGNED"
             ? "Agreement signed"
             : "Agreement verification updated",
         message:
-          agreement.status === "SIGNED"
+          freshAgreement?.status === "SIGNED"
             ? "The deal agreement has been signed by both parties."
             : "The other party verified the deal agreement.",
         link: `/deals/${dealId}/agreement`,
@@ -303,14 +317,14 @@ export async function POST(
           agreementId: String(agreement._id),
           verifiedBy: currentUserId,
           role,
-          status: agreement.status,
+                    status: freshAgreement?.status || agreement.status,
         },
       });
     } catch (notificationError) {
       console.error("Agreement verify notification error:", notificationError);
     }
 
-    if (agreement.status === "SIGNED") {
+    if (freshAgreement?.status === "SIGNED") {
       try {
         await createNotification({
           userId: currentUserId,
@@ -321,19 +335,22 @@ export async function POST(
           metadata: {
             dealId,
             agreementId: String(agreement._id),
-            status: agreement.status,
+            status: freshAgreement.status,
           },
         });
       } catch (notificationError) {
-        console.error("Agreement signed self notification error:", notificationError);
+        console.error(
+          "Agreement signed self notification error:",
+          notificationError
+        );
       }
     }
 
     return NextResponse.json(
       {
         success: true,
-        message:
-          agreement.status === "SIGNED"
+                message:
+          freshAgreement?.status === "SIGNED"
             ? "Agreement signed successfully"
             : "Agreement OTP verified successfully",
         agreement: freshAgreement,

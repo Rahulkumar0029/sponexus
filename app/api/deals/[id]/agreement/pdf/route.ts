@@ -120,7 +120,7 @@ export async function GET(
       );
     }
 
-    if (agreement.status !== "SIGNED") {
+       if (agreement.status !== "SIGNED") {
       return NextResponse.json(
         {
           success: false,
@@ -130,18 +130,67 @@ export async function GET(
       );
     }
 
-    const pdfBuffer = await generateDealAgreementPdf(agreement.toObject());
+    // Lock PDF generation timestamp only once.
+    // First download after SIGNED will set pdfGeneratedAt.
+    // Later downloads will reuse the same timestamp, so PDF date stays stable.
+    let lockedAgreement = agreement;
 
-    const fileName = safePdfFileName(
-      agreement.agreementNumber || `sponexus-agreement-${dealId}`
+    if (!agreement.pdfGeneratedAt) {
+      const now = new Date();
+
+      const updatedAgreement = await DealAgreementModel.findOneAndUpdate(
+        {
+          _id: agreement._id,
+          status: "SIGNED",
+          isDeleted: { $ne: true },
+          $or: [
+            { pdfGeneratedAt: { $exists: false } },
+            { pdfGeneratedAt: null },
+          ],
+        },
+        {
+          $set: {
+            pdfGeneratedAt: now,
+          },
+        },
+        {
+          new: true,
+        }
+      );
+
+      if (updatedAgreement) {
+        lockedAgreement = updatedAgreement;
+      } else {
+        const latestAgreement = await DealAgreementModel.findById(
+          agreement._id
+        );
+
+        if (!latestAgreement) {
+          return NextResponse.json(
+            { success: false, message: "Agreement not found" },
+            { status: 404 }
+          );
+        }
+
+        lockedAgreement = latestAgreement;
+      }
+    }
+
+    const pdfBuffer = await generateDealAgreementPdf(
+      lockedAgreement.toObject()
     );
 
-    return new NextResponse(pdfBuffer, {
+    const fileName = safePdfFileName(
+      lockedAgreement.agreementNumber || `sponexus-agreement-${dealId}`
+    );
+
+       return new NextResponse(pdfBuffer, {
       status: 200,
       headers: {
         "Content-Type": "application/pdf",
         "Content-Disposition": `inline; filename="${fileName}.pdf"`,
         "Cache-Control": "private, no-store, max-age=0",
+        "X-Content-Type-Options": "nosniff",
       },
     });
   } catch (error) {

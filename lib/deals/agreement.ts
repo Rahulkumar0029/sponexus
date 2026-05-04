@@ -253,7 +253,13 @@ export async function createOrGetDealAgreement({
     },
 
     proofFiles: [],
+
+    // PDF lock fields
+    // pdfGeneratedAt remains null until the final signed PDF is generated first time.
+    // After generation, PDF route should store this timestamp and never change it again.
     pdfUrl: "",
+    pdfGeneratedAt: null,
+
     signedAt: null,
     expiresAt,
   });

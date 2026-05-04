@@ -49,6 +49,8 @@ function formatCurrency(amount: number | null | undefined) {
   }).format(amount);
 }
 
+const APP_TIME_ZONE = "Asia/Kolkata";
+
 function formatDate(value?: string | null) {
   if (!value) return "—";
 
@@ -57,6 +59,7 @@ function formatDate(value?: string | null) {
   if (Number.isNaN(date.getTime())) return "—";
 
   return date.toLocaleDateString("en-IN", {
+    timeZone: APP_TIME_ZONE,
     day: "numeric",
     month: "short",
     year: "numeric",
@@ -79,6 +82,12 @@ function getProofStatusLabel(status?: string) {
   if (status === "VERIFIED") return "Verified";
   if (status === "REJECTED") return "Rejected";
   return "Submitted";
+}
+
+function getTodayInputDate() {
+  return new Date().toLocaleDateString("en-CA", {
+    timeZone: APP_TIME_ZONE,
+  });
 }
 
 export function AgreementProofUpload({
@@ -164,6 +173,20 @@ export function AgreementProofUpload({
       return;
     }
 
+    if (paymentDate) {
+      const selectedPaymentDate = new Date(paymentDate);
+      const today = new Date(getTodayInputDate());
+
+      if (
+        Number.isNaN(selectedPaymentDate.getTime()) ||
+        selectedPaymentDate.getTime() > today.getTime()
+      ) {
+        setError("Payment date cannot be in the future.");
+        setSuccess("");
+        return;
+      }
+    }
+
     try {
       setUploading(true);
       setError("");
@@ -193,8 +216,10 @@ export function AgreementProofUpload({
       setProofFiles(
         Array.isArray(data.agreement?.proofFiles)
           ? data.agreement.proofFiles
-          : proofFiles
+          : []
       );
+
+      await loadProofs();
 
       setFile(null);
       setTransactionId("");
@@ -227,7 +252,8 @@ export function AgreementProofUpload({
         <h2 className="text-xl font-semibold">Payment Proof</h2>
         <p className="mt-2 text-sm leading-6 text-[#94A3B8]">
           Upload payment screenshot or receipt with transaction ID / UTR for record keeping.
-Once both parties verify the agreement using email OTP, this payment proof becomes mutually acknowledged. Sponexus admin may still audit it if needed.
+          Once both parties verify the agreement using email OTP, this payment proof becomes mutually acknowledged.
+          Sponexus admin may still audit it in dispute, fraud, or policy cases.
         </p>
       </div>
 
@@ -307,6 +333,7 @@ Once both parties verify the agreement using email OTP, this payment proof becom
                 <input
                   type="date"
                   value={paymentDate}
+                  max={getTodayInputDate()}
                   onChange={(event) => setPaymentDate(event.target.value)}
                   className="w-full rounded-2xl border border-white/10 bg-[#020617]/80 px-4 py-3 text-white outline-none focus:border-[#FF7A18]/40"
                 />
@@ -341,7 +368,7 @@ Once both parties verify the agreement using email OTP, this payment proof becom
             <button
               type="button"
               onClick={handleUpload}
-              disabled={uploading}
+              disabled={uploading || !canUpload}
               className="rounded-full bg-gradient-to-r from-[#FF7A18] to-[#FFB347] px-5 py-3 text-sm font-semibold text-[#020617] disabled:cursor-not-allowed disabled:opacity-50"
             >
               {uploading ? "Uploading..." : "Submit Payment Proof"}
@@ -419,6 +446,7 @@ Once both parties verify the agreement using email OTP, this payment proof becom
                     <Link
                       href={proof.fileUrl}
                       target="_blank"
+                      rel="noopener noreferrer"
                       className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-center text-xs font-semibold text-white transition hover:border-[#FF7A18]/30"
                     >
                       View File

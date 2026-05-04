@@ -37,18 +37,22 @@ function formatCurrency(amount: number | null | undefined) {
   }).format(amount);
 }
 
-function formatDate(date: string | null | undefined) {
+const APP_TIME_ZONE = "Asia/Kolkata";
+
+function formatDate(date: string | Date | null | undefined) {
   if (!date) return "—";
+
   const parsed = new Date(date);
+
   if (Number.isNaN(parsed.getTime())) return "—";
 
   return parsed.toLocaleDateString("en-IN", {
+    timeZone: APP_TIME_ZONE,
     day: "numeric",
     month: "short",
     year: "numeric",
   });
 }
-
 function getStatusClasses(status: string) {
   switch (status) {
     case "accepted":
@@ -98,6 +102,7 @@ function normalizeDeal(raw: any): Deal {
     },
     createdAt: raw?.createdAt || "",
     updatedAt: raw?.updatedAt || "",
+    createdBy: String(raw?.createdBy?._id || raw?.createdBy || ""),
     organizer: {
       _id: String(raw?.organizerId?._id || raw?.organizer?._id || ""),
       name: raw?.organizerId?.name || raw?.organizer?.name || "",
@@ -151,10 +156,11 @@ export default function DealsPage() {
           params.set("status", statusFilter);
         }
 
-        const response = await fetch(`/api/deals?${params.toString()}`, {
-          method: "GET",
-          cache: "no-store",
-        });
+const response = await fetch(`/api/deals?${params.toString()}`, {
+  method: "GET",
+  credentials: "include",
+  cache: "no-store",
+});
 
         const data: DealsApiResponse = await response.json();
 

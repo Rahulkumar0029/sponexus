@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
 
 import type { Deal, DealStatus } from "@/types/deal";
 import { useAuth } from "@/hooks/useAuth";
@@ -35,7 +35,9 @@ function formatCurrency(amount: number | null | undefined) {
   }).format(amount);
 }
 
-function formatDateTime(value: string | null | undefined) {
+const APP_TIME_ZONE = "Asia/Kolkata";
+
+function formatDateTime(value: string | Date | null | undefined) {
   if (!value) return "—";
 
   const date = new Date(value);
@@ -43,11 +45,14 @@ function formatDateTime(value: string | null | undefined) {
   if (Number.isNaN(date.getTime())) return "—";
 
   return date.toLocaleString("en-IN", {
+    timeZone: APP_TIME_ZONE,
     day: "numeric",
     month: "short",
     year: "numeric",
     hour: "numeric",
     minute: "2-digit",
+    hour12: true,
+    timeZoneName: "short",
   });
 }
 
@@ -161,7 +166,6 @@ function getVisibleActions(
 
 export default function DealDetailPage() {
   const params = useParams<{ id: string }>();
-  const router = useRouter();
   const { user } = useAuth();
 
   const dealId = Array.isArray(params?.id) ? params.id[0] : params?.id;
@@ -189,23 +193,39 @@ export default function DealDetailPage() {
         setLoading(true);
         setPageError("");
 
-        const response = await fetch(`/api/deals/${dealId}`, {
-          method: "GET",
-          credentials: "include",
-          cache: "no-store",
-        });
+let response: Response | null = null;
+let data: DealApiResponse | null = null;
+let lastError = "Failed to load deal";
 
-        const data: DealApiResponse = await response.json();
+for (let attempt = 1; attempt <= 2; attempt += 1) {
+  response = await fetch(`/api/deals/${dealId}`, {
+    method: "GET",
+    credentials: "include",
+    cache: "no-store",
+  });
 
-        if (!response.ok || !data.success || !data.deal) {
-          throw new Error(data.message || "Failed to load deal");
-        }
+  data = await response.json();
 
-        if (!ignore) {
-          const normalized = normalizeDeal(data.deal);
-          setDeal(normalized);
-          setDisputeReasonInput(normalized.disputeReason || "");
-        }
+  if (response.ok && data?.success && data?.deal) {
+  break;
+}
+
+  lastError = data?.message || "Failed to load deal";
+
+  if (attempt < 2) {
+    await new Promise((resolve) => setTimeout(resolve, 400));
+  }
+}
+
+if (!response?.ok || !data?.success || !data?.deal) {
+  throw new Error(lastError);
+}
+
+if (!ignore) {
+  const normalized = normalizeDeal(data.deal);
+  setDeal(normalized);
+  setDisputeReasonInput(normalized.disputeReason || "");
+}
       } catch (error) {
         if (!ignore) {
           setPageError(
@@ -436,14 +456,22 @@ export default function DealDetailPage() {
             <p className="mt-3 text-sm text-red-100/80">
               {pageError || "Deal not found"}
             </p>
-            <div className="mt-6">
-              <Link
-                href="/deals"
-                className="inline-flex rounded-full bg-gradient-to-r from-[#FF7A18] to-[#FFB347] px-5 py-3 text-sm font-semibold text-[#020617]"
-              >
-                Back to Deals
-              </Link>
-            </div>
+            <div className="mt-6 flex flex-wrap justify-center gap-3">
+  <button
+    type="button"
+    onClick={() => window.location.reload()}
+    className="inline-flex rounded-full bg-gradient-to-r from-[#FF7A18] to-[#FFB347] px-5 py-3 text-sm font-semibold text-[#020617]"
+  >
+    Retry
+  </button>
+
+  <Link
+    href="/deals"
+    className="inline-flex rounded-full border border-white/10 bg-white/[0.04] px-5 py-3 text-sm font-semibold text-white transition hover:border-[#FF7A18]/30"
+  >
+    Back to Deals
+  </Link>
+</div>
           </div>
         </div>
       </main>
@@ -462,13 +490,13 @@ export default function DealDetailPage() {
               ← Back to Deals
             </Link>
 
-            <button
-              type="button"
-              onClick={() => router.refresh()}
-              className="rounded-full border border-white/10 bg-white/[0.03] px-4 py-2 text-sm text-[#94A3B8] transition hover:border-[#FF7A18]/30 hover:text-white"
-            >
-              Refresh View
-            </button>
+<button
+  type="button"
+  onClick={refreshDeal}
+  className="rounded-full border border-white/10 bg-white/[0.03] px-4 py-2 text-sm text-[#94A3B8] transition hover:border-[#FF7A18]/30 hover:text-white"
+>
+  Refresh View
+</button>
           </div>
 
           <div className="flex flex-col gap-6 lg:flex-row lg:items-end lg:justify-between">

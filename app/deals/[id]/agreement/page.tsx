@@ -25,7 +25,9 @@ function formatCurrency(amount: number | null | undefined) {
   }).format(amount);
 }
 
-function formatDateTime(value?: string | null) {
+const APP_TIME_ZONE = "Asia/Kolkata";
+
+function formatDateTime(value?: string | Date | null) {
   if (!value) return "—";
 
   const date = new Date(value);
@@ -33,11 +35,14 @@ function formatDateTime(value?: string | null) {
   if (Number.isNaN(date.getTime())) return "—";
 
   return date.toLocaleString("en-IN", {
+    timeZone: APP_TIME_ZONE,
     day: "numeric",
     month: "short",
     year: "numeric",
     hour: "numeric",
     minute: "2-digit",
+    hour12: true,
+    timeZoneName: "short",
   });
 }
 
@@ -311,12 +316,13 @@ const isCurrentUserTurnToVerify =
   Boolean(roleInDeal) && nextSignerRole === roleInDeal;
 
   const canUploadPaymentProof =
-  Boolean(agreement) &&
-  Boolean(roleInDeal) &&
-  Boolean(currentUserId) &&
-  agreementAllowed &&
-  agreement?.status !== "CANCELLED" &&
-  agreement?.status !== "EXPIRED";
+    Boolean(agreement) &&
+    Boolean(roleInDeal) &&
+    Boolean(currentUserId) &&
+    agreementAllowed &&
+    agreement?.status !== "CANCELLED" &&
+    agreement?.status !== "EXPIRED" &&
+    !agreement?.pdfGeneratedAt;
   
   async function loadPage() {
     if (!dealId) {
@@ -967,6 +973,9 @@ setDeliverablesInput((normalizedDeal.deliverables || []).join("\n"));
                     <p className="mt-2 text-sm text-[#CBD5E1]">
                       Signed at {formatDateTime(agreement.signedAt)}
                     </p>
+                    <p className="mt-1 text-sm text-[#CBD5E1]">
+                      PDF generated at {formatDateTime(agreement.pdfGeneratedAt)}
+                    </p>
                   </div>
 ) : hasCurrentUserVerified ? (
   <div className="rounded-2xl border border-white/10 bg-[#07152F]/70 p-4 text-sm text-[#94A3B8]">
@@ -1019,9 +1028,10 @@ setDeliverablesInput((normalizedDeal.deliverables || []).join("\n"));
   <Link
     href={`/api/deals/${deal._id}/agreement/pdf`}
     target="_blank"
+    rel="noopener noreferrer"
     className="inline-flex w-full items-center justify-center rounded-full border border-white/10 bg-white/[0.04] px-5 py-3 text-sm font-semibold text-white transition hover:border-[#FF7A18]/30"
   >
-    View Signed PDF
+    View Final Signed PDF
   </Link>
 ) : null}
               </div>
@@ -1050,8 +1060,18 @@ setDeliverablesInput((normalizedDeal.deliverables || []).join("\n"));
             </section>
           </aside>
         </div>
-         {agreement ? (
-          <div className="mt-6">
+        {agreement ? (
+          <div className="mt-6 space-y-3">
+            {agreement.pdfGeneratedAt ? (
+              <div className="rounded-3xl border border-emerald-400/20 bg-emerald-400/10 p-5 text-sm text-emerald-200">
+                Final PDF was generated at{" "}
+                <span className="font-semibold">
+                  {formatDateTime(agreement.pdfGeneratedAt)}
+                </span>
+                . Payment proof records are now locked for this agreement.
+              </div>
+            ) : null}
+
             <AgreementProofUpload
               dealId={deal._id}
               canUpload={canUploadPaymentProof}

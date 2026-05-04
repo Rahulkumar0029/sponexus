@@ -115,9 +115,10 @@ export interface IDealAgreement extends mongoose.Document {
   organizerVerification: IDealAgreementPartyVerification;
   sponsorVerification: IDealAgreementPartyVerification;
 
-  proofFiles: IDealAgreementProof[];
+   proofFiles: IDealAgreementProof[];
 
   pdfUrl: string;
+  pdfGeneratedAt: Date | null;
   signedAt: Date | null;
   expiresAt: Date | null;
 
@@ -426,6 +427,11 @@ const dealAgreementSchema = new Schema<IDealAgreement>(
       maxlength: 1000,
     },
 
+    pdfGeneratedAt: {
+      type: Date,
+      default: null,
+    },
+
     signedAt: {
       type: Date,
       default: null,
@@ -503,6 +509,7 @@ dealAgreementSchema.index({ sponsorId: 1, status: 1, updatedAt: -1 });
 dealAgreementSchema.index({ createdBy: 1, createdAt: -1 });
 dealAgreementSchema.index({ status: 1, updatedAt: -1 });
 dealAgreementSchema.index({ expiresAt: 1 });
+dealAgreementSchema.index({ pdfGeneratedAt: 1 });
 dealAgreementSchema.index({ isDeleted: 1, status: 1, updatedAt: -1 });
 dealAgreementSchema.index({ "proofFiles.transactionId": 1 });
 dealAgreementSchema.index({ "proofFiles.status": 1, updatedAt: -1 });

@@ -330,6 +330,17 @@ export async function POST(
       );
     }
 
+    if (agreement.pdfGeneratedAt) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Final agreement PDF is already generated. Payment proof record is now locked.",
+        },
+        { status: 400 }
+      );
+    }
+
     if ((agreement.proofFiles || []).length >= MAX_PROOF_FILES) {
       return NextResponse.json(
         {
@@ -464,6 +475,13 @@ if (duplicateTransaction) {
       );
     }
 
+    if (paymentDate && paymentDate.getTime() > Date.now()) {
+      return NextResponse.json(
+        { success: false, message: "Payment date cannot be in the future" },
+        { status: 400 }
+      );
+    }
+
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
@@ -481,7 +499,11 @@ if (duplicateTransaction) {
       fileType: file.type,
     });
 
-    uploadedPublicId = uploadResult.public_id || "";
+    if (!uploadResult?.secure_url || !uploadResult?.public_id) {
+      throw new Error("Payment proof upload failed. Please try again.");
+    }
+
+    uploadedPublicId = uploadResult.public_id;
     uploadedResourceType = uploadResult.resource_type || "image";
 
     const proof = {
@@ -560,7 +582,7 @@ if (duplicateTransaction) {
 
     if (uploadedPublicId) {
       try {
-        const cloudinary = getCloudinary();
+    const cloudinary = getCloudinary();
 await cloudinary.uploader.destroy(uploadedPublicId, {
   resource_type: uploadedResourceType,
 });

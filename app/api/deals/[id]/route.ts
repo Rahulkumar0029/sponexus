@@ -293,7 +293,7 @@ export async function GET(
       .populate("sponsorId", "_id name email phone companyName")
       .populate("eventId", "_id title location startDate");
 
-    if (!deal) {
+    if (!deal || deal.isDeleted === true) {
       return NextResponse.json(
         { success: false, message: "Deal not found" },
         { status: 404 }
@@ -319,10 +319,16 @@ export async function GET(
   } catch (error) {
     console.error("GET /api/deals/[id] error:", error);
 
-    return NextResponse.json(
-      { success: false, message: "Failed to fetch deal" },
-      { status: 500 }
-    );
+  return NextResponse.json(
+  {
+    success: false,
+    message:
+      process.env.NODE_ENV === "development" && error instanceof Error
+        ? error.message
+        : "Failed to fetch deal",
+  },
+  { status: 500 }
+);
   }
 }
 
@@ -354,7 +360,7 @@ export async function PATCH(
 
     const deal = await DealModel.findById(dealId);
 
-    if (!deal) {
+    if (!deal || deal.isDeleted === true) {
       return NextResponse.json(
         { success: false, message: "Deal not found" },
         { status: 404 }
@@ -572,8 +578,8 @@ const usage = await checkUsageLimit({
 
 const contactRevealReceiverId =
   roleInDeal === "ORGANIZER"
-    ? String(deal.sponsorId)
-    : String(deal.organizerId);
+    ? String(deal.sponsorId?._id || deal.sponsorId)
+    : String(deal.organizerId?._id || deal.organizerId);
 
     try {
   await createNotification({
@@ -651,7 +657,7 @@ if (wantsCommercialEdit) {
   const existingAgreement = await DealAgreementModel.findOne({
     dealId: deal._id,
     isDeleted: { $ne: true },
-  }).select("_id status");
+  }).select("_id status pdfGeneratedAt");
 
   if (existingAgreement) {
     return NextResponse.json(
@@ -662,6 +668,31 @@ if (wantsCommercialEdit) {
       },
       { status: 409 }
     );
+  }
+}
+
+if (nextStatus) {
+  const existingAgreementForStatus = await DealAgreementModel.findOne({
+    dealId: deal._id,
+    isDeleted: { $ne: true },
+  }).select("_id status pdfGeneratedAt");
+
+  if (
+    existingAgreementForStatus?.status === "SIGNED" ||
+    existingAgreementForStatus?.pdfGeneratedAt
+  ) {
+    const allowedAfterSignedAgreement = new Set(["completed", "disputed"]);
+
+    if (!allowedAfterSignedAgreement.has(nextStatus)) {
+      return NextResponse.json(
+        {
+          success: false,
+          message:
+            "Agreement is already signed or final PDF is generated. Only completion or dispute actions are allowed.",
+        },
+        { status: 409 }
+      );
+    }
   }
 }
 
@@ -799,8 +830,8 @@ if (nextStatus) {
   try {
     const statusReceiverId =
       roleInDeal === "ORGANIZER"
-        ? String(deal.sponsorId)
-        : String(deal.organizerId);
+        ? String(deal.sponsorId?._id || deal.sponsorId)
+        : String(deal.organizerId?._id || deal.organizerId);
 
     await createNotification({
       userId: statusReceiverId,
